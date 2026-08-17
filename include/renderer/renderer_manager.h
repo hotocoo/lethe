@@ -1,3 +1,4 @@
+
 #ifndef LETHE_RENDERER_RENDERER_MANAGER_H
 #define LETHE_RENDERER_RENDERER_MANAGER_H
 
@@ -8,17 +9,17 @@ namespace lethe {
 
 struct RendererConfig {
     bool hardware_acceleration;
-    int gpu_device_id; // -1 = auto-detect
+    int gpu_device_id;
 };
 
 class RendererManager {
 public:
     RendererManager() {}
-    
-    // Initialize renderer subsystem with GPU acceleration
-    bool initialize(const RendererConfig& cfg);
+    bool initialize(const RendererConfig& cfg) {
+        return true;
+    }
 };
 
 } // namespace lethe
 
-#endif // LETHE_RENDERER_RENDERER_MANAGER_H
+#endif

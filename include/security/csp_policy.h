@@ -12,8 +12,7 @@ public:
         policyString_ = DEFAULT_CSP_POLICY;
         allowEval = false;
         allowInlineScripts = false;
-        allowInlineStyles = false;
-        allowDataURIs = true; // Images only via img-src directive
+        allowDataURIs = true;
         frameAncestors_ = "'self'";
     }
 
@@ -23,19 +22,16 @@ public:
             scriptSrc.find("(self)") != std::string::npos) {
             return false;
         }
-        
         if (!allowInlineScripts && 
-            (scriptSrc.find("'unsafe-inline'") != std::string::npos)) {
+            scriptSrc.find("'unsafe-inline'") != std::string::npos) {
             return false;
         }
-
         return true;
     }
 
 private:
     bool allowEval;
     bool allowInlineScripts;
-    bool allowInlineStyles;
     bool allowDataURIs;
     std::string frameAncestors_;
     std::string policyString_;
@@ -43,4 +39,4 @@ private:
 
 } // namespace lethe
 
-#endif // LETHE_SECURITY_CSP_POLICY_H
+#endif

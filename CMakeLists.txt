@@ -5,7 +5,6 @@ project(lethe VERSION 0.2.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Build options
 option(BUILD_WITH_SANDBOX "Enable renderer sandboxing" ON)
 option(BUILD_HARDENED "Apply strict compiler hardening" ON)
 option(USE_PREBUILT_CHROMIUM "Use prebuilt Chromium SDK" OFF)
@@ -22,7 +21,6 @@ if(BUILD_HARDENED)
     endif()
 endif()
 
-# Find Chromium SDK / source tree
 set(CHROMIUM_SDK_PATH "$ENV{CHROMIUM_SDK_PATH}")
 if(USE_PREBUILT_CHROMIUM AND CHROMIUM_SDK_PATH)
     find_package(Chromium REQUIRED PATHS "${CHROMIUM_SDK_PATH}")
@@ -34,7 +32,6 @@ if(NOT TARGET Chromium::chromium)
     message(FATAL_ERROR "[lethe] Could not find Chromium. Set CHROMIUM_SDK_PATH or clone into 'chromium/'")
 endif()
 
-# Source lists by module
 file(GLOB_RECURSE SRC_CORE src/core/*.cc)
 file(GLOB_RECURSE SRC_RENDERER src/renderer/*.cc)
 file(GLOB_RECURSE SRC_BROWSER src/browser/*.cc)
@@ -52,7 +49,6 @@ endif()
 
 target_link_libraries(lethe PRIVATE Chromium::chromium)
 
-# Install
 install(TARGETS lethe DESTINATION bin)
 
 message(STATUS "Build with sandbox: ${BUILD_WITH_SANDBOX}")

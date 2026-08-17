@@ -6,7 +6,7 @@ Minimalist, high-performance browser with maximum security built on Chromium eng
 ## Features
 
 ### Performance
-- **Single-process architecture**: Combined browser/renderer process for reduced overhead
+- **Single-process architecture**: Combined browser/renderer for reduced overhead
 - **Hardware-accelerated rendering**: Full GPU pipeline via Skia
 - **Optimized memory management**: Custom allocator with strict limits
 - **Fast startup**: Precompiled components, minimal warm-up time
@@ -46,7 +46,7 @@ Minimalist, high-performance browser with maximum security built on Chromium eng
 ./build.sh
 ```
 
-Or manually with CMake:
+Or manually:
 
 ```bash
 mkdir -p build && cd build
@@ -65,8 +65,6 @@ ninja -j$(nproc) lethe
 - `include/` — Public headers by domain
 
 ## Configuration
-
-Set via environment variables or command-line flags:
 
 ```bash
 export LETHE_SANDBOX=1          # Enable renderer sandboxing (default: 1)
