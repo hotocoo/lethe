@@ -1,10 +1,10 @@
 #ifndef LETHE_BROWSER_TAB_MANAGER_H
 #define LETHE_BROWSER_TAB_MANAGER_H
 
-#include <vector>
+#include <map>
 #include <memory>
 #include <string>
-#include <map>
+#include <vector>
 
 namespace lethe {
 
@@ -14,42 +14,38 @@ struct TabInfo {
     std::string url;
     bool isIncognito;
     
-    TabInfo(int i, const std::string& t, const std::string& u) : id(i), title(t), url(u), isIncognito(true) {}
+    TabInfo() : id(0), isIncognito(true) {}
 };
 
 class TabManager {
 public:
-    int createTab(const std::string& title = "New Tab", const std::string& url = "") {
-        int id = nextId_++;
-        tabs_.emplace(id, std::make_unique<TabInfo>(id, title, url)));
-        
-        if (!activeTab_) activeTab_ = id;
-        
-        return id;
-    }
-
-    void closeTab(int tabId) {
-        tabs_.erase(tabId);
-        
-        if (activeTab_ == tabId && !tabs_.empty()) {
-            activeTab_ = tabs_.begin()->first;
-        }
-    }
-
-    void setActiveTab(int tabId) {
-        if (tabs_.count(tabId)) {
-            activeTab_ = tabId;
-        }
-    }
-
-    int getActiveTab() const { return activeTab_; }
-
+    TabManager();
+    
+    // Create new tab and set as active
+    int createTab(const std::string& title = "New Tab", const std::string& url = "");
+    
+    // Navigate specific tab to URL
+    void navigate(int tabId, const std::string& url);
+    
+    // Set which tab is active
+    void setActiveTab(int id);
+    
+    // Close tab by ID
+    void closeTab(int id);
+    
+    // Get the currently active tab ID
+    int getActiveTab() const { return activeTabId; }
+    
+    // Get number of open tabs
     size_t count() const { return tabs_.size(); }
+    
+    // Close all tabs (used on shutdown)
+    void closeAllTabs();
 
 private:
     std::map<int, std::unique_ptr<TabInfo>> tabs_;
-    int activeTab_ = 0;
-    int nextId_ = 1;
+    int activeTabId = 0;
+    int next_id = 1;
 };
 
 } // namespace lethe
