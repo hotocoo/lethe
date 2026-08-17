@@ -1,3 +1,4 @@
+
 # Lethe — Custom Browser for Aletheia Platform
 
 Minimalist, high-performance browser with maximum security built on Chromium engine.
@@ -38,17 +39,19 @@ Minimalist, high-performance browser with maximum security built on Chromium eng
 ## Building
 
 ```bash
-mkdir -p build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release -G Ninja ..
-ninja -j$(nproc) lethe
+# Using ninja (recommended)
+./build.sh -G Ninja
+
+# Using standard make
+./build.sh
 ```
 
-Or with standard make:
+Or manually with CMake:
 
 ```bash
 mkdir -p build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_USE_MAKEFILE=ON ..
-make -j$(nproc) lethe
+cmake -DCMAKE_BUILD_TYPE=Release -G Ninja ..
+ninja -j$(nproc) lethe
 ```
 
 ## Structure

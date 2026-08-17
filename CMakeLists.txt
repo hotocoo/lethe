@@ -1,3 +1,4 @@
+
 cmake_minimum_required(VERSION 3.18)
 project(lethe VERSION 0.2.0 LANGUAGES CXX)
 
@@ -17,7 +18,7 @@ if(BUILD_HARDENED)
             -O3 -pipe -march=native \
             -flto=auto -fno-plt \
             -fvisibility=hidden \
-            -Wall -Wextra -Wno-unused-parameter -Werror")
+            -Wall -Wextra -Werror")
     endif()
 endif()
 
@@ -26,7 +27,7 @@ set(CHROMIUM_SDK_PATH "$ENV{CHROMIUM_SDK_PATH}")
 if(USE_PREBUILT_CHROMIUM AND CHROMIUM_SDK_PATH)
     find_package(Chromium REQUIRED PATHS "${CHROMIUM_SDK_PATH}")
 elseif(EXISTS "${CMAKE_SOURCE_DIR}/chromium/src")
-    find_package(Chromium REQUIRED PATHS "${CMAKE_SOURCE_DIR}/chromium/src/build/Release/obj/lib")
+    find_package(Chromium REQUIRED PATHS "${CMAKE_SOURCE_DIR}/chromium/src/Build/Release/obj/lib")
 endif()
 
 if(NOT TARGET Chromium::chromium)
@@ -35,18 +36,18 @@ endif()
 
 # Source lists by module
 file(GLOB_RECURSE SRC_CORE src/core/*.cc)
+file(GLOB_RECURSE SRC_RENDERER src/renderer/*.cc)
 file(GLOB_RECURSE SRC_BROWSER src/browser/*.cc)
 file(GLOB_RECURSE SRC_SECURITY src/security/*.cc)
 file(GLOB_RECURSE SRC_NETWORK src/network/*.cc)
-file(GLOB_RECURSE SRC_RENDERER renderer/*.cc)
-file(GLOB_RECURSE SRC_APP browser/app/*.cc)
 
-add_executable(lethe "${SRC_CORE}" "${SRC_BROWSER}" "${SRC_SECURITY}" "${SRC_NETWORK}" "${SRC_RENDERER}" "${SRC_APP}")
+add_executable(lethe "${SRC_CORE}" "${SRC_RENDERER}" "${SRC_BROWSER}" 
+                "${SRC_SECURITY}" "${SRC_NETWORK}")
 
 target_include_directories(lethe PRIVATE include src browser app)
 
 if(BUILD_WITH_SANDBOX)
-    target_compile_definitions(lethe PRIVATE -DLETHE_SANDBOX_ENABLED)
+    target_compile_definitions(lethe PRIVATE -DLETHE_SANDBOXING)
 endif()
 
 target_link_libraries(lethe PRIVATE Chromium::chromium)
