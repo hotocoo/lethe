@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <cstdint>
 
 namespace lethe {
 
@@ -21,18 +22,18 @@ const bool ENFORCE_STRICT_CSP = true;
 
 const int MAX_OPEN_CONNECTIONS = 128;
 const int MAX_CONNECTIONS_PER_HOST = 16;
-const size_t NETWORK_BUFFER_SIZE = 65536;
+const uint64_t NETWORK_BUFFER_SIZE = 65536;
 
-const size_t MAX_MEMORY_PER_PROCESS = 1ULL << 30;
-const size_t TOTAL_MAX_MEMORY = 4ULL << 30;
+const uint64_t MAX_MEMORY_PER_PROCESS = 1ULL << 30; // 1GB
+const uint64_t TOTAL_MAX_MEMORY = 4ULL << 30; // 4GB total
 
 const std::vector<std::string> DOH_PROVIDERS = {
     "https://cloudflare-dns.com/dns-query",
     "https://dns.quad9.net/dns-query"
 };
 
-const int MIN_TLS_VERSION = 0x0304;
-const int MAX_TLS_VERSION = 0x0305;
+const int MIN_TLS_VERSION = 0x0304; // TLS 1.2+
+const int MAX_TLS_VERSION = 0x0305; // TLS 1.3
 const std::string DEFAULT_CIPHERS = 
     "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:"
     "TLS_AES_128_GCM_SHA256";
@@ -54,4 +55,4 @@ const std::string DEFAULT_CSP_POLICY =
 
 } // namespace lethe
 
-#endif
+#endif // LETHE_CONFIG_H

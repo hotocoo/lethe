@@ -13,33 +13,34 @@ struct TabInfo {
     std::string title;
     std::string url;
     bool isIncognito;
+    bool isLoading;
     
-    TabInfo() : id(0), isIncognito(true) {}
+    TabInfo() : id(0), isIncognito(true), isLoading(false) {}
+    TabInfo(int tabId) : id(tabId), isIncognito(true), isLoading(false) {}
 };
 
 class TabManager {
 public:
     TabManager();
     
-    // Create new tab and set as active
     int createTab(const std::string& title = "New Tab", const std::string& url = "");
     
-    // Navigate specific tab to URL
     void navigate(int tabId, const std::string& url);
     
-    // Set which tab is active
     void setActiveTab(int id);
     
-    // Close tab by ID
     void closeTab(int id);
     
-    // Get the currently active tab ID
-    int getActiveTab() const { return activeTabId; }
+    int getActiveTab() const;
     
-    // Get number of open tabs
-    size_t count() const { return tabs_.size(); }
+    size_t count() const;
     
-    // Close all tabs (used on shutdown)
+    const std::vector<int> getAllTabIds() const;
+    
+    const TabInfo* getTabInfo(int tabId) const;
+    
+    void setTabLoading(int tabId, bool loading);
+    
     void closeAllTabs();
 
 private:
