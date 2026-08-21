@@ -10,15 +10,18 @@
 namespace lethe {
 namespace aletheia {
 
-AletheiaBridge::AletheiaBridge(Engine* engine) : engine_(engine) {
+AletheiaBridge::AletheiaBridge(Engine* engine,
+                               const llm::SearchConfig& searchConfig)
+    : engine_(engine) {
     if (engine_) {
         // Initialize the LLM search service with the engine's HTTP client
-        // and VPN tunnel.
-        llm::SearchConfig searchCfg;
-        searchCfg.useVpn = true;
+        // and VPN tunnel. All LLM traffic therefore inherits the engine's
+        // policies: DoH resolution, VPN fail-closed routing, TLS policy.
+        llm::SearchConfig cfg = searchConfig;
+        cfg.useVpn = true;
         searchService_ = std::make_unique<llm::SearchService>();
         searchInitialized_ = searchService_->initialize(
-            engine_->httpClient(), engine_->vpnTunnel(), searchCfg);
+            engine_->httpClient(), engine_->vpnTunnel(), cfg);
         if (searchInitialized_) {
             std::cout << "[aletheia] Lethe bridge initialized with LLM search" << std::endl;
         }

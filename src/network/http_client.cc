@@ -135,18 +135,11 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             return resp;
         }
 
-        // Built-in VPN routing policy — fail closed. A destination covered
-        // by the tunnel's allowed CIDRs must never be fetched in plaintext:
-        // if the tunnel is configured for this host but not connected, the
-        // request is blocked rather than silently leaked.
-        if (vpnTunnel_ && vpnTunnel_->shouldRouteThroughVpn(host) && !isVpnActive()) {
-            closeConnection();
-            resp.error = "Blocked: " + host + " requires the VPN tunnel "
-                         "(allowed CIDR match) but the tunnel is down";
-            std::cerr << "[lethe-http] " << resp.error << std::endl;
-            return resp;
-        }
-        const bool viaVpn = isVpnActive() && vpnTunnel_->shouldRouteThroughVpn(host);
+        // VPN fail-closed policy is enforced inside connectToHost on the
+        // RESOLVED destination address (after DoH), so hostname destinations
+        // are protected exactly like IP literals.
+        const bool viaVpn = isVpnActive() && vpnTunnel_ &&
+            vpnTunnel_->shouldRouteThroughVpn(host);
 
         std::cout << "[lethe-http] "
                   << (currentReq.method == HttpMethod::GET ? "GET" : "REQ")
@@ -408,6 +401,19 @@ bool HttpClient::connectToHost(const std::string& host, int port,
             return false;
         }
         connectTarget = ip;
+    }
+
+    // Built-in VPN routing policy — fail closed on the RESOLVED destination.
+    // Evaluating after resolution means hostname destinations get the same
+    // protection as IP literals: with a full-tunnel config, nothing leaves
+    // the machine while the tunnel is down.
+    if (vpnTunnel_ && vpnTunnel_->shouldRouteThroughVpn(connectTarget) &&
+        !isVpnActive()) {
+        lastConnectError_ = "Blocked: " + host + " (" + connectTarget +
+                            ") requires the VPN tunnel (allowed CIDR match) "
+                            "but the tunnel is down";
+        std::cerr << "[lethe-http] " << lastConnectError_ << std::endl;
+        return false;
     }
 
     if (!openTcp(connectTarget, port)) {

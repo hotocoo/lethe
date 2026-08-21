@@ -36,7 +36,11 @@ struct BrowserStatus {
 // The Aletheia OS bridge for Lethe.
 class AletheiaBridge {
 public:
-    explicit AletheiaBridge(Engine* engine);
+    // searchConfig overrides the default LLM search settings (engine URL,
+    // timeouts, VPN preference). The default targets the built-in
+    // Aletheia search endpoint.
+    explicit AletheiaBridge(Engine* engine,
+                            const llm::SearchConfig& searchConfig = {});
     ~AletheiaBridge();
 
     // --- Native browser control ---
