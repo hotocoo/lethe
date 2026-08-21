@@ -124,6 +124,7 @@ public:
     // After this long since the handshake completed, the tunnel refuses to
     // encrypt or decrypt and must rekey. Default: 180s (WireGuard standard).
     void setSessionLifetime(std::chrono::milliseconds ms);
+    std::chrono::milliseconds sessionLifetime() const;
     bool isSessionExpired() const;
     // Milliseconds elapsed since the handshake completed (-1 if never done).
     int64_t millisecondsSinceHandshake() const;

@@ -89,6 +89,10 @@ BrowserStatus AletheiaBridge::getStatus() const {
     BrowserStatus status;
     if (!engine_) return status;
 
+    // Status polling doubles as the VPN maintenance driver: rekey, retry,
+    // and keepalive happen here so the OS never sees a stale session.
+    engine_->pumpVpnMaintenance();
+
     status.running = engine_->isRunning();
     status.vpnConnected = engine_->isVpnConnected();
     status.currentUrl = getCurrentUrl();

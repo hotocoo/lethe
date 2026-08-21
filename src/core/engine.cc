@@ -1,4 +1,5 @@
 // engine.cc — Core browser engine implementation
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
@@ -74,6 +75,8 @@ void Engine::shutdown() {
     std::cout << "[lethe] Shutting down components..." << std::endl;
     
     history_.reset();
+    if (vpnTransport_) vpnTransport_->close();
+    vpnTransport_.reset();
     vpnTunnel_.reset();
     httpClient_.reset();
     skia_renderer_.reset();
@@ -130,7 +133,7 @@ void Engine::init_vpn() {
 
 bool Engine::enableVpn(const vpn::VpnConfig& cfg) {
     if (!vpnTunnel_) return false;
-    
+
     vpn::VpnConfig config = cfg;
     // Generate a private key if none provided.
     if (config.privateKey == vpn::Key{}) {
@@ -139,32 +142,139 @@ bool Engine::enableVpn(const vpn::VpnConfig& cfg) {
             return false;
         }
     }
-    
+
     if (!vpnTunnel_->configureClient(config)) {
         std::cerr << "[lethe-vpn] Failed to configure client tunnel" << std::endl;
         return false;
     }
-    
+
+    // Bind the UDP transport used for handshake and data datagrams.
+    if (!vpnTransport_) vpnTransport_ = std::make_unique<UdpTransport>();
+    if (!vpnTransport_->isOpen() && !vpnTransport_->bind("0.0.0.0", 0)) {
+        std::cerr << "[lethe-vpn] Failed to bind VPN transport: "
+                  << vpnTransport_->lastError() << std::endl;
+        return false;
+    }
+
     config_.vpnEnabled = true;
     config_.vpnConfig = config;
-    
-    // Attempt handshake init (in a real deployment this would be sent over the network).
-    vpn::HandshakeMessage initMsg;
-    if (vpnTunnel_->createHandshakeInit(initMsg)) {
-        std::cout << "[lethe-vpn] Handshake initiated (" 
-                  << vpn::toHex(initMsg.index) << ")" << std::endl;
+
+    // Perform a real WireGuard-style handshake over UDP. If the endpoint is
+    // not reachable yet, maintenance retries with backoff via pumpVpnMaintenance().
+    lastHandshakeAttemptMs_ = nowMs();
+    if (!performVpnHandshake()) {
+        std::cout << "[lethe-vpn] Endpoint not reachable yet; will retry" << std::endl;
     }
-    
+
     return true;
 }
 
 bool Engine::disableVpn() {
     if (!vpnTunnel_) return false;
-    
+
     vpnTunnel_->markStale();
+    if (vpnTransport_) {
+        vpnTransport_->close();
+    }
     config_.vpnEnabled = false;
     std::cout << "[lethe-vpn] VPN disabled" << std::endl;
     return true;
+}
+
+// --- Real VPN networking -----------------------------------------------------
+
+uint64_t Engine::nowMs() const {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+bool Engine::performVpnHandshake() {
+    if (!vpnTunnel_ || !vpnTransport_ || !vpnTransport_->isOpen()) return false;
+    const auto& cfg = config_.vpnConfig;
+    if (cfg.endpointPort <= 0 || cfg.endpointHost.empty()) return false;
+
+    // Reset any previous session (fresh ephemerals, clean replay window).
+    vpnTunnel_->prepareRehandshake();
+
+    vpn::HandshakeMessage initMsg;
+    if (!vpnTunnel_->createHandshakeInit(initMsg)) {
+        std::cerr << "[lethe-vpn] Failed to create handshake init" << std::endl;
+        return false;
+    }
+
+    std::vector<uint8_t> respData;
+    const int n = vpnTransport_->sendAndReceive(
+        cfg.endpointHost, cfg.endpointPort, initMsg.serialize(), respData,
+        std::chrono::milliseconds(2000), /*onlyFromSender=*/true);
+    if (n <= 0) {
+        std::cerr << "[lethe-vpn] No handshake response from "
+                  << cfg.endpoint() << std::endl;
+        return false;
+    }
+
+    vpn::HandshakeMessage respMsg;
+    if (!vpn::HandshakeMessage::deserialize(respData.data(),
+                                            static_cast<size_t>(n), respMsg)) {
+        std::cerr << "[lethe-vpn] Malformed handshake response" << std::endl;
+        return false;
+    }
+    if (!vpnTunnel_->processHandshakeResponse(respMsg)) {
+        std::cerr << "[lethe-vpn] Handshake rejected by tunnel" << std::endl;
+        return false;
+    }
+    std::cout << "[lethe-vpn] Session established with "
+              << cfg.endpoint() << std::endl;
+    return true;
+}
+
+void Engine::sendVpnKeepalive() {
+    if (!vpnTunnel_ || !vpnTransport_ || !vpnTunnel_->isConnected()) return;
+    static const uint8_t ka[1] = {0};
+    std::vector<uint8_t> ct;
+    if (vpnTunnel_->encryptDataPacket(ka, sizeof(ka), ct)) {
+        vpnTransport_->sendTo(config_.vpnConfig.endpointHost,
+                              config_.vpnConfig.endpointPort, ct);
+    }
+}
+
+void Engine::pumpVpnMaintenance() {
+    if (!running_ || !config_.vpnEnabled || !vpnTunnel_) return;
+
+    const uint64_t now = nowMs();
+
+    if (vpnTunnel_->isConnected()) {
+        // Rekey at 2/3 of the session lifetime (WireGuard REKEY_AFTER_TIME
+        // is 120s of the 180s REJECT_AFTER_TIME). Expired sessions rekey now.
+        const auto life = vpnTunnel_->sessionLifetime();
+        const auto sinceHs = std::chrono::milliseconds(
+            vpnTunnel_->millisecondsSinceHandshake());
+        if (sinceHs > (life * 2) / 3 || vpnTunnel_->isSessionExpired()) {
+            std::cout << "[lethe-vpn] Rekeying session" << std::endl;
+            lastHandshakeAttemptMs_ = now;
+            performVpnHandshake();
+            lastKeepaliveMs_ = now;
+            return;
+        }
+
+        // Keepalive when the peer has gone quiet (NAT hold + liveness).
+        constexpr uint64_t kKeepaliveIntervalMs = 25000; // WireGuard default
+        const int64_t sinceRecv = vpnTunnel_->millisecondsSinceLastReceive();
+        const bool quiet = sinceRecv < 0 ||
+            static_cast<uint64_t>(sinceRecv) > kKeepaliveIntervalMs;
+        if (quiet && now - lastKeepaliveMs_ > kKeepaliveIntervalMs) {
+            lastKeepaliveMs_ = now;
+            sendVpnKeepalive();
+        }
+        return;
+    }
+
+    // Not connected: retry failed handshakes at most every 5 seconds.
+    constexpr uint64_t kRetryIntervalMs = 5000;
+    if (now - lastHandshakeAttemptMs_ >= kRetryIntervalMs) {
+        lastHandshakeAttemptMs_ = now;
+        performVpnHandshake();
+    }
 }
 
 bool Engine::isVpnConnected() const {

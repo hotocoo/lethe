@@ -35,7 +35,14 @@ Lethe ships with a fully integrated VPN client, so privacy is always available w
 - **Session lifetime limits**: WireGuard REJECT_AFTER_TIME semantics —
   sessions expire after 180s and refuse data until rekeyed; message-count
   exhaustion (REJECT_AFTER_MESSAGES) is also enforced
-- **Flexible routing**: CIDR-based allowed IPs (split or full tunnel)
+- **Flexible routing with fail-closed policy**: CIDR-based allowed IPs
+  (split or full tunnel). Destinations covered by the tunnel's CIDRs are
+  **blocked, never leaked in plaintext**, while the tunnel is down — the
+  HTTP client refuses them until the VPN reconnects
+- **Real handshakes + self-maintenance**: the engine performs genuine UDP
+  handshakes against the VPN server and transparently rekeys at 2/3 of the
+  session lifetime (WireGuard REKEY_AFTER_TIME), retries unreachable
+  endpoints with backoff, and sends 25s keepalives to hold NAT mappings
 - **MTU enforcement**: Standard 1420-byte WireGuard MTU
 - **DNS over VPN**: Route DNS through the tunnel for leak-free resolution
 
@@ -189,7 +196,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (66 tests)
+# Run the full test suite (71 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -204,6 +211,8 @@ The test suite covers:
 - **Anti-replay window** (duplicates, reordering, window expiry, auth-failure neutrality)
 - **Session lifetime expiry** (REJECT_AFTER_TIME)
 - **Server DoS hardening** (idle eviction, client cap, handshake rate limiting)
+- **Engine VPN networking** (real UDP handshake, transparent rekey, unreachable-endpoint endurance)
+- **HTTP fail-closed policy** (VPN-routed destinations blocked while the tunnel is down)
 - CIDR routing
 - **UDP transport** (real loopback sockets: bind, send/recv, timeouts)
 - **Reference VPN server over real UDP** (handshake, data path, multi-client, tamper rejection)

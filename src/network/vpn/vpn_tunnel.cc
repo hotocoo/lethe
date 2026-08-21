@@ -401,6 +401,11 @@ void VpnTunnel::setSessionLifetime(std::chrono::milliseconds ms) {
     sessionLifetime_ = ms;
 }
 
+std::chrono::milliseconds VpnTunnel::sessionLifetime() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return sessionLifetime_;
+}
+
 bool VpnTunnel::isSessionExpired() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return isSessionExpiredLocked();

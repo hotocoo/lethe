@@ -135,13 +135,18 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             return resp;
         }
 
-        // Built-in VPN: if active and this destination is routed through the
-        // tunnel, note it (the tunnel encrypts at the packet level).
-        bool viaVpn = false;
-        if (isVpnActive() && vpnTunnel_->shouldRouteThroughVpn(host)) {
-            viaVpn = true;
-            std::cout << "[lethe-http] Routing " << host << " through built-in VPN" << std::endl;
+        // Built-in VPN routing policy — fail closed. A destination covered
+        // by the tunnel's allowed CIDRs must never be fetched in plaintext:
+        // if the tunnel is configured for this host but not connected, the
+        // request is blocked rather than silently leaked.
+        if (vpnTunnel_ && vpnTunnel_->shouldRouteThroughVpn(host) && !isVpnActive()) {
+            closeConnection();
+            resp.error = "Blocked: " + host + " requires the VPN tunnel "
+                         "(allowed CIDR match) but the tunnel is down";
+            std::cerr << "[lethe-http] " << resp.error << std::endl;
+            return resp;
         }
+        const bool viaVpn = isVpnActive() && vpnTunnel_->shouldRouteThroughVpn(host);
 
         std::cout << "[lethe-http] "
                   << (currentReq.method == HttpMethod::GET ? "GET" : "REQ")
