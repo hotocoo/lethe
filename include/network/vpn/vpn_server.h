@@ -76,6 +76,19 @@ public:
     // Set the callback invoked for each decrypted client datagram.
     void setDataCallback(DataCallback cb);
 
+    // --- DoS hardening (all knobs have safe defaults) ---
+    // Evict clients not seen for this long. Default: 180s.
+    void setClientIdleTimeout(std::chrono::milliseconds ms);
+    // Refuse new handshakes beyond this many concurrent clients.
+    // Default: 1024. Excess handshakes are dropped silently.
+    void setMaxClients(size_t n);
+    // Allow at most maxPerWindow handshakes per source host per window.
+    // Default: 16 per 10s. Excess handshakes are dropped silently.
+    void setHandshakeRateLimit(size_t maxPerWindow, std::chrono::milliseconds window);
+    // Evict idle clients now. Returns the number evicted. Called
+    // automatically from process(); exposed for tests and admin sweeps.
+    size_t sweepIdleClients();
+
     // The port the server is bound to (0 if not started).
     int port() const;
 
@@ -89,7 +102,18 @@ private:
         int port = 0;                      // client source port
         std::string keyHex;                // handshake index hex (client id)
         bool connected = false;
+        std::chrono::steady_clock::time_point lastSeenTime{}; // idle tracking
     };
+
+    // Per-source-host handshake rate bucket.
+    struct RateBucket {
+        std::chrono::steady_clock::time_point windowStart{};
+        size_t count = 0;
+    };
+
+    // Handshake admission control. Returns true if allowed. Caller must
+    // hold mutex_.
+    bool admitHandshakeLocked(const std::string& fromHost);
 
     void handleDatagram(const uint8_t* data, size_t len,
                         const std::string& fromHost, int fromPort);
@@ -106,6 +130,13 @@ private:
 
     mutable std::mutex mutex_;
     std::map<std::string, ClientSession> clients_; // keyHex -> session
+    std::map<std::string, RateBucket> handshakeRates_; // host -> bucket
+
+    // Hardening knobs.
+    std::chrono::milliseconds clientIdleTimeout_{std::chrono::seconds(180)};
+    std::chrono::milliseconds rateLimitWindow_{std::chrono::seconds(10)};
+    size_t maxHandshakesPerWindow_ = 16;
+    size_t maxClients_ = 1024;
 
     DataCallback dataCallback_;
 };

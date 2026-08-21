@@ -28,6 +28,13 @@ Lethe ships with a fully integrated VPN client, so privacy is always available w
   - HMAC-SHA256 / HKDF-SHA256 for indexing and key derivation
 - **Forward secrecy**: Ephemeral keys per handshake, cleared after use
 - **Tamper detection**: Every packet authenticated; tampered packets rejected
+- **Anti-replay**: Explicit 64-bit wire counter with a 2048-packet sliding
+  window (WireGuard-standard) — duplicates, retransmissions, and too-old
+  packets are rejected before decryption; failed authentication never
+  moves the window
+- **Session lifetime limits**: WireGuard REJECT_AFTER_TIME semantics —
+  sessions expire after 180s and refuse data until rekeyed; message-count
+  exhaustion (REJECT_AFTER_MESSAGES) is also enforced
 - **Flexible routing**: CIDR-based allowed IPs (split or full tunnel)
 - **MTU enforcement**: Standard 1420-byte WireGuard MTU
 - **DNS over VPN**: Route DNS through the tunnel for leak-free resolution
@@ -51,6 +58,10 @@ reference server, so the tunnel works end-to-end (not just in-process).
 - **Reference server** (`lethe-vpn-server`): a standalone UDP server that performs
   WireGuard-style handshakes with any number of clients and maintains per-client
   tunnels with independent data keys.
+- **Server DoS hardening**: per-source-host handshake rate limiting
+  (16 per 10s by default), a concurrent-client cap (1024), and idle-client
+  eviction (180s) — rejected handshakes are dropped silently so they cannot
+  be amplified, and the rate-tracking map is memory-bounded.
 
 ```bash
 # Start the reference VPN server (generates and prints a key if none given)
@@ -178,7 +189,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (57 tests)
+# Run the full test suite (66 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -190,6 +201,9 @@ The test suite covers:
 - VPN tunnel handshake (loopback client-server)
 - VPN data path (bidirectional encryption/decryption)
 - Tamper detection and MTU enforcement
+- **Anti-replay window** (duplicates, reordering, window expiry, auth-failure neutrality)
+- **Session lifetime expiry** (REJECT_AFTER_TIME)
+- **Server DoS hardening** (idle eviction, client cap, handshake rate limiting)
 - CIDR routing
 - **UDP transport** (real loopback sockets: bind, send/recv, timeouts)
 - **Reference VPN server over real UDP** (handshake, data path, multi-client, tamper rejection)

@@ -70,8 +70,15 @@ LETHE_TEST_CASE(VpnTunnel_DataPath_ClientToServer) {
     CHECK_TRUE(client.encryptDataPacket(
         reinterpret_cast<const uint8_t*>(message.data()), message.size(), ciphertext));
 
-    // Ciphertext should be larger (tag added).
-    CHECK_EQ(ciphertext.size(), message.size() + TAG_BYTES);
+    // Ciphertext should be larger (wire counter + tag added).
+    CHECK_EQ(ciphertext.size(), message.size() + COUNTER_BYTES + TAG_BYTES);
+
+    // The counter travels explicitly in the header (little-endian).
+    uint64_t wireCounter = 0;
+    for (size_t i = 0; i < COUNTER_BYTES; i++) {
+        wireCounter |= static_cast<uint64_t>(ciphertext[i]) << (8 * i);
+    }
+    CHECK_EQ(wireCounter, 0u); // First data packet uses counter 0.
 
     std::vector<uint8_t> plaintext;
     CHECK_TRUE(server.decryptDataPacket(ciphertext.data(), ciphertext.size(), plaintext));

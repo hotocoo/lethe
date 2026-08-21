@@ -57,6 +57,9 @@ void VpnServer::stop() {
 int VpnServer::process(std::chrono::milliseconds timeout) {
     if (!transport_ || !running_) return 0;
 
+    // Opportunistic housekeeping: evict clients idle past the timeout.
+    sweepIdleClients();
+
     int processed = 0;
     std::string fromHost;
     int fromPort = 0;
@@ -81,7 +84,10 @@ bool VpnServer::sendToClient(const std::string& clientKey,
                              const uint8_t* data, size_t len) {
     if (!transport_ || !running_) return false;
 
+    // Encrypt and snapshot the endpoint under the lock.
     std::vector<uint8_t> ciphertext;
+    std::string host;
+    int port = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = clients_.find(clientKey);
@@ -91,13 +97,12 @@ bool VpnServer::sendToClient(const std::string& clientKey,
         if (!session.tunnel->encryptDataPacket(data, len, ciphertext)) {
             return false;
         }
+        host = session.host;
+        port = session.port;
     }
 
     // Send outside the lock (encryption already done).
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = clients_.find(clientKey);
-    if (it == clients_.end()) return false;
-    return transport_->sendTo(it->second.host, it->second.port, ciphertext);
+    return transport_->sendTo(host, port, ciphertext);
 }
 
 bool VpnServer::sendToClient(const std::string& clientKey,
@@ -145,23 +150,29 @@ void VpnServer::handleDatagram(const uint8_t* data, size_t len,
         return;
     }
 
-    // Data packet: find the session by source address.
-    ClientSession* session = findSessionByAddress(fromHost, fromPort);
-    if (!session || !session->connected || !session->tunnel) {
-        std::cerr << "[lethe-vpn-server] Data packet from unknown client "
-                  << fromHost << ":" << fromPort << std::endl;
-        return;
-    }
-
+    // Data packet: look up, decrypt, and stamp the session under the lock;
+    // deliver the callback outside it (the callback may re-enter the server).
     std::vector<uint8_t> plaintext;
-    if (!session->tunnel->decryptDataPacket(data, len, plaintext)) {
-        std::cerr << "[lethe-vpn-server] Failed to decrypt packet from "
-                  << session->keyHex << std::endl;
-        return;
+    std::string keyHex;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ClientSession* session = findSessionByAddress(fromHost, fromPort);
+        if (!session || !session->connected || !session->tunnel) {
+            std::cerr << "[lethe-vpn-server] Data packet from unknown client "
+                      << fromHost << ":" << fromPort << std::endl;
+            return;
+        }
+        if (!session->tunnel->decryptDataPacket(data, len, plaintext)) {
+            std::cerr << "[lethe-vpn-server] Failed to decrypt packet from "
+                      << session->keyHex << std::endl;
+            return;
+        }
+        session->lastSeenTime = std::chrono::steady_clock::now();
+        keyHex = session->keyHex;
     }
 
     if (dataCallback_) {
-        dataCallback_(session->keyHex, plaintext.data(), plaintext.size());
+        dataCallback_(keyHex, plaintext.data(), plaintext.size());
     }
 }
 
@@ -169,9 +180,15 @@ void VpnServer::handleHandshakeInit(const HandshakeMessage& msg,
                                     const std::string& fromHost, int fromPort) {
     std::string keyHex = toHex(msg.index);
 
-    // If this address already has a session, it's a re-handshake; replace it.
+    // Admission control: rate limit per source host and cap total clients.
+    // Rejected handshakes are dropped silently (WireGuard behavior): no
+    // response means no amplification for attackers.
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (!admitHandshakeLocked(fromHost)) {
+            return;
+        }
+        // If this address already has a session, it's a re-handshake; replace it.
         ClientSession* existing = findSessionByAddress(fromHost, fromPort);
         if (existing) {
             clients_.erase(existing->keyHex);
@@ -201,6 +218,7 @@ void VpnServer::handleHandshakeInit(const HandshakeMessage& msg,
         session.port = fromPort;
         session.keyHex = keyHex;
         session.connected = true;
+        session.lastSeenTime = std::chrono::steady_clock::now();
         clients_[keyHex] = std::move(session);
     }
 
@@ -221,6 +239,90 @@ VpnServer::ClientSession* VpnServer::findSessionByAddress(const std::string& hos
         }
     }
     return nullptr;
+}
+
+// --- DoS hardening -----------------------------------------------------------
+
+void VpnServer::setClientIdleTimeout(std::chrono::milliseconds ms) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    clientIdleTimeout_ = ms;
+}
+
+void VpnServer::setMaxClients(size_t n) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    maxClients_ = n;
+}
+
+void VpnServer::setHandshakeRateLimit(size_t maxPerWindow,
+                                      std::chrono::milliseconds window) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    maxHandshakesPerWindow_ = maxPerWindow;
+    rateLimitWindow_ = window;
+}
+
+size_t VpnServer::sweepIdleClients() {
+    size_t evicted = 0;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it = clients_.begin(); it != clients_.end();) {
+            const ClientSession& session = it->second;
+            const bool idle = session.lastSeenTime.time_since_epoch().count() != 0 &&
+                now - session.lastSeenTime > clientIdleTimeout_;
+            if (idle) {
+                it = clients_.erase(it);
+                evicted++;
+            } else {
+                ++it;
+            }
+        }
+    }
+    if (evicted > 0) {
+        std::cout << "[lethe-vpn-server] Evicted " << evicted
+                  << " idle client(s)" << std::endl;
+    }
+    return evicted;
+}
+
+bool VpnServer::admitHandshakeLocked(const std::string& fromHost) {
+    // Cap concurrent clients.
+    if (clients_.size() >= maxClients_) {
+        return false;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+
+    // Bound the rate-map memory: spoofed-source floods must not grow it
+    // forever. Prune expired buckets past the cap; still full => fail closed.
+    constexpr size_t MAX_RATE_BUCKETS = 4096;
+    if (handshakeRates_.size() >= MAX_RATE_BUCKETS) {
+        for (auto it = handshakeRates_.begin(); it != handshakeRates_.end();) {
+            if (it->second.count == 0 ||
+                now - it->second.windowStart > rateLimitWindow_) {
+                it = handshakeRates_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (handshakeRates_.size() >= MAX_RATE_BUCKETS) {
+            return false;
+        }
+    }
+
+    // Token-window rate limit per source host.
+    RateBucket& bucket = handshakeRates_[fromHost];
+    if (bucket.count > 0 && now - bucket.windowStart > rateLimitWindow_) {
+        bucket.windowStart = now;
+        bucket.count = 0;
+    }
+    if (bucket.count == 0) {
+        bucket.windowStart = now;
+    }
+    if (bucket.count >= maxHandshakesPerWindow_) {
+        return false;
+    }
+    bucket.count++;
+    return true;
 }
 
 } // namespace vpn

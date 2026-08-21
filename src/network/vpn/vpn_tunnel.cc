@@ -226,7 +226,17 @@ bool VpnTunnel::deriveDataKeys(const Key& sharedSecret, bool iAmInitiator) {
     }
 
     sendCounter_ = 0;
-    recvCounter_ = 0;
+
+    // Fresh keys start with a clean anti-replay window.
+    for (auto& word : replayBitmap_) word = 0;
+    highestReceivedCounter_ = 0;
+    replayWindowActive_ = false;
+
+    // Session lifetime starts at handshake completion.
+    handshakeTime_ = std::chrono::steady_clock::now();
+    handshakeTimeValid_ = true;
+    lastReceiveTimeValid_ = false;
+
     keysDerived_ = true;
     return true;
 }
@@ -239,20 +249,111 @@ bool VpnTunnel::encryptDataPacket(const uint8_t* plaintext, size_t len,
     if (!keysDerived_ || state_ != TunnelState::Connected) return false;
     if (len > static_cast<size_t>(mtu_)) return false; // Exceeds MTU
 
-    bool ok = encryptPacket(senderKey_, sendCounter_, plaintext, len, outCiphertext);
-    if (ok) sendCounter_++;
-    return ok;
+    // WireGuard REJECT_AFTER_MESSAGES / REJECT_AFTER_TIME: refuse to send on
+    // an exhausted or expired session. The peer must rekey.
+    if (sendCounter_ >= REJECT_AFTER_MESSAGES) { setState(TunnelState::Stale); return false; }
+    if (isSessionExpiredLocked()) { setState(TunnelState::Stale); return false; }
+
+    // Encrypt into a scratch buffer (encryptPacket owns its output), then
+    // prepend the wire header: 64-bit little-endian packet counter.
+    std::vector<uint8_t> box;
+    if (!encryptPacket(senderKey_, sendCounter_, plaintext, len, box)) {
+        return false;
+    }
+    outCiphertext.assign(COUNTER_BYTES, 0);
+    for (size_t i = 0; i < COUNTER_BYTES; i++) {
+        outCiphertext[i] = static_cast<uint8_t>((sendCounter_ >> (8 * i)) & 0xFF);
+    }
+    outCiphertext.insert(outCiphertext.end(), box.begin(), box.end());
+    sendCounter_++;
+    return true;
 }
 
 bool VpnTunnel::decryptDataPacket(const uint8_t* ciphertext, size_t len,
                                   std::vector<uint8_t>& outPlaintext) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!keysDerived_ || state_ != TunnelState::Connected) return false;
+    if (isSessionExpiredLocked()) { setState(TunnelState::Stale); return false; }
 
-    // Try to decrypt with the receiver key and the current receive counter.
-    bool ok = decryptPacket(receiverKey_, recvCounter_, ciphertext, len, outPlaintext);
-    if (ok) recvCounter_++;
-    return ok;
+    // Parse the explicit wire counter.
+    if (!ciphertext || len < COUNTER_BYTES + TAG_BYTES) return false;
+    uint64_t counter = 0;
+    for (size_t i = 0; i < COUNTER_BYTES; i++) {
+        counter |= static_cast<uint64_t>(ciphertext[i]) << (8 * i);
+    }
+
+    // Replay rejection BEFORE decryption (cheap, constant work).
+    if (counter >= REJECT_AFTER_MESSAGES) return false;
+    if (!replayIsFresh(counter)) return false;
+
+    // Authenticate + decrypt with the receiver key and the wire counter.
+    const bool ok = decryptPacket(receiverKey_, counter,
+                                  ciphertext + COUNTER_BYTES, len - COUNTER_BYTES,
+                                  outPlaintext);
+    if (!ok) return false; // Unauthenticated packets never move the window.
+
+    replayAccept(counter);
+    lastReceiveTime_ = std::chrono::steady_clock::now();
+    lastReceiveTimeValid_ = true;
+    return true;
+}
+
+// --- Anti-replay sliding window -------------------------------------------
+
+bool VpnTunnel::replayIsFresh(uint64_t counter) const {
+    if (!replayWindowActive_) return true; // First packet of the session.
+    if (counter > highestReceivedCounter_) return true; // New packet.
+    // Too old: outside the window behind the highest seen counter.
+    if (counter + REPLAY_WINDOW_BITS <= highestReceivedCounter_) return false;
+    // Within window: reject if already seen.
+    const uint64_t offset = highestReceivedCounter_ - counter; // < WINDOW here
+    const size_t word = static_cast<size_t>(offset / 64);
+    const uint64_t bit = 1ull << (offset % 64);
+    return (replayBitmap_[word] & bit) == 0;
+}
+
+void VpnTunnel::replayAccept(uint64_t counter) {
+    if (!replayWindowActive_) {
+        replayWindowActive_ = true;
+        highestReceivedCounter_ = counter;
+        replayBitmap_.fill(0);
+        replayBitmap_[0] |= 1ull; // Mark offset 0 (counter == highest).
+        return;
+    }
+    if (counter > highestReceivedCounter_) {
+        // Advance the window. Bit at old offset o moves to new offset
+        // o + advance, i.e. the bitmap shifts LEFT (toward higher offsets).
+        const uint64_t advance = counter - highestReceivedCounter_;
+        highestReceivedCounter_ = counter;
+        if (advance >= REPLAY_WINDOW_BITS) {
+            replayBitmap_.fill(0);
+        } else {
+            const size_t ws = static_cast<size_t>(advance / 64);
+            const size_t bs = static_cast<size_t>(advance % 64);
+            std::array<uint64_t, REPLAY_WINDOW_WORDS> next{};
+            for (size_t w = 0; w < REPLAY_WINDOW_WORDS; w++) {
+                uint64_t v = 0;
+                const int64_t hi = static_cast<int64_t>(w) - static_cast<int64_t>(ws);
+                const int64_t lo = hi - 1;
+                if (bs == 0) {
+                    if (hi >= 0 && hi < static_cast<int64_t>(REPLAY_WINDOW_WORDS)) {
+                        v = replayBitmap_[static_cast<size_t>(hi)];
+                    }
+                } else {
+                    if (hi >= 0 && hi < static_cast<int64_t>(REPLAY_WINDOW_WORDS)) {
+                        v |= replayBitmap_[static_cast<size_t>(hi)] << bs;
+                    }
+                    if (lo >= 0 && lo < static_cast<int64_t>(REPLAY_WINDOW_WORDS)) {
+                        v |= replayBitmap_[static_cast<size_t>(lo)] >> (64 - bs);
+                    }
+                }
+                next[w] = v;
+            }
+            replayBitmap_ = next;
+        }
+    }
+    const uint64_t offset = highestReceivedCounter_ - counter;
+    replayBitmap_[static_cast<size_t>(offset / 64)] |= 1ull << (offset % 64);
 }
 
 // --- Routing ---
@@ -280,8 +381,43 @@ void VpnTunnel::prepareRehandshake() {
     senderKey_.fill(0);
     receiverKey_.fill(0);
     sendCounter_ = 0;
-    recvCounter_ = 0;
+    for (auto& word : replayBitmap_) word = 0;
+    highestReceivedCounter_ = 0;
+    replayWindowActive_ = false;
+    handshakeTimeValid_ = false;
+    lastReceiveTimeValid_ = false;
     setState(TunnelState::Handshaking);
+}
+
+// --- Session lifetime -------------------------------------------------------
+
+bool VpnTunnel::isSessionExpiredLocked() const {
+    if (!handshakeTimeValid_) return false;
+    return std::chrono::steady_clock::now() - handshakeTime_ > sessionLifetime_;
+}
+
+void VpnTunnel::setSessionLifetime(std::chrono::milliseconds ms) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sessionLifetime_ = ms;
+}
+
+bool VpnTunnel::isSessionExpired() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return isSessionExpiredLocked();
+}
+
+int64_t VpnTunnel::millisecondsSinceHandshake() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!handshakeTimeValid_) return -1;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - handshakeTime_).count();
+}
+
+int64_t VpnTunnel::millisecondsSinceLastReceive() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!lastReceiveTimeValid_) return -1;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - lastReceiveTime_).count();
 }
 
 // --- CIDR matching (IPv4) ---

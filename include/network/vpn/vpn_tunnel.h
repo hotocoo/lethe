@@ -9,6 +9,7 @@
 // that the handshake protocol is fully testable in a loopback fashion.
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -32,6 +33,17 @@ enum class TunnelRole {
     Client,
     Server
 };
+
+// Data packet wire format:
+//   [0..7]   counter (uint64 little-endian)
+//   [8..]    ChaCha20-Poly1305 ciphertext || 16-byte tag
+// The explicit counter enables out-of-order delivery and makes replay
+// rejection deterministic instead of relying on in-order arrival.
+
+// WireGuard-style session limits.
+constexpr uint64_t REJECT_AFTER_MESSAGES =
+    0xFFFFFFFFFFFFFFFFull - (1ull << 13) - 1;              // ~2^64 packets
+constexpr auto REJECT_AFTER_TIME = std::chrono::seconds(180); // session lifetime
 
 // WireGuard-style handshake message types.
 enum class HandshakeType : uint8_t {
@@ -108,9 +120,32 @@ public:
     // Reconnect: reset to Handshaking state.
     void prepareRehandshake();
 
+    // --- Session lifetime (WireGuard REJECT_AFTER_TIME) ---
+    // After this long since the handshake completed, the tunnel refuses to
+    // encrypt or decrypt and must rekey. Default: 180s (WireGuard standard).
+    void setSessionLifetime(std::chrono::milliseconds ms);
+    bool isSessionExpired() const;
+    // Milliseconds elapsed since the handshake completed (-1 if never done).
+    int64_t millisecondsSinceHandshake() const;
+    // Milliseconds since the last authenticated packet was received
+    // (-1 if none received yet). Used for keepalive decisions.
+    int64_t millisecondsSinceLastReceive() const;
+
 private:
+    // Anti-replay sliding window (WireGuard-standard 2048-packet bitmap).
+    static constexpr size_t REPLAY_WINDOW_BITS = 2048;
+    static constexpr size_t REPLAY_WINDOW_WORDS = REPLAY_WINDOW_BITS / 64;
+
+    // Replay decision before decryption. Returns true if the counter is
+    // fresh (new or within window and unseen). Does not mutate state.
+    bool replayIsFresh(uint64_t counter) const;
+    // Record an authenticated packet: mark its bit and advance the window.
+    void replayAccept(uint64_t counter);
+
     void setState(TunnelState s);
     bool deriveDataKeys(const Key& sharedSecret, bool iAmSender);
+    // Session-expiry check; caller must hold mutex_.
+    bool isSessionExpiredLocked() const;
 
     TunnelRole role_ = TunnelRole::Client;
     TunnelState state_ = TunnelState::Disconnected;
@@ -127,8 +162,19 @@ private:
     Key senderKey_{};
     Key receiverKey_{};
     uint64_t sendCounter_ = 0;
-    uint64_t recvCounter_ = 0;
     bool keysDerived_ = false;
+
+    // Anti-replay window state (receiver side).
+    std::array<uint64_t, REPLAY_WINDOW_WORDS> replayBitmap_{};
+    uint64_t highestReceivedCounter_ = 0;
+    bool replayWindowActive_ = false;
+
+    // Session lifetime tracking.
+    std::chrono::steady_clock::time_point handshakeTime_{};
+    std::chrono::steady_clock::time_point lastReceiveTime_{};
+    bool handshakeTimeValid_ = false;
+    bool lastReceiveTimeValid_ = false;
+    std::chrono::milliseconds sessionLifetime_{REJECT_AFTER_TIME};
 
     // Config
     int mtu_ = 1420;

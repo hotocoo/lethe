@@ -133,6 +133,24 @@ static inline std::string lethe_test_error(const char* check, const char* file, 
         } \
     } while (0)
 
+#define CHECK_GE(a, b) \
+    do { \
+        auto _va = (a); \
+        auto _vb = (b); \
+        if (!(_va >= _vb)) { \
+            throw lethe::test::TestFailure(lethe_test_error("CHECK_GE failed: " #a " >= " #b, __FILE__, __LINE__)); \
+        } \
+    } while (0)
+
+#define CHECK_LT(a, b) \
+    do { \
+        auto _va = (a); \
+        auto _vb = (b); \
+        if (!(_va < _vb)) { \
+            throw lethe::test::TestFailure(lethe_test_error("CHECK_LT failed: " #a " < " #b, __FILE__, __LINE__)); \
+        } \
+    } while (0)
+
 #define CHECK_TRUE(cond) CHECK(cond)
 #define CHECK_FALSE(cond) CHECK(!(cond))
 
