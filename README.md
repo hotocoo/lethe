@@ -13,10 +13,16 @@ Minimalist, high-performance browser with maximum security and a built-in VPN, b
 
 ### Security
 - **Strict Content Security Policy (CSP)**: No eval(), no inline scripts by default
-- **Process sandboxing**: Renderer isolated with seccomp-bpf (Linux) / platform sandbox (macOS)
+- **Enforced sandboxing**: macOS Seatbelt profile denies file writes outside
+  temp locations; Linux seccomp-bpf default-deny allowlist (~90 syscalls)
+  with PR_SET_NO_NEW_PRIVS — the whole suite runs under the active sandbox
 - **Network isolation**: Per-tab network namespaces for multi-instance sessions
 - **Memory protection**: ASLR, DEP, stack canaries, heap metadata separation
-- **Secure TLS configuration**: TLS 1.3+, modern cipher suites only
+- **Secure TLS configuration**: TLS 1.3+, modern cipher suites only,
+  certificate verification on by default
+- **DNS over HTTPS (DoH)**: hostname resolution through a DoH JSON provider
+  (Cloudflare by default); plaintext system DNS is never used for targets,
+  and DoH failures block requests instead of leaking (fail closed)
 - **Built-in VPN**: WireGuard-style encrypted tunnel for all traffic
 
 ### Built-in VPN
@@ -196,7 +202,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (71 tests)
+# Run the full test suite (77 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -219,6 +225,8 @@ The test suite covers:
 - **Live HTTP fetching** (real TCP: GET, POST, headers, gzip, redirects, errors)
 - **Live HTTPS fetching** (real TLS 1.3 handshake with a self-signed cert server)
 - **Live LLM search** (SearchService web search + page read over real HTTP)
+- **DNS over HTTPS** (mock-provider end-to-end, dead-provider fail-closed, IP-literal bypass)
+- **Sandbox enforcement** (workspace write denied, temp write allowed under the live profile)
 - Engine VPN integration
 - LLM search service
 - Aletheia OS bridge
