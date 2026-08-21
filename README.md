@@ -202,7 +202,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (77 tests)
+# Run the full test suite (87 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -225,6 +225,8 @@ The test suite covers:
 - **Live HTTP fetching** (real TCP: GET, POST, headers, gzip, redirects, errors)
 - **Live HTTPS fetching** (real TLS 1.3 handshake with a self-signed cert server)
 - **Live LLM search** (SearchService web search + page read over real HTTP)
+- **Full-stack e2e** (Bridge -> LLM search -> DoH resolution -> VPN policy -> origin, with tunnel up and down)
+- **Reader-mode rendering** (HTML block extraction: titles, headings, lists, entities)
 - **DNS over HTTPS** (mock-provider end-to-end, dead-provider fail-closed, IP-literal bypass)
 - **Sandbox enforcement** (workspace write denied, temp write allowed under the live profile)
 - Engine VPN integration
