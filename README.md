@@ -42,6 +42,43 @@ vpnCfg.allowedCidrs = {"0.0.0.0/0"};  // Full tunnel
 engine.enableVpn(vpnCfg);
 ```
 
+#### Reference VPN Server & Network Transport
+The built-in VPN ships with a real UDP network transport layer and a runnable
+reference server, so the tunnel works end-to-end (not just in-process).
+
+- **UDP transport** (`UdpTransport`): portable POSIX UDP sockets (IPv4/IPv6) with
+  timeouts and a `sendAndReceive()` helper for handshake-style exchanges.
+- **Reference server** (`lethe-vpn-server`): a standalone UDP server that performs
+  WireGuard-style handshakes with any number of clients and maintains per-client
+  tunnels with independent data keys.
+
+```bash
+# Start the reference VPN server (generates and prints a key if none given)
+./build/lethe-vpn-server --host 0.0.0.0 --port 51820
+
+# Verify with the end-to-end client (uses the server's printed public key)
+./build/lethe-vpn-e2e-client --host 127.0.0.1 --port 51820 --server-pub <hex>
+```
+
+#### Live HTTP/HTTPS Fetching
+The `HttpClient` performs genuine network I/O — no stubs:
+
+- **TCP** connect with timeouts (IPv4/IPv6 via `getaddrinfo`)
+- **TLS** handshake via OpenSSL (SNI, version policy, certificate verification)
+- **HTTP/1.1** request writing and full response parsing
+- **Content-Length**, **chunked transfer-encoding**, and read-until-close bodies
+- **gzip/deflate** response decompression (zlib)
+- **Redirect following** (3xx + `Location`, up to 5 hops)
+
+```cpp
+lethe::TLSConfig tls;                 // TLS 1.3+, verifies certs by default
+lethe::HttpClient client;
+client.initialize(tls);
+lethe::HttpRequest req;
+req.url = "https://example.com";
+auto resp = client.sendRequest(req);  // real socket I/O
+```
+
 ### LLM Search Integration
 The Aletheia OS LLM uses Lethe's network stack for web access, ensuring all AI-driven searches are private and encrypted.
 
@@ -141,7 +178,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (37 tests)
+# Run the full test suite (57 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -154,6 +191,11 @@ The test suite covers:
 - VPN data path (bidirectional encryption/decryption)
 - Tamper detection and MTU enforcement
 - CIDR routing
+- **UDP transport** (real loopback sockets: bind, send/recv, timeouts)
+- **Reference VPN server over real UDP** (handshake, data path, multi-client, tamper rejection)
+- **Live HTTP fetching** (real TCP: GET, POST, headers, gzip, redirects, errors)
+- **Live HTTPS fetching** (real TLS 1.3 handshake with a self-signed cert server)
+- **Live LLM search** (SearchService web search + page read over real HTTP)
 - Engine VPN integration
 - LLM search service
 - Aletheia OS bridge

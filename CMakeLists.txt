@@ -45,6 +45,10 @@ endif()
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
 
+# OpenSSL is a hard requirement: expose it to all targets (core lib, tests,
+# GUI) so TLS code paths are compiled and exercised.
+add_compile_definitions(-DHAVE_OPENSSL)
+
 # --- Core library (no UI dependencies) ---
 # This is the heart of Lethe: engine, network, VPN, security, LLM search,
 # and the Aletheia bridge. It can be linked by the GUI app, tests, or the
@@ -82,6 +86,15 @@ target_link_libraries(lethe_core PUBLIC
 if(BUILD_WITH_SANDBOX)
     target_compile_definitions(lethe_core PUBLIC -DLETHE_SANDBOXING)
 endif()
+
+# --- Reference VPN server (standalone, always built) ---
+# A runnable UDP VPN server that the built-in VPN client connects to.
+add_executable(lethe-vpn-server tools/vpn_server_main.cc)
+target_link_libraries(lethe-vpn-server PRIVATE lethe_core)
+
+# End-to-end VPN client (for verifying a running lethe-vpn-server).
+add_executable(lethe-vpn-e2e-client tools/e2e_client.cc)
+target_link_libraries(lethe-vpn-e2e-client PRIVATE lethe_core)
 
 # --- GUI application (optional) ---
 if(BUILD_UI)

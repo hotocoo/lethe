@@ -6,8 +6,13 @@
 #include <vector>
 #include <chrono>
 #include <memory>
+#include <cstdint>
 #include "network/tls_config.h"
 #include "network/vpn/vpn_tunnel.h"
+
+#ifdef HAVE_OPENSSL
+#include <openssl/ssl.h>
+#endif
 
 namespace lethe {
 
@@ -27,6 +32,8 @@ struct HttpResponse {
     std::vector<char> body;
     bool success = false;
     std::string error;
+    // Final URL after redirects (may differ from the requested URL).
+    std::string finalUrl;
 };
 
 class HttpClient {
@@ -35,9 +42,9 @@ public:
     ~HttpClient();
 
     bool initialize(const TLSConfig& tlsConfig);
-    
+
     HttpResponse sendRequest(const HttpRequest& req);
-    
+
     void shutdown();
 
     // --- Built-in VPN integration ---
@@ -48,16 +55,45 @@ public:
     bool isVpnActive() const;
 
 private:
-    bool performTLSHandshake(const std::string& host, int port);
-    std::vector<char> readResponseBody();
-    void parseUrl(const std::string& url, std::string& scheme, std::string& host, std::string& path, int& port);
-    std::string buildHttpRequest(const HttpRequest& req, const std::string& host, const std::string& path, int port);
-    
+    // --- Connection management ---
+    bool connectToHost(const std::string& host, int port, const std::string& scheme,
+                       const std::chrono::seconds timeout);
+    void closeConnection();
+
+    // --- Raw I/O on the current connection ---
+    // Returns >0 bytes read, 0 on clean EOF, -1 on error, -2 on timeout.
+    int rawRead(uint8_t* buf, size_t len);
+    bool writeAll(const char* data, size_t len);
+    bool readLine(std::string& out);
+
+    // --- Response parsing ---
+    bool readFullResponse(HttpResponse& resp);
+    bool readBodyOfLength(HttpResponse& resp, size_t length);
+    bool readChunkedBody(HttpResponse& resp);
+    bool readBodyUntilClose(HttpResponse& resp);
+    void maybeDecompressBody(HttpResponse& resp);
+
+    // --- URL / request building ---
+    void parseUrl(const std::string& url, std::string& scheme, std::string& host,
+                  std::string& path, int& port);
+    std::string buildHttpRequest(const HttpRequest& req, const std::string& host,
+                                 const std::string& path, int port);
+
     TLSConfig tlsConfig_;
     bool initialized_ = false;
     std::shared_ptr<vpn::VpnTunnel> vpnTunnel_;
+
+    // Current connection state (one connection at a time).
+    int socketFd_ = -1;
+    bool usingTls_ = false;
+    std::chrono::milliseconds ioTimeout_ = std::chrono::seconds(30);
+#ifdef HAVE_OPENSSL
+    SSL* ssl_ = nullptr;
+    SSL_CTX* sslCtx_ = nullptr;
+#endif
 };
 
 } // namespace lethe
 
 #endif // LETHE_NETWORK_HTTP_CLIENT_H
+
