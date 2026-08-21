@@ -5,6 +5,7 @@
 #include <string>
 #include <functional>
 #include "core/engine.h"
+#include "renderer/html_view.h"
 
 namespace lethe {
 
@@ -29,6 +30,8 @@ private:
     GtkWidget* webView_;
     std::string currentUrl_;
     bool isLoading_;
+    std::vector<lethe::HtmlBlock> blocks_;
+    std::string errorText_;
 };
 
 } // namespace lethe
