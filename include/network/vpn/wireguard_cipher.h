@@ -78,6 +78,10 @@ bool hkdfSha256(const uint8_t* ikm, size_t ikmLen, const uint8_t* salt, size_t s
 // Constant-time comparison (timing-safe).
 bool constantTimeEquals(const uint8_t* a, const uint8_t* b, size_t len);
 
+// Securely zero memory that held key material (compiler-barriered, unlike
+// memset, which dead-store elimination may remove).
+void secureCleanse(void* p, size_t n);
+
 // Hex-encode bytes (for config files / logs without leaking raw keys).
 std::string toHex(const uint8_t* data, size_t len);
 std::string toHex(const Key& key);

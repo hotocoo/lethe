@@ -5,6 +5,7 @@
 
 #include "network/vpn/wireguard_cipher.h"
 
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/core_names.h>
@@ -204,6 +205,18 @@ bool hkdfSha256(const uint8_t* ikm, size_t ikmLen, const uint8_t* salt, size_t s
 }
 
 // --- Utilities --------------------------------------------------------------
+
+void secureCleanse(void* p, size_t n) {
+    if (!p || n == 0) return;
+#if defined(HAVE_OPENSSL)
+    OPENSSL_cleanse(p, n);
+#elif defined(__GNUC__)
+    static void* (*volatile cleanse)(void*, int, size_t) = std::memset;
+    cleanse(p, 0, n);
+#else
+    std::memset(p, 0, n);
+#endif
+}
 
 bool constantTimeEquals(const uint8_t* a, const uint8_t* b, size_t len) {
     uint8_t diff = 0;

@@ -115,6 +115,11 @@ public:
     int mtu() const { return mtu_; }
     const Key& localPublicKey() const { return localPublicKey_; }
 
+    // Permanently wipe all secret key material (private, ephemeral, and
+    // session keys) and drop the session. Called on disable/shutdown so
+    // keys never linger in freed memory.
+    void wipeSecrets();
+
     // Mark the tunnel stale (e.g. after a timeout without keepalive).
     void markStale();
     // Reconnect: reset to Handshaking state.

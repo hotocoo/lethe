@@ -58,7 +58,9 @@ struct PendingHandshake {
 } // namespace
 
 VpnTunnel::VpnTunnel() = default;
-VpnTunnel::~VpnTunnel() = default;
+VpnTunnel::~VpnTunnel() {
+    wipeSecrets();
+}
 
 void VpnTunnel::setState(TunnelState s) {
     state_ = s;
@@ -365,6 +367,30 @@ bool VpnTunnel::shouldRouteThroughVpn(const std::string& destIp) const {
         if (ipInCidr(destIp, cidr)) return true;
     }
     return false;
+}
+
+// --- Secret hygiene ---------------------------------------------------------
+
+void VpnTunnel::wipeSecrets() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto cleanseKey = [](Key& k) {
+        secureCleanse(k.data(), k.size());
+    };
+    cleanseKey(localPrivateKey_);
+    cleanseKey(ephemeralPrivateKey_);
+    cleanseKey(ephemeralPublicKey_);
+    cleanseKey(senderKey_);
+    cleanseKey(receiverKey_);
+    keysDerived_ = false;
+    sendCounter_ = 0;
+    for (auto& word : replayBitmap_) word = 0;
+    highestReceivedCounter_ = 0;
+    replayWindowActive_ = false;
+    handshakeTimeValid_ = false;
+    lastReceiveTimeValid_ = false;
+    if (state_ == TunnelState::Connected || state_ == TunnelState::Handshaking) {
+        setState(TunnelState::Disconnected);
+    }
 }
 
 void VpnTunnel::markStale() {

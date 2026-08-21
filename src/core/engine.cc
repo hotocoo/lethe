@@ -179,7 +179,8 @@ bool Engine::enableVpn(const vpn::VpnConfig& cfg) {
 bool Engine::disableVpn() {
     if (!vpnTunnel_) return false;
 
-    vpnTunnel_->markStale();
+    // Wipe all key material: a disabled VPN must leave nothing behind.
+    vpnTunnel_->wipeSecrets();
     if (vpnTransport_) {
         vpnTransport_->close();
     }

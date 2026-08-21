@@ -196,6 +196,21 @@ LETHE_TEST_CASE(VpnTunnel_SessionLifetime_Tracking) {
     CHECK_GE(server.millisecondsSinceLastReceive(), 0);
 }
 
+LETHE_TEST_CASE(VpnTunnel_WipeSecrets_DropsSessionAndKeys) {
+    VpnTunnel client, server;
+    handshakeLoopback(client, server);
+    CHECK_TRUE(client.isConnected());
+
+    // Wiping must end the session and make the data path unusable.
+    client.wipeSecrets();
+    CHECK_FALSE(client.isConnected());
+    std::vector<uint8_t> ct, pt;
+    CHECK_FALSE(client.encryptDataPacket(
+        reinterpret_cast<const uint8_t*>("x"), 1, ct));
+    CHECK_TRUE(ct.empty());
+    CHECK_FALSE(server.decryptDataPacket(ct.data(), ct.size(), pt));
+}
+
 LETHE_TEST_CASE(VpnServer_IdleClient_Evicted) {
     Key serverPriv{};
     CHECK_TRUE(generatePrivateKey(serverPriv));
