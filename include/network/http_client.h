@@ -54,11 +54,31 @@ public:
     vpn::VpnTunnel* vpnTunnel() const { return vpnTunnel_.get(); }
     bool isVpnActive() const;
 
+    // --- Secure DNS (DNS-over-HTTPS) ---
+    // Route all hostname resolution through a DoH JSON provider
+    // (e.g. https://cloudflare-dns.com/dns-query). When configured,
+    // plaintext system DNS is never consulted for target hosts and a DoH
+    // failure blocks the request (fail closed) instead of leaking.
+    // Empty string disables. IP-literal URLs skip resolution entirely.
+    void setDohProvider(const std::string& url);
+    bool isDohEnabled() const { return !dohProvider_.empty(); }
+
 private:
     // --- Connection management ---
     bool connectToHost(const std::string& host, int port, const std::string& scheme,
                        const std::chrono::seconds timeout);
+    // Raw TCP connect (non-blocking with timeout); sets socketFd_.
+    bool openTcp(const std::string& target, int port);
+    // TLS handshake on the current socket; SNI/cert name = tlsHostname.
+    bool startTls(const std::string& tlsHostname);
     void closeConnection();
+
+    // --- Secure DNS helpers ---
+    static bool isIpLiteral(const std::string& host);
+    bool refreshDohBootstrap();
+    bool dohResolve(const std::string& host, std::string& outIp);
+    static std::string urlEncode(const std::string& in);
+    static bool looksLikeIpv4(const std::string& s);
 
     // --- Raw I/O on the current connection ---
     // Returns >0 bytes read, 0 on clean EOF, -1 on error, -2 on timeout.
@@ -82,6 +102,15 @@ private:
     TLSConfig tlsConfig_;
     bool initialized_ = false;
     std::shared_ptr<vpn::VpnTunnel> vpnTunnel_;
+
+    // Secure DNS state.
+    std::string dohProvider_;                              // empty = disabled
+    std::vector<std::string> dohProviderIps_;              // bootstrap cache
+    std::chrono::steady_clock::time_point dohBootstrapTime_{};
+    bool dohBootstrapValid_ = false;
+
+    // Diagnostic reason for the most recent connect failure.
+    std::string lastConnectError_;
 
     // Current connection state (one connection at a time).
     int socketFd_ = -1;

@@ -100,16 +100,23 @@ void Engine::init_security_policies() {
 
 void Engine::init_network_stack() {
     std::cout << "[lethe] Initializing network stack..." << std::endl;
-    
+
     TLSConfig tls;
     tls.init_modern_tls_config(MIN_TLS_VERSION, MAX_TLS_VERSION);
-    
+
     if (!httpClient_->initialize(tls)) {
         std::cerr << "[lethe] Failed to initialize HTTP client" << std::endl;
     }
-    
-    std::cout << "[lethe] Network stack initialized (TLS " 
-              << MIN_TLS_VERSION << "+, DoH)" << std::endl;
+
+    // Secure DNS: resolve all hostnames through DNS-over-HTTPS so plaintext
+    // DNS never leaks browsing activity. DoH failures block the request.
+    if (!config_.dnsProvider.empty()) {
+        httpClient_->setDohProvider(config_.dnsProvider);
+    }
+
+    std::cout << "[lethe] Network stack initialized (TLS "
+              << MIN_TLS_VERSION << "+, DoH: "
+              << (httpClient_->isDohEnabled() ? "on" : "off") << ")" << std::endl;
 }
 
 void Engine::init_vpn() {

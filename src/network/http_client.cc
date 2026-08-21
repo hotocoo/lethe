@@ -153,7 +153,10 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
                   << " " << currentUrl << (viaVpn ? " (via VPN)" : "") << std::endl;
 
         if (!connectToHost(host, port, scheme, currentReq.timeout)) {
-            resp.error = "Connection failed to " + host + ":" + std::to_string(port);
+            resp.error = !lastConnectError_.empty()
+                ? lastConnectError_
+                : "Connection failed to " + host + ":" + std::to_string(port);
+            lastConnectError_.clear();
             return resp;
         }
 
@@ -211,6 +214,171 @@ bool HttpClient::isVpnActive() const {
     return vpnTunnel_ && vpnTunnel_->isConnected();
 }
 
+// --- Secure DNS (DNS-over-HTTPS) ---------------------------------------------
+
+void HttpClient::setDohProvider(const std::string& url) {
+    dohProvider_ = url;
+    dohProviderIps_.clear();
+    dohBootstrapValid_ = false;
+    if (!url.empty()) {
+        std::cout << "[lethe-http][doh] provider configured: " << url << std::endl;
+    }
+}
+
+bool HttpClient::isIpLiteral(const std::string& host) {
+    in_addr v4{};
+    in6_addr v6{};
+    return ::inet_pton(AF_INET, host.c_str(), &v4) == 1 ||
+           ::inet_pton(AF_INET6, host.c_str(), &v6) == 1;
+}
+
+std::string HttpClient::urlEncode(const std::string& in) {
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(in.size() * 3);
+    for (unsigned char c : in) {
+        const bool unreserved = std::isalnum(c) || c == '-' || c == '.' ||
+                                c == '_' || c == '~';
+        if (unreserved) {
+            out.push_back(static_cast<char>(c));
+        } else {
+            out.push_back('%');
+            out.push_back(hex[c >> 4]);
+            out.push_back(hex[c & 0xF]);
+        }
+    }
+    return out;
+}
+
+bool HttpClient::looksLikeIpv4(const std::string& s) {
+    int octets = 0;
+    size_t i = 0;
+    while (i < s.size()) {
+        // One octet: 1-3 digits, value <= 255.
+        int digits = 0, value = 0;
+        while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
+            value = value * 10 + (s[i] - '0');
+            digits++;
+            i++;
+            if (digits > 3) return false;
+        }
+        if (digits == 0 || value > 255) return false;
+        octets++;
+        if (i < s.size() && s[i] == '.') {
+            i++;
+            if (i >= s.size()) return false; // trailing dot
+        } else {
+            break;
+        }
+    }
+    return octets == 4 && i == s.size();
+}
+
+bool HttpClient::refreshDohBootstrap() {
+    const auto now = std::chrono::steady_clock::now();
+    if (dohBootstrapValid_ &&
+        now - dohBootstrapTime_ < std::chrono::seconds(300)) {
+        return !dohProviderIps_.empty();
+    }
+
+    std::string scheme, phost, path;
+    int port = 0;
+    parseUrl(dohProvider_, scheme, phost, path, port);
+    if (phost.empty()) return false;
+
+    addrinfo hints;
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    addrinfo* res = nullptr;
+    const std::string portStr = std::to_string(port);
+    if (::getaddrinfo(phost.c_str(), portStr.c_str(), &hints, &res) != 0 || !res) {
+        dohProviderIps_.clear();
+        dohBootstrapValid_ = true;
+        dohBootstrapTime_ = now;
+        return false;
+    }
+
+    dohProviderIps_.clear();
+    char ipbuf[INET6_ADDRSTRLEN] = {0};
+    for (addrinfo* rp = res; rp; rp = rp->ai_next) {
+        void* src = rp->ai_family == AF_INET
+            ? static_cast<void*>(&reinterpret_cast<sockaddr_in*>(rp->ai_addr)->sin_addr)
+            : static_cast<void*>(&reinterpret_cast<sockaddr_in6*>(rp->ai_addr)->sin6_addr);
+        if (::inet_ntop(rp->ai_family, src, ipbuf, sizeof(ipbuf))) {
+            dohProviderIps_.emplace_back(ipbuf);
+        }
+    }
+    ::freeaddrinfo(res);
+
+    dohBootstrapValid_ = true;
+    dohBootstrapTime_ = now;
+    return !dohProviderIps_.empty();
+}
+
+bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
+    std::string pscheme, phost, ppath;
+    int pport = 0;
+    parseUrl(dohProvider_, pscheme, phost, ppath, pport);
+    if (phost.empty()) return false;
+
+    // Bootstrap: resolve the PROVIDER once via the system resolver. Only the
+    // trusted provider's address ever comes from plaintext DNS.
+    if (!refreshDohBootstrap()) {
+        std::cerr << "[lethe-http][doh] cannot resolve provider " << phost
+                  << std::endl;
+        return false;
+    }
+
+    std::string query = ppath;
+    if (query.find('?') == std::string::npos) query += '?';
+    else query += '&';
+    query += "name=" + urlEncode(host) + "&type=1"; // A record
+
+    for (const auto& pip : dohProviderIps_) {
+        closeConnection();
+        if (!openTcp(pip, pport)) continue;
+        if (pscheme == "https" && !startTls(phost)) { // SNI/cert = provider name
+            continue;
+        }
+
+        const std::string reqStr =
+            "GET " + query + " HTTP/1.1\r\n"
+            "Host: " + phost + "\r\n"
+            "Accept: application/dns-json\r\n"
+            "User-Agent: lethe-doh\r\n"
+            "Connection: close\r\n\r\n";
+
+        HttpResponse resp;
+        if (writeAll(reqStr.data(), reqStr.size()) && readFullResponse(resp) &&
+            resp.statusCode == 200) {
+            closeConnection();
+            // Extract the first IPv4 A record from the JSON Answer list.
+            const std::string body(resp.body.data(), resp.body.size());
+            size_t pos = 0;
+            while ((pos = body.find("\"data\"", pos)) != std::string::npos) {
+                const size_t colon = body.find(':', pos + 6);
+                const size_t q1 = body.find('"', colon + 1);
+                const size_t q2 = body.find('"', q1 + 1);
+                if (colon == std::string::npos || q1 == std::string::npos ||
+                    q2 == std::string::npos) break;
+                const std::string candidate = body.substr(q1 + 1, q2 - q1 - 1);
+                pos = q2;
+                if (looksLikeIpv4(candidate)) {
+                    outIp = candidate;
+                    std::cout << "[lethe-http][doh] " << host << " -> "
+                              << candidate << std::endl;
+                    return true;
+                }
+            }
+            continue; // valid response but no A record: try next provider IP
+        }
+        closeConnection();
+    }
+    return false;
+}
+
 void HttpClient::shutdown() {
     closeConnection();
     if (initialized_) {
@@ -226,7 +394,37 @@ bool HttpClient::connectToHost(const std::string& host, int port,
                                const std::chrono::seconds timeout) {
     closeConnection();
     ioTimeout_ = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
+    lastConnectError_.clear();
 
+    // Secure DNS: when a DoH provider is configured, target hostnames are
+    // resolved through it and the plaintext system resolver is never used.
+    // Failure is fatal for the request (fail closed), never a silent leak.
+    std::string connectTarget = host;
+    if (!dohProvider_.empty() && !isIpLiteral(host)) {
+        std::string ip;
+        if (!dohResolve(host, ip)) {
+            lastConnectError_ = "Blocked: secure DNS (DoH) lookup failed for " + host;
+            std::cerr << "[lethe-http][doh] " << lastConnectError_ << std::endl;
+            return false;
+        }
+        connectTarget = ip;
+    }
+
+    if (!openTcp(connectTarget, port)) {
+        if (lastConnectError_.empty()) {
+            std::cerr << "[lethe-http] Connect failed to " << host << ":"
+                      << port << std::endl;
+        }
+        return false;
+    }
+
+    if (scheme == "https") {
+        return startTls(host); // SNI + certificate name stay the real hostname.
+    }
+    return true;
+}
+
+bool HttpClient::openTcp(const std::string& target, int port) {
     addrinfo hints;
     std::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -235,9 +433,9 @@ bool HttpClient::connectToHost(const std::string& host, int port,
 
     addrinfo* res = nullptr;
     std::string portStr = std::to_string(port);
-    int rc = ::getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res);
+    int rc = ::getaddrinfo(target.c_str(), portStr.c_str(), &hints, &res);
     if (rc != 0 || !res) {
-        std::cerr << "[lethe-http] DNS resolution failed for " << host
+        std::cerr << "[lethe-http] Address resolution failed for " << target
                   << ": " << gai_strerror(rc) << std::endl;
         return false;
     }
@@ -260,8 +458,8 @@ bool HttpClient::connectToHost(const std::string& host, int port,
             FD_ZERO(&wfds);
             FD_SET(fd, &wfds);
             timeval tv;
-            tv.tv_sec = static_cast<time_t>(timeout.count() / 1000);
-            tv.tv_usec = static_cast<suseconds_t>((timeout.count() % 1000) * 1000);
+            tv.tv_sec = static_cast<time_t>(ioTimeout_.count() / 1000);
+            tv.tv_usec = static_cast<suseconds_t>(ioTimeout_.count() % 1000 * 1000);
             int sel = ::select(fd + 1, nullptr, &wfds, nullptr, &tv);
             if (sel > 0) {
                 int soError = 0;
@@ -279,15 +477,14 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     }
     ::freeaddrinfo(res);
 
-    if (connectedFd < 0) {
-        std::cerr << "[lethe-http] Connect failed to " << host << ":" << port << std::endl;
-        return false;
-    }
+    if (connectedFd < 0) return false;
     socketFd_ = connectedFd;
+    return true;
+}
 
-    if (scheme == "https") {
+bool HttpClient::startTls(const std::string& tlsHostname) {
 #ifdef HAVE_OPENSSL
-        usingTls_ = true;
+    usingTls_ = true;
 
         sslCtx_ = SSL_CTX_new(TLS_client_method());
         if (!sslCtx_) {
@@ -322,15 +519,15 @@ bool HttpClient::connectToHost(const std::string& host, int port,
             SSL_CTX_set_verify(sslCtx_, SSL_VERIFY_NONE, nullptr);
         }
 
-        ssl_ = SSL_new(sslCtx_);
-        if (!ssl_) {
-            SSL_CTX_free(sslCtx_);
-            sslCtx_ = nullptr;
-            closeConnection();
-            return false;
-        }
-        SSL_set_fd(ssl_, socketFd_);
-        SSL_set_tlsext_host_name(ssl_, host.c_str());
+    ssl_ = SSL_new(sslCtx_);
+    if (!ssl_) {
+        SSL_CTX_free(sslCtx_);
+        sslCtx_ = nullptr;
+        closeConnection();
+        return false;
+    }
+    SSL_set_fd(ssl_, socketFd_);
+    SSL_set_tlsext_host_name(ssl_, tlsHostname.c_str());
 
         // Enforce the timeout on the underlying socket for the handshake.
         timeval tv;
@@ -339,27 +536,25 @@ bool HttpClient::connectToHost(const std::string& host, int port,
         setsockopt(socketFd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         setsockopt(socketFd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-        int ok = SSL_connect(ssl_);
-        if (ok != 1) {
-            int err = SSL_get_error(ssl_, ok);
-            std::cerr << "[lethe-http] TLS handshake failed with " << host
-                      << " (SSL error " << err << ")" << std::endl;
-            closeConnection();
-            return false;
-        }
-
-        const SSL* sslConst = ssl_;
-        std::cout << "[lethe-http] TLS established with " << host << " ("
-                  << SSL_get_version(sslConst) << ")" << std::endl;
-#else
-        std::cerr << "[lethe-http] HTTPS requested but OpenSSL is unavailable"
-                  << std::endl;
+    int ok = SSL_connect(ssl_);
+    if (ok != 1) {
+        int err = SSL_get_error(ssl_, ok);
+        std::cerr << "[lethe-http] TLS handshake failed with " << tlsHostname
+                  << " (SSL error " << err << ")" << std::endl;
         closeConnection();
         return false;
-#endif
     }
 
+    const SSL* sslConst = ssl_;
+    std::cout << "[lethe-http] TLS established with " << tlsHostname << " ("
+              << SSL_get_version(sslConst) << ")" << std::endl;
     return true;
+#else
+    std::cerr << "[lethe-http] HTTPS requested but OpenSSL is unavailable"
+              << std::endl;
+    closeConnection();
+    return false;
+#endif
 }
 
 void HttpClient::closeConnection() {
