@@ -12,6 +12,7 @@
 // The Aletheia OS calls this bridge to interact with the browser and to give
 // its LLM agent web access through Lethe's secure, private network stack.
 
+#include <map>
 #include <string>
 #include <vector>
 #include <memory>
@@ -106,10 +107,16 @@ private:
     std::unique_ptr<llm::SearchService> searchService_;
     bool searchInitialized_ = false;
 
-    // State of the last completed load for the active tab.
-    std::string loadedUrl_;
-    std::string loadedText_;
-    bool pageLoaded_ = false;
+    // Reader text of the last successful load, per tab. A blocked or failed
+    // navigation erases that tab's entry so it serves nothing.
+    struct LoadedPage {
+        std::string url;
+        std::string text;
+    };
+    std::map<int, LoadedPage> tabPages_;
+
+    // Drop cache entries for tabs that no longer exist.
+    void pruneTabPages();
 };
 
 } // namespace aletheia

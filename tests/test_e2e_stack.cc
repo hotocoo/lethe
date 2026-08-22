@@ -12,6 +12,7 @@
 //      succeeds and the server registers the client.
 
 #include "test_framework.h"
+#include "test_tls_helpers.h"
 #include "aletheia/aletheia_bridge.h"
 #include "core/engine.h"
 #include "llm/search_service.h"
@@ -281,10 +282,13 @@ const char* kDocHtml =
 
 // Mock serving DoH (doc.internal -> loopback) plus the origin document,
 // counting hits so tests can prove exactly which requests happened.
+// pathResponses maps a path prefix to a RAW full HTTP response (headers and
+// body) served for that path; unmatched paths get the default document.
 struct CountingMock {
     MockHttpServer server;
     std::atomic<int> originHits{0};
     std::atomic<int> dohHits{0};
+    std::map<std::string, std::string> pathResponses;
 
     bool start() {
         server.handler_ = [this](const std::string& req) {
@@ -295,6 +299,18 @@ struct CountingMock {
                     "\"type\":1,\"data\":\"127.0.0.1\"}]}");
             }
             originHits++;
+            // Extract the request path from "GET <path> HTTP/1.1".
+            std::string path;
+            const size_t sp1 = req.find(' ');
+            if (sp1 != std::string::npos) {
+                const size_t sp2 = req.find(' ', sp1 + 1);
+                if (sp2 != std::string::npos) {
+                    path = req.substr(sp1 + 1, sp2 - sp1 - 1);
+                }
+            }
+            for (const auto& [prefix, raw] : pathResponses) {
+                if (path.rfind(prefix, 0) == 0) return raw;
+            }
             return httpResp(200, "OK", kDocHtml);
         };
         return server.start();
@@ -429,6 +445,152 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_PersistentSessionRecordsHistory) {
 
     engine.shutdown();
 }
+
+LETHE_TEST_CASE(E2E_BridgeNavigation_RedirectUpdatesTabUrlAndHistory) {
+    CountingMock mock;
+    // /start answers with a RELATIVE redirect to /final (exercises the
+    // client's Location resolution); /final serves the real document.
+    mock.pathResponses["/start"] =
+        "HTTP/1.1 301 Moved Permanently\r\n"
+        "Location: /final\r\n"
+        "Content-Length: 0\r\n"
+        "Connection: close\r\n\r\n";
+    mock.pathResponses["/final"] = httpResp(200, "OK",
+        "<html><head><title>Final Document</title></head><body>"
+        "<p>You arrived.</p></body></html>");
+    CHECK_TRUE(mock.start());
+
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/false)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+    CHECK_TRUE(engine.history() != nullptr);
+
+    const std::string baseUrl =
+        "http://doc.internal:" + std::to_string(mock.port());
+    const std::string startUrl = baseUrl + "/start";
+    const std::string finalUrl = baseUrl + "/final";
+
+    CHECK_TRUE(bridge.navigate(startUrl));
+    CHECK_TRUE(bridge.currentPageLoaded());
+
+    // The tab now addresses the redirect target, not the requested URL.
+    CHECK_EQ(bridge.getCurrentUrl(), finalUrl);
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("Final Document"));
+    CHECK_TRUE(bridge.getCurrentPageContent().find("You arrived.") !=
+               std::string::npos);
+    // Exactly two origin hits: the redirect and its target. Cached reads
+    // of the final URL add nothing.
+    CHECK_EQ(mock.originHits.load(), 2);
+    (void)bridge.getCurrentPageContent();
+    CHECK_EQ(mock.originHits.load(), 2);
+
+    // History records the destination that was actually read.
+    CHECK_TRUE(engine.history()->containsUrl(finalUrl));
+    CHECK_FALSE(engine.history()->containsUrl(startUrl));
+    CHECK_EQ(engine.history()->entries()[0].url, finalUrl);
+    CHECK_EQ(engine.history()->entries()[0].title,
+             std::string("Final Document"));
+
+    engine.shutdown();
+}
+
+LETHE_TEST_CASE(E2E_BridgeOpenUrl_MultiTabLoadsAreIndependent) {
+    CountingMock mock;
+    mock.pathResponses["/one"] = httpResp(200, "OK",
+        "<html><head><title>First Document</title></head><body>"
+        "<p>alpha content.</p></body></html>");
+    mock.pathResponses["/two"] = httpResp(200, "OK",
+        "<html><head><title>Second Document</title></head><body>"
+        "<p>beta content.</p></body></html>");
+    CHECK_TRUE(mock.start());
+
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/true)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    const std::string baseUrl =
+        "http://doc.internal:" + std::to_string(mock.port());
+
+    CHECK_TRUE(bridge.openUrl(baseUrl + "/one"));
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("First Document"));
+    const int firstTabId = bridge.getStatus().activeTabId;
+    const size_t tabsBefore = bridge.getStatus().tabCount;
+
+    CHECK_TRUE(bridge.openUrl(baseUrl + "/two", /*newTab=*/true));
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("Second Document"));
+    CHECK_TRUE(bridge.getStatus().tabCount > tabsBefore);
+    CHECK_TRUE(bridge.currentPageLoaded());
+
+    // The OS switches back to the first tab: its URL, fetched title, and
+    // cached reader text must all be intact - per-tab, no cross-talk.
+    engine.tabManager()->setActiveTab(firstTabId);
+    CHECK_EQ(bridge.getCurrentUrl(), baseUrl + "/one");
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("First Document"));
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_TRUE(bridge.getCurrentPageContent().find("alpha content.") !=
+               std::string::npos);
+    CHECK_TRUE(bridge.getCurrentPageContent().find("beta content.") ==
+               std::string::npos);
+
+    // Exactly one origin fetch per load: the switch-back serves from that
+    // tab's own cache, and repeated reads add nothing.
+    CHECK_EQ(mock.originHits.load(), 2);
+    (void)bridge.getCurrentPageContent();
+    CHECK_EQ(mock.originHits.load(), 2);
+
+    engine.shutdown();
+}
+
+#ifdef HAVE_OPENSSL
+LETHE_TEST_CASE(E2E_BridgeNavigate_HttpsThroughEngineCaBundle) {
+    // Plain-HTTP mock plays DoH only; the origin is a REAL TLS 1.3 server
+    // whose certificate chains to a throwaway CA handed to the engine via
+    // Config.caBundlePath - certificate verification stays fully on.
+    CountingMock mock;
+    CHECK_TRUE(mock.start());
+
+    std::string caPem, caKeyPem, srvCertPem, srvKeyPem;
+    CHECK_TRUE(tls_test::generateTestCa(caPem, caKeyPem));
+    CHECK_TRUE(tls_test::generateServerCert(caPem, caKeyPem, "doc.internal",
+                                            srvCertPem, srvKeyPem));
+
+    tls_test::LoopbackTlsServer origin;
+    origin.setHandler([](const std::string&) {
+        return httpResp(200, "OK",
+            "<html><head><title>Secure Document</title></head><body>"
+            "<p>TLS all the way down.</p></body></html>");
+    });
+    CHECK_TRUE(origin.start(srvCertPem, srvKeyPem));
+
+    const std::string caFile = tls_test::writeTempFile("lethe_e2e_ca", caPem);
+    CHECK_TRUE(!caFile.empty());
+
+    Engine engine;
+    Config cfg = loopbackConfig(mock, /*incognito=*/true);
+    cfg.caBundlePath = caFile;
+    CHECK_EQ(engine.initialize(cfg), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    const std::string url = "https://doc.internal:" +
+                            std::to_string(origin.port()) + "/secure";
+
+    // The hostname has no DNS record and the CA is not in the system store:
+    // success proves DoH resolution plus a certificate-verified TLS 1.3
+    // navigation through the engine's own trust anchor.
+    CHECK_TRUE(bridge.navigate(url));
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("Secure Document"));
+    CHECK_TRUE(bridge.getCurrentPageContent().find("TLS all the way down.") !=
+               std::string::npos);
+
+    // Nothing ever touched the plain-HTTP mock as an origin.
+    CHECK_EQ(mock.originHits.load(), 0);
+    CHECK_TRUE(mock.dohHits.load() >= 1);
+
+    ::remove(caFile.c_str());
+    engine.shutdown();
+}
+#endif
 
 LETHE_TEST_CASE(E2E_BridgeNavigation_IncognitoRecordsNothing) {
     CountingMock mock;

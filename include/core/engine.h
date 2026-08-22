@@ -25,6 +25,9 @@ struct Config {
     bool sandboxEnabled = true;
     bool incognitoMode = true;
     std::string dnsProvider = "https://cloudflare-dns.com/dns-query";
+    // Optional PEM bundle of extra trust anchors for TLS verification
+    // (empty = system default store). Verification stays ON regardless.
+    std::string caBundlePath = "";
     std::string userAgentMode = "standard";
     std::string initialUrl = "";
     bool useHardwareAcceleration = true;

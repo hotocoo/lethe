@@ -43,6 +43,9 @@ public:
 
     // Publish the loaded page title (from the fetched document).
     void setTabTitle(int tabId, const std::string& title);
+
+    // Publish the final URL after redirects (without re-triggering a load).
+    void setTabUrl(int tabId, const std::string& url);
     
     void closeAllTabs();
 

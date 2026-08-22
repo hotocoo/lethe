@@ -5,6 +5,7 @@
 // network stack.
 
 #include "aletheia/aletheia_bridge.h"
+#include <algorithm>
 #include <iostream>
 
 namespace lethe {
@@ -52,9 +53,9 @@ bool AletheiaBridge::openUrl(const std::string& url, bool newTab) {
     // Real navigation: fetch the document through the engine's secure stack
     // (DoH resolution + VPN fail-closed policy) so the OS sees an actually
     // loaded page - title, readable text - not just a recorded intent.
-    loadActiveTab(url);
+    const bool loaded = loadActiveTab(url);
     std::cout << "[aletheia] Opened URL: " << url
-              << (pageLoaded_ ? " (loaded)" : " (load blocked)")
+              << (loaded ? " (loaded)" : " (load blocked)")
               << " (tab " << tabId << ")" << std::endl;
     return true;
 }
@@ -69,16 +70,15 @@ bool AletheiaBridge::navigate(const std::string& url) {
 }
 
 bool AletheiaBridge::loadActiveTab(const std::string& url) {
-    pageLoaded_ = false;
-    loadedUrl_.clear();
-    loadedText_.clear();
-
     auto* tabs = engine_ ? engine_->tabManager() : nullptr;
     if (!tabs) return false;
     const int tabId = tabs->getActiveTab();
 
     if (!searchService_ || !searchInitialized_) {
-        if (tabId > 0) tabs->setTabLoading(tabId, false);
+        if (tabId > 0) {
+            tabs->setTabLoading(tabId, false);
+            tabPages_.erase(tabId);
+        }
         return false;
     }
 
@@ -87,10 +87,13 @@ bool AletheiaBridge::loadActiveTab(const std::string& url) {
     llm::PageContent content = searchService_->readPage(url);
     if (tabId > 0) tabs->setTabLoading(tabId, false);
 
-    if (!content.success) {
+    if (!content.success || tabId <= 0) {
         // Fail closed: the tab keeps its previous title and serves no text.
-        std::cerr << "[aletheia] Navigation blocked or failed: "
-                  << content.error << std::endl;
+        if (tabId > 0) tabPages_.erase(tabId);
+        if (!content.success) {
+            std::cerr << "[aletheia] Navigation blocked or failed: "
+                      << content.error << std::endl;
+        }
         return false;
     }
 
@@ -99,11 +102,12 @@ bool AletheiaBridge::loadActiveTab(const std::string& url) {
     const std::string title =
         content.title.empty() ? finalUrl : content.title;
 
-    if (tabId > 0) tabs->setTabTitle(tabId, title);
+    tabs->setTabTitle(tabId, title);
+    // A redirect moved the document: the tab now shows the final URL, so
+    // later reads and status polls address the right resource.
+    if (finalUrl != url) tabs->setTabUrl(tabId, finalUrl);
 
-    loadedUrl_ = finalUrl;
-    loadedText_ = content.textContent;
-    pageLoaded_ = true;
+    tabPages_[tabId] = LoadedPage{finalUrl, content.textContent};
 
     // History records real visits only, and never in incognito sessions.
     if (!engine_->config().incognitoMode && engine_->history()) {
@@ -113,8 +117,26 @@ bool AletheiaBridge::loadActiveTab(const std::string& url) {
     return true;
 }
 
+void AletheiaBridge::pruneTabPages() {
+    if (!engine_ || !engine_->tabManager()) {
+        tabPages_.clear();
+        return;
+    }
+    const auto ids = engine_->tabManager()->getAllTabIds();
+    for (auto it = tabPages_.begin(); it != tabPages_.end();) {
+        if (std::find(ids.begin(), ids.end(), it->first) == ids.end()) {
+            it = tabPages_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 bool AletheiaBridge::currentPageLoaded() const {
-    return pageLoaded_ && loadedUrl_ == getCurrentUrl();
+    if (!engine_ || !engine_->tabManager()) return false;
+    const int tabId = engine_->tabManager()->getActiveTab();
+    const auto it = tabPages_.find(tabId);
+    return it != tabPages_.end() && it->second.url == getCurrentUrl();
 }
 
 std::string AletheiaBridge::getCurrentUrl() const {
@@ -133,16 +155,27 @@ std::string AletheiaBridge::getCurrentTitle() const {
 
 std::string AletheiaBridge::getCurrentPageContent() {
     if (!engine_ || !engine_->tabManager()) return "";
+    pruneTabPages();
+
+    const int tabId = engine_->tabManager()->getActiveTab();
     const std::string url = getCurrentUrl();
     if (url.empty()) return "";
 
-    // Serve the reader text of the already-loaded document when it belongs
-    // to this URL: no duplicate fetch for repeated OS reads.
-    if (pageLoaded_ && loadedUrl_ == url) return loadedText_;
+    // Serve the reader text already held for THIS tab when it matches:
+    // no duplicate fetch for repeated OS reads, independent per tab.
+    const auto it = tabPages_.find(tabId);
+    if (it != tabPages_.end() && it->second.url == url) {
+        return it->second.text;
+    }
 
-    // Fall back to a live read (e.g. URL set outside this bridge).
+    // Fall back to a live read (URL set outside this bridge, or a tab
+    // switch to a page not yet cached here) and remember what came back.
     if (searchService_ && searchInitialized_) {
         auto content = searchService_->readPage(url);
+        if (!content.success) return "";
+        const std::string finalUrl =
+            content.url.empty() ? url : content.url;
+        tabPages_[tabId] = LoadedPage{finalUrl, content.textContent};
         return content.textContent;
     }
     return "";

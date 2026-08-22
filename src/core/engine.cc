@@ -104,6 +104,12 @@ void Engine::init_network_stack() {
     TLSConfig tls;
     tls.init_modern_tls_config(MIN_TLS_VERSION, MAX_TLS_VERSION);
 
+    // Extra trust anchors (enterprise/OS-provided CA bundle) without ever
+    // turning certificate verification off.
+    if (!config_.caBundlePath.empty()) {
+        tls.setCaBundlePath(config_.caBundlePath);
+    }
+
     if (!httpClient_->initialize(tls)) {
         std::cerr << "[lethe] Failed to initialize HTTP client" << std::endl;
     }

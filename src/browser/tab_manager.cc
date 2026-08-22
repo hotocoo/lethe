@@ -96,6 +96,16 @@ void TabManager::setTabTitle(int tabId, const std::string& title) {
     }
 }
 
+void TabManager::setTabUrl(int tabId, const std::string& url) {
+    auto it = tabs_.find(tabId);
+    if (it != tabs_.end()) {
+        it->second->url = url;
+        it->second->isLoading = false;
+    } else {
+        std::cerr << "[lethe] Warning: tab " << tabId << " not found" << std::endl;
+    }
+}
+
 void TabManager::closeAllTabs() {
     tabs_.clear();
     next_id = 1;

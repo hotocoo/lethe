@@ -206,7 +206,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (91 tests)
+# Run the full test suite (94 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -234,6 +234,13 @@ The test suite covers:
   title extraction into tab state, cached reader text with zero refetch,
   tunnel-down navigation blocked with zero origin hits then recovery when
   the same tunnel comes up, incognito vs persistent history)
+- **Redirect-aware navigation e2e** (relative 301 Location resolved by the
+  client; tab URL, title, cache key, and history all land on the final URL)
+- **Multi-tab isolation e2e** (per-tab reader cache: switching tabs serves
+  each document from its own cache with zero extra fetches, no cross-talk)
+- **HTTPS navigation e2e** (real TLS 1.3 origin whose certificate chains to
+  an engine-provided CA bundle - Config.caBundlePath - with verification
+  kept fully on)
 - **LLM text extraction entities** (&amp;, &quot;, &nbsp; decoded in pages)
 - **Reader-mode rendering** (HTML block extraction: titles, headings, lists, entities)
 - **DNS over HTTPS** (mock-provider end-to-end, dead-provider fail-closed, IP-literal bypass)

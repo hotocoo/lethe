@@ -113,6 +113,9 @@ PageContent SearchService::readPage(const std::string& url) {
     }
 
     content.statusCode = resp.statusCode;
+    // The HTTP client followed redirects: report where the document really
+    // came from so tabs, caches, and history record the final URL.
+    if (!resp.finalUrl.empty()) content.url = resp.finalUrl;
     std::string html(resp.body.begin(), resp.body.end());
     content.title = extractTitleFromHtml(html);
 
