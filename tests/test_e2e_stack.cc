@@ -541,6 +541,124 @@ LETHE_TEST_CASE(E2E_BridgeOpenUrl_MultiTabLoadsAreIndependent) {
     engine.shutdown();
 }
 
+LETHE_TEST_CASE(E2E_BridgeNavigation_BackForwardThroughFullStack) {
+    CountingMock mock;
+    for (const auto* doc : {"/a", "/b", "/c", "/d"}) {
+        mock.pathResponses[doc] = httpResp(200, "OK",
+            std::string("<html><head><title>") +
+            (doc + 1) + " Document</title></head><body><p>Body of" +
+            doc + ".</p></body></html>");
+    }
+    CHECK_TRUE(mock.start());
+
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/false)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    const std::string base = "http://doc.internal:" + std::to_string(mock.port());
+    const auto urlFor = [&](const char* p) { return base + p; };
+
+    // Visit a -> b -> c: three recorded, cursor at c.
+    CHECK_TRUE(bridge.openUrl(urlFor("/a")));
+    CHECK_TRUE(bridge.navigate(urlFor("/b")));
+    CHECK_TRUE(bridge.navigate(urlFor("/c")));
+    CHECK_FALSE(bridge.canGoForward());
+    CHECK_TRUE(bridge.canGoBack());
+
+    // Back is a REAL refetch through DoH to the origin - not a memory jump.
+    CHECK_TRUE(bridge.goBack());
+    CHECK_EQ(bridge.getCurrentUrl(), urlFor("/b"));
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("b Document"));
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_TRUE(bridge.getCurrentPageContent().find("Body of/b.") !=
+               std::string::npos);
+    CHECK_TRUE(bridge.canGoBack());
+    CHECK_TRUE(bridge.canGoForward());
+
+    CHECK_TRUE(bridge.goBack()); // at a
+    CHECK_FALSE(bridge.canGoBack());
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("a Document"));
+    CHECK_TRUE(bridge.goForward()); // at b
+    CHECK_TRUE(bridge.goForward()); // at c
+    CHECK_FALSE(bridge.canGoForward());
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("c Document"));
+
+    // From the past (b), a fresh navigation truncates the forward branch.
+    CHECK_TRUE(bridge.goBack());          // at b
+    CHECK_TRUE(bridge.navigate(urlFor("/d")));
+    CHECK_FALSE(bridge.canGoForward());
+    CHECK_EQ(engine.history()->size(), 3u);
+    CHECK_EQ(engine.history()->entries()[0].url, urlFor("/a"));
+    CHECK_EQ(engine.history()->entries()[1].url, urlFor("/b"));
+    CHECK_EQ(engine.history()->entries()[2].url, urlFor("/d"));
+    CHECK_FALSE(engine.history()->containsUrl(urlFor("/c")));
+
+    // Every load and every traversal was a real fetch: 3 visits + back +
+    // back + fwd + fwd + back + fresh d = 9 origin requests exactly.
+    CHECK_EQ(mock.originHits.load(), 9);
+
+    engine.shutdown();
+}
+
+LETHE_TEST_CASE(E2E_BridgeNavigation_BackBlockedWhenTunnelDown_FailClosed) {
+    CountingMock mock; // reachable origin throughout
+    mock.pathResponses["/a"] = httpResp(200, "OK",
+        "<html><head><title>Alpha</title></head><body><p>alpha body.</p>"
+        "</body></html>");
+    mock.pathResponses["/b"] = httpResp(200, "OK",
+        "<html><head><title>Beta</title></head><body><p>beta body.</p>"
+        "</body></html>");
+    CHECK_TRUE(mock.start());
+
+    LiveVpnServer vpn;
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/false)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    const std::string base = "http://doc.internal:" + std::to_string(mock.port());
+
+    // Tunnel up: two real visits recorded, cursor at b.
+    CHECK_TRUE(engine.enableVpn(vpn.clientConfig()));
+    CHECK_TRUE(bridge.navigate(base + "/a"));
+    CHECK_TRUE(bridge.navigate(base + "/b"));
+    CHECK_EQ(mock.originHits.load(), 2);
+
+    // Drop the tunnel: same engine, dead endpoint under full-tunnel CIDRs.
+    vpn::VpnConfig downCfg;
+    downCfg.endpointHost = "127.0.0.1";
+    downCfg.endpointPort = 1;
+    vpn::Key priv{};
+    CHECK_TRUE(vpn::generatePrivateKey(priv));
+    CHECK_TRUE(vpn::derivePublicKey(priv, downCfg.serverPublicKey));
+    downCfg.allowedCidrs = {"0.0.0.0/0"};
+    CHECK_TRUE(engine.enableVpn(downCfg));
+    CHECK_FALSE(engine.isVpnConnected());
+
+    // Back would target /a through the full-tunnel policy with no tunnel:
+    // the traversal FAILS CLOSED - no fetch, no cursor move, tab restored.
+    const int hitsBefore = mock.originHits.load();
+    CHECK_FALSE(bridge.goBack());
+    CHECK_TRUE(bridge.canGoBack());                          // still able to,
+    CHECK_EQ(engine.history()->current()->url, base + "/b"); // cursor not moved
+    CHECK_EQ(bridge.getCurrentUrl(), base + "/b");
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_TRUE(bridge.getCurrentPageContent().find("beta body.") !=
+               std::string::npos); // per-tab cache still serves b safely
+    CHECK_EQ(mock.originHits.load(), hitsBefore); // zero plaintext attempts
+
+    // Reconnect the tunnel: the very same goBack now succeeds via a real,
+    // policy-compliant fetch of /a.
+    CHECK_TRUE(engine.enableVpn(vpn.clientConfig()));
+    CHECK_TRUE(engine.isVpnConnected());
+    CHECK_TRUE(bridge.goBack());
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("Alpha"));
+    CHECK_EQ(engine.history()->current()->url, base + "/a");
+    CHECK_TRUE(bridge.canGoForward());
+    CHECK_EQ(mock.originHits.load(), hitsBefore + 1);
+
+    engine.shutdown();
+}
+
 #ifdef HAVE_OPENSSL
 LETHE_TEST_CASE(E2E_BridgeNavigate_HttpsThroughEngineCaBundle) {
     // Plain-HTTP mock plays DoH only; the origin is a REAL TLS 1.3 server

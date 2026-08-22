@@ -125,8 +125,13 @@ Lethe is the native browser of the Aletheia OS, exposed through a unified bridge
 - **Native browser control**: `openUrl`/`navigate` are real page loads —
   each document is fetched through Lethe's secure stack (DoH resolution +
   VPN fail-closed policy), the fetched title lands in tab state, the
-  readable text is cached for the OS, history records only successful
-  visits outside incognito, and a blocked navigation serves nothing
+  readable text is cached per tab for the OS, and history records only
+  successful visits outside incognito
+- **Session back/forward**: `goBack`/`goForward` traverse history through
+  the same secure-stack pipeline — the cursor moves only when the target
+  actually loads, traversal is never re-recorded, a new navigation from
+  the past truncates the forward branch, and a traversal blocked by the
+  VPN policy fails closed without moving anything
 - **VPN control**: Enable/disable the built-in VPN from the OS
 - **LLM search**: The OS LLM accesses the web through Lethe
 - **Status reporting**: Real-time browser and VPN status
@@ -206,7 +211,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (94 tests)
+# Run the full test suite (101 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -241,6 +246,12 @@ The test suite covers:
 - **HTTPS navigation e2e** (real TLS 1.3 origin whose certificate chains to
   an engine-provided CA bundle - Config.caBundlePath - with verification
   kept fully on)
+- **Back/forward navigation e2e** (traversals refetch through DoH with
+  exact fetch accounting; forward-branch truncation on fresh navigation;
+  a traversal blocked by a downed tunnel fails closed with zero origin
+  hits, cursor and tab restored, then succeeds once the tunnel returns)
+- **Navigation history unit semantics** (cursor model: edges, peeks,
+  forward-branch truncation, 1000-entry cap keeping the most recent)
 - **LLM text extraction entities** (&amp;, &quot;, &nbsp; decoded in pages)
 - **Reader-mode rendering** (HTML block extraction: titles, headings, lists, entities)
 - **DNS over HTTPS** (mock-provider end-to-end, dead-provider fail-closed, IP-literal bypass)

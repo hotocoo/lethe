@@ -69,6 +69,18 @@ public:
     // a full-tunnel policy) leaves this false - nothing loaded, nothing leaked.
     bool currentPageLoaded() const;
 
+    // --- Session history ---
+    bool canGoBack() const;
+    bool canGoForward() const;
+
+    // Traverse session history using the full secure-stack load pipeline
+    // (DoH + VPN fail-closed policy). The history cursor moves only when
+    // the target actually loads: a blocked or failed traversal leaves
+    // history and tab state untouched. Nothing is re-recorded by traversal,
+    // and going back never bypasses the security policy - it refetches.
+    bool goBack();
+    bool goForward();
+
     // Get the browser status.
     BrowserStatus getStatus() const;
 
@@ -99,16 +111,20 @@ private:
     // Fetch the given URL for the active tab through the engine's secure
     // stack (DoH + VPN fail-closed policy). On success publishes the document
     // title to the tab, caches the readable text, and records history when
-    // not incognito. On failure clears the cached page: a blocked navigation
-    // serves nothing.
-    bool loadActiveTab(const std::string& url);
+    // recordHistory is set and the session is not incognito. On failure
+    // clears the cached page: a blocked navigation serves nothing.
+    bool loadActiveTab(const std::string& url, bool recordHistory = true);
+
+    // Shared implementation of goBack()/goForward().
+    bool traverseHistory(bool forward);
 
     Engine* engine_;
     std::unique_ptr<llm::SearchService> searchService_;
     bool searchInitialized_ = false;
 
-    // Reader text of the last successful load, per tab. A blocked or failed
-    // navigation erases that tab's entry so it serves nothing.
+    // Reader text of the last successful load, per tab. After a blocked or
+    // failed navigation the entry stays, but getCurrentPageContent() serves
+    // it only while the tab still addresses exactly that URL.
     struct LoadedPage {
         std::string url;
         std::string text;

@@ -69,16 +69,13 @@ bool AletheiaBridge::navigate(const std::string& url) {
     return true;
 }
 
-bool AletheiaBridge::loadActiveTab(const std::string& url) {
+bool AletheiaBridge::loadActiveTab(const std::string& url, bool recordHistory) {
     auto* tabs = engine_ ? engine_->tabManager() : nullptr;
     if (!tabs) return false;
     const int tabId = tabs->getActiveTab();
 
     if (!searchService_ || !searchInitialized_) {
-        if (tabId > 0) {
-            tabs->setTabLoading(tabId, false);
-            tabPages_.erase(tabId);
-        }
+        if (tabId > 0) tabs->setTabLoading(tabId, false);
         return false;
     }
 
@@ -88,8 +85,11 @@ bool AletheiaBridge::loadActiveTab(const std::string& url) {
     if (tabId > 0) tabs->setTabLoading(tabId, false);
 
     if (!content.success || tabId <= 0) {
-        // Fail closed: the tab keeps its previous title and serves no text.
-        if (tabId > 0) tabPages_.erase(tabId);
+        // Fail closed WITHOUT wiping the tab's previous document: the
+        // URL-match guard in getCurrentPageContent() only serves text whose
+        // URL equals the tab's address, so a blocked navigation to B never
+        // leaks or serves A's text - and restoring the tab to A (history
+        // traversal) keeps working offline-from-cache.
         if (!content.success) {
             std::cerr << "[aletheia] Navigation blocked or failed: "
                       << content.error << std::endl;
@@ -109,8 +109,10 @@ bool AletheiaBridge::loadActiveTab(const std::string& url) {
 
     tabPages_[tabId] = LoadedPage{finalUrl, content.textContent};
 
-    // History records real visits only, and never in incognito sessions.
-    if (!engine_->config().incognitoMode && engine_->history()) {
+    // History records real visits only (never back/forward traversal),
+    // and never in incognito sessions.
+    if (recordHistory && !engine_->config().incognitoMode &&
+        engine_->history()) {
         engine_->history()->addEntry(finalUrl, title);
     }
 
@@ -138,6 +140,59 @@ bool AletheiaBridge::currentPageLoaded() const {
     const auto it = tabPages_.find(tabId);
     return it != tabPages_.end() && it->second.url == getCurrentUrl();
 }
+
+// --- Session history ---
+
+bool AletheiaBridge::canGoBack() const {
+    return engine_ && engine_->history() && engine_->history()->canGoBack();
+}
+
+bool AletheiaBridge::canGoForward() const {
+    return engine_ && engine_->history() && engine_->history()->canGoForward();
+}
+
+bool AletheiaBridge::traverseHistory(bool forward) {
+    if (!engine_ || !engine_->history() || !engine_->tabManager()) {
+        return false;
+    }
+    auto* hist = engine_->history();
+
+    // Peek without committing: the cursor moves only if the target loads.
+    const auto* target = forward ? hist->peekForward() : hist->peekBack();
+    if (!target) return false;
+
+    // Copy before any load can mutate history (redirects re-record nothing
+    // here, but defensive copies keep the traversal atomic).
+    const std::string url = target->url;
+
+    auto* tabs = engine_->tabManager();
+    const int tabId = tabs->getActiveTab();
+    if (tabId <= 0) return false;
+
+    tabs->navigate(tabId, url);
+    if (!loadActiveTab(url, /*recordHistory=*/false)) {
+        // Fail closed: restore the tab to the entry the session sits on.
+        const auto* cur = hist->current();
+        if (cur) {
+            tabs->setTabUrl(tabId, cur->url);
+            if (!cur->title.empty()) tabs->setTabTitle(tabId, cur->title);
+        }
+        return false;
+    }
+
+    // The load really happened: commit the cursor move. Traversal itself is
+    // never recorded as a new visit.
+    if (forward) {
+        (void)hist->goForward();
+    } else {
+        (void)hist->goBack();
+    }
+    return true;
+}
+
+bool AletheiaBridge::goBack() { return traverseHistory(false); }
+
+bool AletheiaBridge::goForward() { return traverseHistory(true); }
 
 std::string AletheiaBridge::getCurrentUrl() const {
     if (!engine_ || !engine_->tabManager()) return "";
