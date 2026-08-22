@@ -3,7 +3,12 @@
 
 namespace lethe {
 
-static void on_entry_activate(GtkWidget* widget, gpointer data) {
+// Namespace-scope (not static) so it matches the friend declaration in
+// AddressBar and can reach private members through the passed pointer.
+// Namespace-scope (not static) so it matches the friend declaration in
+// AddressBar and can reach private members through the passed pointer.
+void onAddressBarActivate(GtkWidget* widget, gpointer data) {
+    (void)widget;
     AddressBar* self = static_cast<AddressBar*>(data);
     std::string text = self->getText();
     if (!text.empty() && self->navigateCallback_) {
@@ -26,7 +31,7 @@ GtkWidget* AddressBar::create() {
     loadingSpinner_ = gtk_spinner_new();
     gtk_widget_set_visible(loadingSpinner_, FALSE);
     
-    g_signal_connect(entry_, "activate", G_CALLBACK(on_entry_activate), this);
+    g_signal_connect(entry_, "activate", G_CALLBACK(onAddressBarActivate), this);
     
     return entry_;
 }
@@ -37,12 +42,11 @@ void AddressBar::setText(const std::string& text) {
     }
 }
 
-const std::string& AddressBar::getText() const {
+std::string AddressBar::getText() const {
     if (entry_) {
-        return std::string(gtk_entry_get_text(GTK_ENTRY(entry_))));
+        return std::string(gtk_entry_get_text(GTK_ENTRY(entry_)));
     }
-    static const std::string empty;
-    return empty;
+    return {};
 }
 
 void AddressBar::setPlaceholder(const std::string& placeholder) {

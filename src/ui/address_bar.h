@@ -16,7 +16,7 @@ public:
     
     GtkWidget* create();
     void setText(const std::string& text);
-    const std::string& getText() const;
+    std::string getText() const;
     void setPlaceholder(const std::string& placeholder);
     void setNavigateCallback(NavigateCallback callback);
     void showLoading(bool loading);
@@ -24,7 +24,7 @@ public:
     GtkWidget* getWidget() { return entry_; }
 
 private:
-    friend void on_entry_activate(GtkWidget* widget, gpointer data);
+    friend void onAddressBarActivate(GtkWidget* widget, gpointer data);
     
     GtkWidget* entry_;
     GtkWidget* loadingSpinner_;

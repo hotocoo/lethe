@@ -5,11 +5,14 @@
 
 namespace lethe {
 
-static void on_window_destroy(GtkWidget* widget, gpointer data) {
+// Namespace-scope (not static) so they match the friend declarations in
+// MainWindow and can reach private members through the passed pointer.
+void on_window_destroy(GtkWidget* widget, gpointer data) {
+    (void)widget; (void)data;
     gtk_main_quit();
 }
 
-static void on_entry_activate(GtkWidget* widget, gpointer data) {
+void on_entry_activate(GtkWidget* widget, gpointer data) {
     MainWindow* self = static_cast<MainWindow*>(data);
     const char* text = gtk_entry_get_text(GTK_ENTRY(widget));
     std::string url = text;
@@ -115,12 +118,5 @@ void MainWindow::run() {
 void MainWindow::quit() {
     gtk_main_quit();
 }
-
-void MainWindow::onActivateAbout(GtkWidget* widget, gpointer data) {}
-void MainWindow::onActivateQuit(GtkWidget* widget, gpointer data) {}
-void MainWindow::onActivateNewTab(GtkWidget* widget, gpointer data) {}
-void MainWindow::onActivateCloseTab(GtkWidget* widget, gpointer data) {}
-void MainWindow::onActivateNewWindow(GtkWidget* widget, gpointer data) {}
-void MainWindow::onWindowDestroy(GtkWidget* widget, gpointer data) {}
 
 } // namespace lethe

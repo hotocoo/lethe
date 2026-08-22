@@ -11,6 +11,7 @@
 #include "ui/viewport.h"
 
 static void on_window_destroy(GtkWidget* widget, gpointer data) {
+    (void)widget; (void)data;
     gtk_main_quit();
 }
 

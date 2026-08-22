@@ -137,7 +137,9 @@ if(BUILD_UI)
     if(NOT USE_QT6 AND USE_GTK)
         find_package(PkgConfig QUIET)
         if(PkgConfig_FOUND)
-            pkg_check_modules(GTK3 QUIET gtk+-3.0>=3.20)
+            # IMPORTED_TARGET carries include dirs, library dirs, and libs,
+            # so non-system installs (e.g. Homebrew) link correctly.
+            pkg_check_modules(GTK3 QUIET IMPORTED_TARGET gtk+-3.0>=3.20)
             if(GTK3_FOUND)
                 set(USE_GTK3 TRUE)
             endif()
@@ -183,12 +185,8 @@ if(BUILD_UI)
         if(USE_GTK3)
             target_compile_definitions(lethe PRIVATE -DUSE_GTK3 -DHAVE_OPENSSL)
             target_link_libraries(lethe PRIVATE
-                gtk-3
-                gdk-3
-                glib-2.0
-                gio-2.0
+                PkgConfig::GTK3
             )
-            target_include_directories(lethe PRIVATE ${GTK3_INCLUDE_DIRS})
         endif()
 
         if(APPLE)

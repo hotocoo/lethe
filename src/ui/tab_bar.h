@@ -2,6 +2,7 @@
 #define LETHE_UI_TAB_BAR_H
 
 #include <gtk/gtk.h>
+#include <map>
 #include <string>
 #include <vector>
 #include <functional>
@@ -28,11 +29,15 @@ public:
     GtkWidget* getWidget() { return box_; }
 
 private:
+    // GTK callbacks are C function pointers: the handlers live at namespace
+    // scope and reach private state as friends (see tab_bar.cc).
+    friend void onTabButtonPressed(GtkWidget* widget, GdkEventButton* event,
+                                   gpointer data);
+    friend void onTabCloseClicked(GtkWidget* widget, gpointer data);
+    friend void onNewTabClicked(GtkWidget* widget, gpointer data);
+
     void createTabWidget(int tabId);
     void removeTabWidget(int tabId);
-    void onTabButtonClicked(int tabId, GtkWidget* widget, gpointer data);
-    void onTabCloseClicked(int tabId, GtkWidget* widget, gpointer data);
-    void onNewTabClicked(GtkWidget* widget, gpointer data);
     
     Engine* engine_;
     GtkWidget* box_;

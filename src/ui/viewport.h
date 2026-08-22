@@ -24,8 +24,11 @@ public:
     GtkWidget* getWidget() { return webView_; }
 
 private:
-    bool onDraw(GtkWidget* widget, cairo_t* cr, gpointer data);
-    
+    // GTK draw callbacks are C function pointers: the renderer lives at
+    // namespace scope and reaches private state as a friend (viewport.cc).
+    friend gboolean onViewportDraw(GtkWidget* widget, cairo_t* cr,
+                                   gpointer data);
+
     Engine* engine_;
     GtkWidget* webView_;
     std::string currentUrl_;

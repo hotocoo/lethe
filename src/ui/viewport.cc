@@ -16,6 +16,9 @@
 
 namespace lethe {
 
+// Forward declaration so create() can reference the friend handler.
+gboolean onViewportDraw(GtkWidget* widget, cairo_t* cr, gpointer data);
+
 namespace {
 
 // Per-kind typography.
@@ -99,7 +102,7 @@ GtkWidget* Viewport::create() {
     webView_ = gtk_drawing_area_new();
     gtk_widget_set_hexpand(webView_, TRUE);
     gtk_widget_set_vexpand(webView_, TRUE);
-    g_signal_connect(webView_, "draw", G_CALLBACK(onDraw), this);
+    g_signal_connect(webView_, "draw", G_CALLBACK(onViewportDraw), this);
     return webView_;
 }
 
@@ -161,7 +164,9 @@ void Viewport::showError(const std::string& error) {
     gtk_widget_queue_draw(webView_);
 }
 
-bool Viewport::onDraw(GtkWidget* widget, cairo_t* cr, gpointer data) {
+// Namespace-scope (not static) so it matches the friend declaration in
+// Viewport and can reach private members through the passed pointer.
+gboolean onViewportDraw(GtkWidget* widget, cairo_t* cr, gpointer data) {
     Viewport* self = static_cast<Viewport*>(data);
 
     GtkAllocation alloc;

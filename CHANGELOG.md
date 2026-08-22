@@ -60,5 +60,9 @@ All notable changes to Lethe are documented in this file.
 - Hardenened builds by default (`-fstack-protector-strong`, `-Wall -Wextra`,
   LTO, `_FORTIFY_SOURCE=2`)
 - Async-signal-safe termination handling in the engine
+- GTK3 UI layer repaired: signal handlers use valid C-callback patterns,
+  the address bar no longer returns dangling references, and the GUI
+  target compiles and links cleanly (pkg-config imported target, so
+  non-system GTK installs work too)
 
 [1.0.0]: https://github.com/hotocoo/lethe
