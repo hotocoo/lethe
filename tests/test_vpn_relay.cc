@@ -1,9 +1,10 @@
-// test_vpn_relay.cc — Relay framing + one-shot HTTP relay over real UDP
+// test_vpn_relay.cc - Streaming relay framing + HTTP streams over real UDP
 //
 // Covers:
-//   - request/chunk frame encode+parse round trips and malformed rejection
-//   - a full relay exchange over REAL loopback UDP: client tunnel ->
-//     reference server -> plain TCP origin -> encrypted chunks back
+//   - frame encode/parse round trips and malformed rejection
+//   - full streaming exchanges over REAL loopback UDP: client tunnel ->
+//     reference server -> plain TCP origin -> encrypted frames back,
+//     including clean END semantics and per-exchange isolation
 
 #include "test_framework.h"
 #include "network/vpn/vpn_relay.h"
@@ -39,8 +40,8 @@ bool waitFor(const std::function<bool()>& pred, int timeoutMs) {
     return pred();
 }
 
-// A single-connection TCP origin: answers every connection with the same
-// response and closes.
+// A TCP origin that answers every connection with the same response and
+// closes; counts connections.
 class TinyOrigin {
 public:
     bool start(std::string response) {
@@ -98,72 +99,65 @@ private:
 };
 
 } // namespace
+LETHE_TEST_CASE(RelayFrame_OpenDataEndRoundTrip) {
+    auto open = relay::encodeOpen(42, "10.1.2.3", 8080);
+    relay::FrameKind kind;
+    relay::OpenFrame o;
+    relay::DataFrame d;
+    relay::IdFrame id;
+    CHECK_TRUE(relay::parseFrame(open, kind, o, d, id));
+    CHECK_TRUE(kind == relay::FrameKind::Open);
+    CHECK_EQ(o.xid, 42u);
+    CHECK_EQ(o.host, std::string("10.1.2.3"));
+    CHECK_EQ(o.port, 8080);
 
-LETHE_TEST_CASE(RelayFrame_RequestRoundTrip) {
-    const std::string payload = "GET / HTTP/1.1\r\nHost: x\r\n\r\n";
-    auto frame = relay::encodeRequest("10.1.2.3", 8080, 42,
-                                      reinterpret_cast<const uint8_t*>(
-                                          payload.data()),
-                                      payload.size());
-    relay::Request parsed;
-    CHECK_TRUE(relay::parseRequest(frame, parsed));
-    CHECK_EQ(parsed.host, std::string("10.1.2.3"));
-    CHECK_EQ(parsed.port, 8080);
-    CHECK_EQ(parsed.xid, 42u);
-    CHECK_TRUE(std::string(parsed.payload.begin(), parsed.payload.end()) ==
-               payload);
+    const std::vector<uint8_t> bytes{'h', 'e', 'l', 'l', 'o'};
+    auto data = relay::encodeData(7, bytes);
+    CHECK_TRUE(relay::parseFrame(data, kind, o, d, id));
+    CHECK_TRUE(kind == relay::FrameKind::Data);
+    CHECK_EQ(d.xid, 7u);
+    CHECK_TRUE(d.payload == bytes);
 
-    // Empty payload is valid.
-    auto empty = relay::encodeRequest("127.0.0.1", 80, 7, nullptr, 0);
-    relay::Request p2;
-    CHECK_TRUE(relay::parseRequest(empty, p2));
-    CHECK_EQ(p2.port, 80);
-    CHECK_EQ(p2.xid, 7u);
-    CHECK_TRUE(p2.payload.empty());
-}
+    auto end = relay::encodeEnd(9);
+    CHECK_TRUE(relay::parseFrame(end, kind, o, d, id));
+    CHECK_TRUE(kind == relay::FrameKind::End);
+    CHECK_EQ(id.xid, 9u);
 
-LETHE_TEST_CASE(RelayFrame_ChunkRoundTrip) {
-    auto mid = relay::encodeChunk(
-        reinterpret_cast<const uint8_t*>("hello"), 5, false, 99);
-    uint8_t flags = 0;
-    uint32_t xid = 0;
-    std::vector<uint8_t> body;
-    CHECK_TRUE(relay::parseChunk(mid, flags, xid, body));
-    CHECK_EQ(static_cast<int>(flags), 0);
-    CHECK_EQ(xid, 99u);
-    const std::vector<uint8_t> expected{'h', 'e', 'l', 'l', 'o'};
-    CHECK_TRUE(body == expected);
-
-    auto last = relay::encodeChunk(nullptr, 0, true, 99);
-    CHECK_TRUE(relay::parseChunk(last, flags, xid, body));
-    CHECK_TRUE(flags & relay::kFlagEnd);
-    CHECK_TRUE(body.empty());
+    auto ok = relay::encodeStatus(relay::FrameKind::Ok, 11);
+    CHECK_TRUE(relay::parseFrame(ok, kind, o, d, id));
+    CHECK_TRUE(kind == relay::FrameKind::Ok);
+    auto err = relay::encodeStatus(relay::FrameKind::Err, 12);
+    CHECK_TRUE(relay::parseFrame(err, kind, o, d, id));
+    CHECK_TRUE(kind == relay::FrameKind::Err);
 }
 
 LETHE_TEST_CASE(RelayFrame_MalformedRejected) {
-    relay::Request req;
-    // Truncated / bad magic / zero port all rejected.
-    CHECK_FALSE(relay::parseRequest({}, req));
-    CHECK_FALSE(relay::parseRequest({0x00, 0x01, 0x02}, req));
+    relay::FrameKind kind;
+    relay::OpenFrame o;
+    relay::DataFrame d;
+    relay::IdFrame id;
 
-    auto badPort = relay::encodeRequest("h", 0, 1, nullptr, 0);
-    CHECK_FALSE(relay::parseRequest(badPort, req));
+    CHECK_FALSE(relay::parseFrame({}, kind, o, d, id));
+    CHECK_FALSE(relay::parseFrame({'X', 'Y'}, kind, o, d, id));
+    CHECK_FALSE(relay::parseFrame({'L', 'T', 'H', 'R', 99}, kind, o, d, id));
 
-    uint8_t flags = 0;
-    uint32_t xid = 0;
-    std::vector<uint8_t> body;
-    CHECK_FALSE(relay::parseChunk({'L', 'T', 'H', 'R', 0xFE}, flags, xid,
-                                  body));
+    // Open with zero port or empty host rejected.
+    auto badPort = relay::encodeOpen(1, "h", 0);
+    CHECK_FALSE(relay::parseFrame(badPort, kind, o, d, id));
+    // Unknown kind byte.
+    auto badKind = std::vector<uint8_t>({'L', 'T', 'H', 'R', 77, 0, 0, 0, 1});
+    CHECK_FALSE(relay::parseFrame(badKind, kind, o, d, id));
 }
-
 namespace {
 
-// Shared fixture: server + handshaked client transport.
+// Shared fixture: server + handshaked client transport + helpers to drive
+// v3 stream frames.
 struct RelayFixture {
     VpnServer server;
     VpnTunnel client;
     UdpTransport clientTransport;
     int serverPort = 0;
+    uint32_t nextXid = 100;
     std::atomic<bool> running{false};
     std::thread pump;
 
@@ -183,8 +177,7 @@ struct RelayFixture {
         if (!client.configureClient(cfg)) return false;
         if (!clientTransport.bind("127.0.0.1", 0)) return false;
 
-        // The event-loop pump MUST run while the handshake happens:
-        // otherwise nobody processes the init datagram.
+        // The event-loop pump MUST run while the handshake happens.
         running = true;
         pump = std::thread([this]() {
             while (running.load()) {
@@ -206,9 +199,8 @@ struct RelayFixture {
             return false;
         }
         if (!client.processHandshakeResponse(resp)) return false;
-        if (!client.isConnected()) return false;
-
-        return waitFor([&]() { return server.clientCount() == 1; }, 2000);
+        return client.isConnected() &&
+               waitFor([&]() { return server.clientCount() == 1; }, 2000);
     }
 
     ~RelayFixture() {
@@ -216,21 +208,32 @@ struct RelayFixture {
         if (pump.joinable()) pump.join();
     }
 
-    // Send a framed request and collect framed chunks until END.
-    std::vector<uint8_t> exchange(const std::string& host, int port,
-                                  const std::string& httpRequest,
-                                  bool& endSeen) {
-        endSeen = false;
-        const uint32_t xid = 1234;
-        auto frame = relay::encodeRequest(
-            host, static_cast<uint16_t>(port), xid,
-            reinterpret_cast<const uint8_t*>(httpRequest.data()),
-            httpRequest.size());
+    bool sendEncrypted(const std::vector<uint8_t>& frame) {
         std::vector<uint8_t> ct;
         if (!client.encryptDataPacket(frame.data(), frame.size(), ct)) {
+            return false;
+        }
+        return clientTransport.sendTo("127.0.0.1", serverPort, ct);
+    }
+
+    // Drive one full HTTP exchange: OPEN -> OK -> DATA(request) ->
+    // END(request) -> collect DATA until END. Returns collected bytes.
+    std::vector<uint8_t> httpExchange(const std::string& host, int port,
+                                      const std::string& httpRequest,
+                                      bool& okSeen, bool& endSeen) {
+        okSeen = false;
+        endSeen = false;
+        const uint32_t xid = ++nextXid;
+        if (!sendEncrypted(relay::encodeOpen(xid, host,
+                                             static_cast<uint16_t>(port)))) {
             return {};
         }
-        if (!clientTransport.sendTo("127.0.0.1", serverPort, ct)) return {};
+        if (!sendEncrypted(relay::encodeData(
+                xid, reinterpret_cast<const uint8_t*>(httpRequest.data()),
+                httpRequest.size()))) {
+            return {};
+        }
+        if (!sendEncrypted(relay::encodeEnd(xid))) return {};
 
         std::vector<uint8_t> collected;
         auto deadline = std::chrono::steady_clock::now() +
@@ -243,17 +246,27 @@ struct RelayFixture {
                 datagram, std::chrono::milliseconds(500), fh, fp);
             if (n <= 0) continue;
             std::vector<uint8_t> pt;
-            if (!client.decryptDataPacket(datagram.data(),
-                                          datagram.size(), pt)) {
+            if (!client.decryptDataPacket(datagram.data(), datagram.size(),
+                                          pt)) {
                 continue;
             }
-            uint8_t flags = 0;
-            uint32_t chunkXid = 0;
-            std::vector<uint8_t> body;
-            if (!relay::parseChunk(pt, flags, chunkXid, body)) continue;
-            if (chunkXid != xid) continue; // stale/foreign exchange
-            collected.insert(collected.end(), body.begin(), body.end());
-            if (flags & relay::kFlagEnd) {
+            relay::FrameKind kind;
+            relay::OpenFrame o;
+            relay::DataFrame d;
+            relay::IdFrame id;
+            if (!relay::parseFrame(pt, kind, o, d, id)) continue;
+            if (id.xid != xid) continue; // stale exchange
+            if (kind == relay::FrameKind::Ok) {
+                okSeen = true;
+                continue;
+            }
+            if (kind == relay::FrameKind::Err) break; // refused
+            if (kind == relay::FrameKind::Data) {
+                collected.insert(collected.end(), d.payload.begin(),
+                                 d.payload.end());
+                continue;
+            }
+            if (kind == relay::FrameKind::End) {
                 endSeen = true;
                 break;
             }
@@ -264,7 +277,7 @@ struct RelayFixture {
 
 } // namespace
 
-LETHE_TEST_CASE(VpnServer_Relay_HttpExchangeOverRealUdp) {
+LETHE_TEST_CASE(VpnServer_Relay_HttpStreamOverRealUdp) {
     TinyOrigin origin;
     const std::string resp =
         "HTTP/1.0 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n"
@@ -276,29 +289,62 @@ LETHE_TEST_CASE(VpnServer_Relay_HttpExchangeOverRealUdp) {
 
     const std::string httpReq =
         "GET / HTTP/1.1\r\nHost: origin.test\r\n\r\n";
+    bool okSeen = false;
     bool endSeen = false;
     const std::vector<uint8_t> out =
-        fx.exchange("127.0.0.1", origin.port(), httpReq, endSeen);
+        fx.httpExchange("127.0.0.1", origin.port(), httpReq, okSeen, endSeen);
 
+    CHECK_TRUE(okSeen);
     CHECK_TRUE(endSeen);
     CHECK_EQ(fx.server.relayedRequests(), 1u);
     CHECK_EQ(origin.hits(), 1);
     const std::string text(out.begin(), out.end());
     CHECK_TRUE(text.find("200 OK") != std::string::npos);
     CHECK_TRUE(text.find("hello") != std::string::npos);
+
+    // A second full exchange works on the same session.
+    bool ok2 = false;
+    bool end2 = false;
+    const std::vector<uint8_t> out2 =
+        fx.httpExchange("127.0.0.1", origin.port(), httpReq, ok2, end2);
+    CHECK_TRUE(ok2 && end2);
+    CHECK_EQ(out2.size(), out.size());
+    CHECK_EQ(fx.server.relayedRequests(), 2u);
 }
 
-LETHE_TEST_CASE(VpnServer_Relay_UnreachableTarget_EndsWithEmptyChunk) {
+LETHE_TEST_CASE(VpnServer_Relay_UnreachableTarget_ErrFrame) {
     RelayFixture fx;
     CHECK_TRUE(fx.setup(/*relayEnabled=*/true));
 
-    const std::string httpReq = "GET / HTTP/1.1\r\nHost: x\r\n\r\n";
-    bool endSeen = false;
-    // Port 9 on loopback: closed in test environments.
-    const std::vector<uint8_t> out = fx.exchange("127.0.0.1", 9, httpReq,
-                                                 endSeen);
-    CHECK_TRUE(endSeen);   // failure still terminates the exchange
-    CHECK_TRUE(out.empty());
+    const uint32_t xid = ++fx.nextXid;
+    CHECK_TRUE(fx.sendEncrypted(relay::encodeOpen(xid, "127.0.0.1", 9)));
+
+    // Expect the verdict frame for our xid: ERR (never OK).
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(5);
+    bool errSeen = false;
+    while (std::chrono::steady_clock::now() < deadline && !errSeen) {
+        std::vector<uint8_t> datagram;
+        std::string fh;
+        int fp = 0;
+        const int n = fx.clientTransport.recvFrom(
+            datagram, std::chrono::milliseconds(500), fh, fp);
+        if (n <= 0) continue;
+        std::vector<uint8_t> pt;
+        if (!fx.client.decryptDataPacket(datagram.data(), datagram.size(),
+                                         pt)) {
+            continue;
+        }
+        relay::FrameKind kind;
+        relay::OpenFrame o;
+        relay::DataFrame d;
+        relay::IdFrame id;
+        if (!relay::parseFrame(pt, kind, o, d, id)) continue;
+        if (id.xid != xid) continue;
+        CHECK_FALSE(kind == relay::FrameKind::Ok); // never OK for a dead target
+        if (kind == relay::FrameKind::Err) errSeen = true;
+    }
+    CHECK_TRUE(errSeen);
     CHECK_EQ(fx.server.relayedRequests(), 1u);
 }
 
@@ -314,16 +360,13 @@ LETHE_TEST_CASE(VpnServer_Relay_Disabled_PayloadGoesToCallback) {
         seen.assign(data, data + len);
     });
 
-    const std::string magicPayload(reinterpret_cast<const char*>(
-                                       relay::kMagic),
+    const std::string magicPayload(reinterpret_cast<const char*>(relay::kMagic),
                                    sizeof(relay::kMagic));
-    auto frame = relay::encodeRequest("127.0.0.1", 9, 555,
-                                      reinterpret_cast<const uint8_t*>(
-                                          magicPayload.data()),
-                                      magicPayload.size());
-    std::vector<uint8_t> ct;
-    CHECK_TRUE(fx.client.encryptDataPacket(frame.data(), frame.size(), ct));
-    CHECK_TRUE(fx.clientTransport.sendTo("127.0.0.1", fx.serverPort, ct));
+    auto frame = relay::encodeData(777,
+                                   reinterpret_cast<const uint8_t*>(
+                                       magicPayload.data()),
+                                   magicPayload.size());
+    CHECK_TRUE(fx.sendEncrypted(frame));
 
     CHECK_TRUE(waitFor([&]() { return callbackHit.load(); }, 2000));
     // The payload reached the callback verbatim: no relay interception.

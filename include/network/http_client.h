@@ -61,14 +61,14 @@ public:
     vpn::VpnTunnel* vpnTunnel() const { return vpnTunnel_.get(); }
     bool isVpnActive() const;
 
-    // --- HTTP-over-tunnel relay (one-shot, plain HTTP only) ---
+    // --- HTTP(S)-over-tunnel relay (streaming) ---
     // Share the engine's VPN UDP transport and endpoint. When a tunnel is
-    // CONNECTED and the resolved destination is covered by its CIDRs,
-    // plain-HTTP exchanges are carried THROUGH the encrypted tunnel as
-    // framed one-shot requests (the server connects TCP to the target).
-    // The client never opens direct TCP to covered destinations while the
-    // tunnel is up. TLS destinations are not relayed yet and fail closed
-    // rather than bypass the tunnel. Pass nullptr to disable.
+    // CONNECTED and the resolved destination is covered by its CIDRs, the
+    // exchange (plain HTTP or TLS) is carried THROUGH the encrypted tunnel
+    // as a streaming relay: the server connects the TCP origin, and bytes
+    // flow both directions as framed DATA. The client never opens direct
+    // TCP to covered destinations while the tunnel is up. Pass nullptr to
+    // disable.
     void setVpnRelay(UdpTransport* udpTransport,
                      const std::string& endpointHost, int endpointPort);
 
@@ -82,11 +82,22 @@ public:
     bool isDohEnabled() const { return !dohProvider_.empty(); }
 
 private:
-    // --- Relay state (HTTP-over-tunnel) ---
-    bool relayConfigured() const { return vpnUdp_ != nullptr && !vpnEndpointHost_.empty() && vpnEndpointPort_ > 0; }
+    // --- Relay state (streaming HTTP(S)-over-tunnel) ---
+    bool relayConfigured() const {
+        return vpnUdp_ != nullptr && !vpnEndpointHost_.empty() &&
+               vpnEndpointPort_ > 0;
+    }
     void resetRelayState();
-    bool flushRelayRequest();
-    bool fetchRelayChunk(int timeoutMs);
+    bool relayEnsureOpen();                       // OPEN + wait OK/ERR
+    bool relaySendData(const uint8_t* p, size_t n);
+    bool relaySendEnd();
+    // Pull one xid-filtered frame: 1 = DATA appended to relayIn_,
+    // 2 = irrelevant frame skipped, 0 = stream ended (END), -1 = error.
+    int pullRelayFrame(int timeoutMs);
+    int pullUntilUseful(int timeoutMs);
+    // TLS-over-pipe helpers (memory BIOs).
+    bool tlsPumpOut();                            // wbio pending -> DATA
+    bool tlsFillRead(int timeoutMs);              // tunnel frames -> rbio
 
     UdpTransport* vpnUdp_ = nullptr;
     std::string vpnEndpointHost_;
@@ -94,12 +105,15 @@ private:
     bool relayMode_ = false;
     std::string relayTargetHost_;
     int relayTargetPort_ = 0;
-    std::vector<uint8_t> relayOut_;
-    bool relaySent_ = false;
+    uint32_t relayXid_ = 0;
+    bool relayOpenSent_ = false;
+    bool relayEstablished_ = false;
+    bool relayFailed_ = false;
     std::vector<uint8_t> relayIn_;
     size_t relayInPos_ = 0;
     bool relayEof_ = false;
-    uint32_t relayXid_ = 0;
+    void* relayRbio_ = nullptr; // BIO* (opaque here; OpenSSL owns via SSL)
+    void* relayWbio_ = nullptr;
 
     // --- Connection management ---
     bool connectToHost(const std::string& host, int port, const std::string& scheme,

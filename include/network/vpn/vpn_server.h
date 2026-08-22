@@ -76,18 +76,23 @@ public:
     // Set the callback invoked for each decrypted client datagram.
     void setDataCallback(DataCallback cb);
 
-    // --- One-shot TCP relay (HTTP-over-tunnel) ---
-    // When enabled (default), a decrypted client payload that carries the
-    // relay magic is interpreted as a relay request: the server connects
-    // TCP to the framed destination, forwards the payload, and streams the
-    // origin's response back to the client as END-framed chunks. Requests
-    // without the magic still reach the data callback unchanged.
+    // --- Streaming TCP relay (HTTP/HTTPS over the tunnel) ---
+    // When enabled (default), decrypted client payloads carrying the relay
+    // magic are interpreted as stream frames: OPEN connects a TCP origin,
+    // DATA carries bytes both directions, END closes, OK/ERR report the
+    // connect result. The event loop polls open origins and pushes their
+    // bytes back as DATA frames. Payloads without the magic still reach
+    // the data callback unchanged.
     void setRelayEnabled(bool enabled);
     bool relayEnabled() const { return relayEnabled_; }
-    // Cap on total bytes relayed back per request. Default: 256 KiB.
+    // Cap on total bytes streamed back per relay stream. Default: 256 KiB.
     void setMaxRelayResponseBytes(size_t n);
-    // Number of relay requests handled since start.
+    // Concurrent relay streams allowed. Default: 256.
+    void setMaxRelayStreams(size_t n);
+    // Number of relay streams opened since start.
     size_t relayedRequests() const { return relayedRequests_.load(); }
+    // Currently open relay streams.
+    size_t openRelayStreams() const { return relayStreams_.size(); }
 
     // --- DoS hardening (all knobs have safe defaults) ---
     // Evict clients not seen for this long. Default: 180s.
@@ -134,10 +139,18 @@ private:
                              const std::string& fromHost, int fromPort);
     ClientSession* findSessionByAddress(const std::string& host, int port);
 
-    // Relay handling: connect TCP to the framed destination, forward the
-    // payload, stream the origin's reply back as encrypted chunks.
-    void handleRelayRequest(const std::string& clientKey,
-                            const std::vector<uint8_t>& plaintext);
+    // Relay handling: frame dispatch, origin I/O, stream bookkeeping.
+    // All relayStreams_ state lives on the event-loop thread only.
+    void handleRelayFrame(const std::string& clientKey,
+                          const std::vector<uint8_t>& plaintext);
+    void closeRelayStream(uint32_t xid, bool notifyClient);
+    void pumpStreamToClient(uint32_t xid);
+
+    struct RelayStream {
+        int fd = -1;
+        std::string clientKey;
+        size_t totalBytes = 0;
+    };
 
     Key serverPrivateKey_{};
     Key serverPublicKey_{};
@@ -156,9 +169,11 @@ private:
     size_t maxHandshakesPerWindow_ = 16;
     size_t maxClients_ = 1024;
 
-    // Relay settings.
+    // Relay settings + live streams (event-loop thread only).
     bool relayEnabled_ = true;
     size_t maxRelayResponseBytes_ = 256 * 1024;
+    size_t maxRelayStreams_ = 256;
+    std::map<uint32_t, RelayStream> relayStreams_;
     std::atomic<size_t> relayedRequests_{0};
 
     DataCallback dataCallback_;

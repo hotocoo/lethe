@@ -12,6 +12,8 @@
 #include "network/udp_transport.h"
 #include "network/vpn/vpn_relay.h"
 
+#include <algorithm>
+
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cctype>
@@ -419,24 +421,29 @@ bool HttpClient::connectToHost(const std::string& host, int port,
         return false;
     }
 
-    // Tunnel UP and destination covered: carry plain-HTTP exchanges through
-    // the encrypted one-shot relay. The resolved IP travels INSIDE the
-    // tunnel; no direct TCP connection to the destination is ever opened.
-    if (covered && isVpnActive() && relayConfigured() && scheme != "https") {
+    // Tunnel UP and destination covered: carry the exchange (plain HTTP
+    // or TLS) through the encrypted streaming relay. The resolved IP
+    // travels INSIDE the tunnel; no direct TCP connection to the
+    // destination is ever opened.
+    if (covered && isVpnActive() && relayConfigured()) {
         resetRelayState();
         relayMode_ = true;
         relayTargetHost_ = connectTarget;
         relayTargetPort_ = port;
         std::cout << "[lethe-http] Routing " << host << ":" << port
                   << " through the encrypted tunnel" << std::endl;
-        return true;
-    }
-    if (covered && isVpnActive() && relayConfigured() && scheme == "https") {
-        lastConnectError_ =
-            "Blocked: TLS-over-tunnel relay is not supported yet; refusing "
-            "a plaintext bypass for " + host;
-        std::cerr << "[lethe-http] " << lastConnectError_ << std::endl;
-        return false;
+        // TLS runs over the pipe too: startTls branches on relayMode_ and
+        // uses memory BIOs fed by the relay stream.
+        if (scheme == "https") {
+            const bool ok = startTls(host);
+            if (!ok) {
+                lastConnectError_ = !lastConnectError_.empty()
+                    ? lastConnectError_
+                    : "TLS-over-tunnel handshake failed for " + host;
+            }
+            return ok;
+        }
+        return true; // plain HTTP: stream established lazily on first write
     }
 
     if (!openTcp(connectTarget, port)) {
@@ -555,6 +562,63 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
         closeConnection();
         return false;
     }
+#ifdef HAVE_OPENSSL
+    if (relayMode_) {
+        // TLS over the tunnel pipe: memory BIOs instead of a socket fd.
+        // SSL_connect/SSL_read/SSL_write move bytes between the pipe and
+        // the TLS state machine; certificate verification is unchanged.
+        BIO* rbio = BIO_new(BIO_s_mem());
+        BIO* wbio = BIO_new(BIO_s_mem());
+        if (!rbio || !wbio) {
+            if (rbio) BIO_free(rbio);
+            if (wbio) BIO_free(wbio);
+            closeConnection();
+            return false;
+        }
+        SSL_set_bio(ssl_, rbio, wbio); // ssl_ owns both from here on
+        relayRbio_ = rbio;
+        relayWbio_ = wbio;
+
+        auto deadline = std::chrono::steady_clock::now() + ioTimeout_;
+        while (true) {
+            const int rc = SSL_connect(ssl_);
+            if (rc == 1) break; // handshake complete
+            const int err = SSL_get_error(ssl_, rc);
+            if (err == SSL_ERROR_WANT_READ) {
+                if (!tlsPumpOut() || !tlsFillRead(3000)) {
+                    std::cerr << "[lethe-http] Relay TLS handshake stalled"
+                              << std::endl;
+                    closeConnection();
+                    return false;
+                }
+            } else if (err == SSL_ERROR_WANT_WRITE) {
+                if (!tlsPumpOut()) {
+                    closeConnection();
+                    return false;
+                }
+            } else {
+                std::cerr << "[lethe-http] Relay TLS handshake failed with "
+                          << tlsHostname << " (SSL error " << err << ")"
+                          << std::endl;
+                closeConnection();
+                return false;
+            }
+            if (std::chrono::steady_clock::now() > deadline) {
+                std::cerr << "[lethe-http] Relay TLS handshake timed out"
+                          << std::endl;
+                closeConnection();
+                return false;
+            }
+        }
+
+        const SSL* sslConst = ssl_;
+        std::cout << "[lethe-http] TLS established over tunnel with "
+                  << tlsHostname << " ("
+                  << SSL_get_version(sslConst) << ")" << std::endl;
+        return true;
+    }
+#endif
+
     SSL_set_fd(ssl_, socketFd_);
     SSL_set_tlsext_host_name(ssl_, tlsHostname.c_str());
 
@@ -596,70 +660,208 @@ void HttpClient::setVpnRelay(UdpTransport* udpTransport,
 }
 
 void HttpClient::resetRelayState() {
+    // Best-effort stream close: the server also reaps streams whose client
+    // went silent, so a lost END is not fatal.
+    if (relayMode_ && relayEstablished_ && relayConfigured() && vpnTunnel_) {
+        std::vector<uint8_t> endFrame =
+            vpn::relay::encodeEnd(relayXid_);
+        std::vector<uint8_t> ct;
+        if (vpnTunnel_->encryptDataPacket(endFrame.data(), endFrame.size(),
+                                          ct)) {
+            (void)vpnUdp_->sendTo(vpnEndpointHost_, vpnEndpointPort_, ct);
+        }
+    }
     relayMode_ = false;
     relayTargetHost_.clear();
     relayTargetPort_ = 0;
-    relayOut_.clear();
-    relaySent_ = false;
+    relayOpenSent_ = false;
+    relayEstablished_ = false;
+    relayFailed_ = false;
     relayIn_.clear();
     relayInPos_ = 0;
     relayEof_ = false;
+    relayXid_ = 0;
+    relayRbio_ = nullptr; // owned by ssl_ once set; freed with it
+    relayWbio_ = nullptr;
 }
 
-bool HttpClient::flushRelayRequest() {
-    if (relaySent_) return true;
-    relaySent_ = true;
-    if (!relayConfigured() || !vpnTunnel_) return false;
-
-    // Fresh exchange id per request: stale datagrams from a previous
-    // exchange (e.g. an unconsumed END) are recognized and discarded.
-    relayXid_ = static_cast<uint32_t>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
-    std::vector<uint8_t> frame = vpn::relay::encodeRequest(
-        relayTargetHost_, static_cast<uint16_t>(relayTargetPort_), relayXid_,
-        relayOut_.data(), relayOut_.size());
-    std::vector<uint8_t> ciphertext;
-    if (!vpnTunnel_->encryptDataPacket(frame.data(), frame.size(), ciphertext)) {
-        std::cerr << "[lethe-http] Relay request encryption failed" << std::endl;
-        return false;
+// Send OPEN for this exchange and wait (bounded) for OK / ERR.
+bool HttpClient::relayEnsureOpen() {
+    if (relayEstablished_) return true;
+    if (relayFailed_) return false;
+    if (!relayOpenSent_) {
+        if (!relayConfigured() || !vpnTunnel_) return false;
+        relayXid_ = static_cast<uint32_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::vector<uint8_t> frame = vpn::relay::encodeOpen(
+            relayXid_, relayTargetHost_,
+            static_cast<uint16_t>(relayTargetPort_));
+        std::vector<uint8_t> ct;
+        if (!vpnTunnel_->encryptDataPacket(frame.data(), frame.size(), ct)) {
+            return false;
+        }
+        if (!vpnUdp_->sendTo(vpnEndpointHost_, vpnEndpointPort_, ct)) {
+            return false;
+        }
+        relayOpenSent_ = true;
     }
-    if (!vpnUdp_->sendTo(vpnEndpointHost_, vpnEndpointPort_, ciphertext)) {
-        std::cerr << "[lethe-http] Relay send failed" << std::endl;
-        return false;
+
+    // Wait for the connect verdict before any DATA leaves.
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds(3000);
+    while (!relayEstablished_ && !relayFailed_ &&
+           std::chrono::steady_clock::now() < deadline) {
+        const int waitMs = 250;
+        if (!relayConfigured() || !vpnTunnel_) return false;
+        std::vector<uint8_t> datagram;
+        std::string fh;
+        int fp = 0;
+        const int n = vpnUdp_->recvFrom(datagram,
+                                        std::chrono::milliseconds(waitMs),
+                                        fh, fp);
+        if (n <= 0) continue;
+        std::vector<uint8_t> pt;
+        if (!vpnTunnel_->decryptDataPacket(datagram.data(),
+                                           static_cast<size_t>(n), pt)) {
+            continue;
+        }
+        vpn::relay::FrameKind kind;
+        vpn::relay::OpenFrame openIgnored;
+        vpn::relay::DataFrame dataIgnored;
+        vpn::relay::IdFrame id;
+        if (!vpn::relay::parseFrame(pt, kind, openIgnored, dataIgnored,
+                                    id)) {
+            continue;
+        }
+        if (id.xid != relayXid_) continue; // stale exchange
+        if (kind == vpn::relay::FrameKind::Ok) {
+            relayEstablished_ = true;
+        } else if (kind == vpn::relay::FrameKind::Err) {
+            relayFailed_ = true;
+            std::cerr << "[lethe-http] Relay stream refused by server"
+                      << std::endl;
+        }
+    }
+    return relayEstablished_;
+}
+
+bool HttpClient::relaySendData(const uint8_t* p, size_t n) {
+    if (!relayEnsureOpen()) return false;
+    size_t sent = 0;
+    while (sent < n) {
+        const size_t take =
+            std::min<size_t>(n - sent, vpn::relay::kMaxPayloadLen);
+        std::vector<uint8_t> frame =
+            vpn::relay::encodeData(relayXid_, p + sent, take);
+        std::vector<uint8_t> ct;
+        if (!vpnTunnel_->encryptDataPacket(frame.data(), frame.size(), ct)) {
+            return false;
+        }
+        if (!vpnUdp_->sendTo(vpnEndpointHost_, vpnEndpointPort_, ct)) {
+            return false;
+        }
+        sent += take;
     }
     return true;
 }
 
-bool HttpClient::fetchRelayChunk(int timeoutMs) {
+bool HttpClient::relaySendEnd() {
     if (!relayConfigured() || !vpnTunnel_) return false;
+    std::vector<uint8_t> frame = vpn::relay::encodeEnd(relayXid_);
+    std::vector<uint8_t> ct;
+    if (!vpnTunnel_->encryptDataPacket(frame.data(), frame.size(), ct)) {
+        return false;
+    }
+    return vpnUdp_->sendTo(vpnEndpointHost_, vpnEndpointPort_, ct);
+}
+
+// Pull one frame for the current exchange.
+// Returns 1 = DATA appended to relayIn_; 0 = stream ended; -1 = error.
+int HttpClient::pullRelayFrame(int timeoutMs) {
+    if (!relayConfigured() || !vpnTunnel_ || relayFailed_) return -1;
     std::vector<uint8_t> datagram;
-    std::string fromHost;
-    int fromPort = 0;
+    std::string fh;
+    int fp = 0;
     const int n = vpnUdp_->recvFrom(datagram,
                                     std::chrono::milliseconds(timeoutMs),
-                                    fromHost, fromPort);
-    if (n <= 0) return false;
-    std::vector<uint8_t> plaintext;
+                                    fh, fp);
+    if (n <= 0) return -1; // timeout or socket error
+    std::vector<uint8_t> pt;
     if (!vpnTunnel_->decryptDataPacket(datagram.data(),
-                                       static_cast<size_t>(n), plaintext)) {
-        std::cerr << "[lethe-http] Relay packet failed to decrypt" << std::endl;
-        return false;
+                                       static_cast<size_t>(n), pt)) {
+        return -1;
     }
-    uint8_t flags = 0;
-    uint32_t xid = 0;
-    std::vector<uint8_t> body;
-    if (!vpn::relay::parseChunk(plaintext, flags, xid, body)) {
-        std::cerr << "[lethe-http] Malformed relay chunk" << std::endl;
-        return false;
+    vpn::relay::FrameKind kind;
+    vpn::relay::OpenFrame openIgnored;
+    vpn::relay::DataFrame data;
+    vpn::relay::IdFrame id;
+    if (!vpn::relay::parseFrame(pt, kind, openIgnored, data, id)) {
+        return -1;
     }
-    if (xid != relayXid_) {
-        // Stale datagram from a previous exchange: skip it.
-        return fetchRelayChunk(timeoutMs);
+    if (id.xid != relayXid_) {
+        // Stale datagram from an earlier exchange: skip and keep pulling.
+        return pullRelayFrame(timeoutMs);
     }
-    relayIn_.insert(relayIn_.end(), body.begin(), body.end());
-    if (flags & vpn::relay::kFlagEnd) relayEof_ = true;
+    if (kind == vpn::relay::FrameKind::Data) {
+        relayIn_.insert(relayIn_.end(), data.payload.begin(),
+                        data.payload.end());
+        return 1;
+    }
+    if (kind == vpn::relay::FrameKind::End) {
+        relayEof_ = true;
+        return 0;
+    }
+    if (kind == vpn::relay::FrameKind::Err) {
+        relayFailed_ = true;
+        return -1;
+    }
+    return 2; // unexpected frame kind: tell caller to keep pulling
+}
+
+int HttpClient::pullUntilUseful(int timeoutMs) {
+    for (int guard = 0; guard < 64; guard++) {
+        const int r = pullRelayFrame(timeoutMs);
+        if (r != 2) return r;
+    }
+    return -1;
+}
+
+#ifdef HAVE_OPENSSL
+// Push whatever TLS queued in the write BIO out as DATA frames.
+bool HttpClient::tlsPumpOut() {
+    BIO* wbio = static_cast<BIO*>(relayWbio_);
+    if (!wbio) return false;
+    char buf[vpn::relay::kMaxPayloadLen];
+    while (BIO_pending(wbio) > 0) {
+        const int n = BIO_read(wbio, buf, sizeof(buf));
+        if (n <= 0) return false;
+        if (!relaySendData(reinterpret_cast<uint8_t*>(buf),
+                           static_cast<size_t>(n))) {
+            return false;
+        }
+    }
     return true;
 }
+
+// Pull tunnel frames for this exchange into the read BIO so SSL can retry.
+bool HttpClient::tlsFillRead(int timeoutMs) {
+    BIO* rbio = static_cast<BIO*>(relayRbio_);
+    if (!rbio) return false;
+    const int r = pullUntilUseful(timeoutMs);
+    if (r < 0) return false;                       // error or hard EOF
+    if (!relayIn_.empty()) {
+        const size_t avail = relayIn_.size() - relayInPos_;
+        BIO_write(rbio, relayIn_.data() + relayInPos_,
+                  static_cast<int>(avail));
+        relayInPos_ = relayIn_.size();
+        relayIn_.clear();
+        relayInPos_ = 0;
+        return true;
+    }
+    // END arrived with no pending bytes: nothing more will ever come.
+    return relayEof_ ? false : true;
+}
+#endif
 
 void HttpClient::closeConnection() {
     resetRelayState();
@@ -684,14 +886,36 @@ void HttpClient::closeConnection() {
 // --- Raw I/O ---
 
 int HttpClient::rawRead(uint8_t* buf, size_t len) {
-    if (relayMode_) {
-        // Pull decrypted tunnel chunks until bytes are available or the
-        // exchange ends. The request is flushed lazily on the first read.
-        while (relayInPos_ >= relayIn_.size() && !relayEof_) {
-            if (!relaySent_ && !flushRelayRequest()) return -1;
-            if (!fetchRelayChunk(3000)) return -1;
+#ifdef HAVE_OPENSSL
+    if (relayMode_ && usingTls_ && ssl_) {
+        // TLS over the tunnel pipe: feed peer bytes into the read BIO,
+        // then let SSL_read consume them. Pump writes on renegotiations.
+        while (true) {
+            const int n = SSL_read(ssl_, buf, static_cast<int>(len));
+            if (n > 0) return n;
+            const int err = SSL_get_error(ssl_, n);
+            if (err == SSL_ERROR_ZERO_RETURN) return 0; // clean close
+            if (err == SSL_ERROR_WANT_READ) {
+                if (!tlsPumpOut()) return -1;
+                if (!tlsFillRead(3000)) return -1;
+                continue;
+            }
+            if (err == SSL_ERROR_WANT_WRITE) {
+                if (!tlsPumpOut()) return -1;
+                continue;
+            }
+            return -1;
         }
-        if (relayInPos_ >= relayIn_.size()) return 0; // END received: EOF
+    }
+#endif
+    if (relayMode_) {
+        // Plain HTTP over the pipe: reassemble DATA frames.
+        while (relayInPos_ >= relayIn_.size() && !relayEof_) {
+            if (!relayEnsureOpen()) return -1;
+            if (pullUntilUseful(3000) < 1 && !relayEof_) return -1;
+            if (relayEof_) break;
+        }
+        if (relayInPos_ >= relayIn_.size()) return 0; // stream ended
         const size_t avail = relayIn_.size() - relayInPos_;
         const size_t take = len < avail ? len : avail;
         std::memcpy(buf, relayIn_.data() + relayInPos_, take);
@@ -744,11 +968,34 @@ int HttpClient::rawRead(uint8_t* buf, size_t len) {
 }
 
 bool HttpClient::writeAll(const char* data, size_t len) {
-    if (relayMode_) {
-        // Relay exchanges buffer the whole request; it is framed and sent
-        // lazily when the first read arrives.
-        relayOut_.insert(relayOut_.end(), data, data + len);
+#ifdef HAVE_OPENSSL
+    if (relayMode_ && usingTls_ && ssl_) {
+        // TLS over the tunnel pipe: encrypt into the write BIO, then push
+        // its bytes out as DATA frames.
+        size_t total = 0;
+        while (total < len) {
+            const int n = SSL_write(ssl_, data + total,
+                                    static_cast<int>(len - total));
+            if (n > 0) {
+                if (!tlsPumpOut()) return false;
+                total += static_cast<size_t>(n);
+                continue;
+            }
+            const int err = SSL_get_error(ssl_, n);
+            if (err == SSL_ERROR_WANT_READ) {
+                if (!tlsFillRead(3000)) return false;
+                continue;
+            }
+            std::cerr << "[lethe-http] Relay SSL_write failed (error "
+                      << err << ")" << std::endl;
+            return false;
+        }
         return true;
+    }
+#endif
+    if (relayMode_) {
+        // Plain HTTP over the pipe: chunk straight into DATA frames.
+        return relaySendData(reinterpret_cast<const uint8_t*>(data), len);
     }
     if (socketFd_ < 0) return false;
     size_t total = 0;

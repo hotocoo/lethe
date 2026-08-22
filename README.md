@@ -51,10 +51,12 @@ Lethe ships with a fully integrated VPN client, so privacy is always available w
   endpoints with backoff, and sends 25s keepalives to hold NAT mappings
 - **MTU enforcement**: Standard 1420-byte WireGuard MTU
 - **DNS over VPN**: Route DNS through the tunnel for leak-free resolution
-- **HTTP over the tunnel**: destinations covered by an UP tunnel are
-  carried as encrypted one-shot relay exchanges — the engine never opens
-  direct TCP to covered hosts while the session is live (TLS destinations
-  fail closed rather than bypass; see the reference server's relay)
+- **HTTP/HTTPS over the tunnel**: destinations covered by an UP tunnel
+  are carried as encrypted streaming relay exchanges — the engine never
+  opens direct TCP to covered hosts while the session is live. TLS runs
+  over the pipe too (memory-BIO handshake inside the stream), with normal
+  certificate verification against the system store or a configured CA
+  bundle
 
 ```cpp
 // Enable the built-in VPN
@@ -265,10 +267,15 @@ The test suite covers:
   "eval" no longer falsely blocked; policy string built from directives)
 - **Tunnel relay framing** (request/chunk encode+parse round trips,
   malformed rejection, exchange-id staleness filtering)
-- **One-shot HTTP relay over real UDP** (client tunnel -> reference
-  server -> TCP origin -> encrypted chunks back; unreachable targets still
-  terminate cleanly with an END chunk; disabled relay passes payloads to
-  the data callback verbatim)
+- **Streaming HTTP relay over real UDP** (OPEN/DATA/END frames with
+  exchange ids: client tunnel -> reference server -> TCP origin ->
+  encrypted frames back; multi-exchange sessions; unreachable targets
+  answer ERR; client END half-closes so origins can still respond;
+  disabled relay passes payloads to the data callback verbatim)
+- **HTTPS tunneled navigation e2e** (certificate-verified TLS 1.3 running
+  INSIDE the encrypted relay stream: DoH resolution + memory-BIO
+  handshake + CA-bundle trust + exactly one relayed request and zero
+  direct origin connections)
 - **Tunneled navigation e2e** (bridge fetches a page THROUGH the encrypted
   tunnel: exactly one relayed request, zero direct client connections to
   the origin, DoH-only mock untouched; disabling the relay on the server

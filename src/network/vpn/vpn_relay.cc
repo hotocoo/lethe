@@ -1,4 +1,4 @@
-// vpn_relay.cc — One-shot HTTP relay framing over the Lethe tunnel
+// vpn_relay.cc - Streaming TCP relay framing over the Lethe tunnel
 
 #include "network/vpn/vpn_relay.h"
 
@@ -9,6 +9,7 @@ namespace vpn {
 namespace relay {
 
 namespace {
+
 void appendU16be(std::vector<uint8_t>& out, uint16_t v) {
     out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
     out.push_back(static_cast<uint8_t>(v & 0xFF));
@@ -33,17 +34,28 @@ bool hasMagic(const uint8_t* data, size_t len) {
     return len >= sizeof(kMagic) &&
            std::memcmp(data, kMagic, sizeof(kMagic)) == 0;
 }
+
 } // namespace
 
-std::vector<uint8_t> encodeRequest(const std::string& host, uint16_t port,
-                                   uint32_t xid, const uint8_t* payload,
-                                   size_t len) {
+std::vector<uint8_t> encodeOpen(uint32_t xid, const std::string& host,
+                                uint16_t port) {
     std::vector<uint8_t> out;
-    out.reserve(sizeof(kMagic) + 1 + host.size() + 2 + 4 + len);
+    out.reserve(sizeof(kMagic) + 5 + host.size() + 2);
     out.insert(out.end(), kMagic, kMagic + sizeof(kMagic));
+    out.push_back(static_cast<uint8_t>(FrameKind::Open));
+    appendU32be(out, xid);
     out.push_back(static_cast<uint8_t>(host.size()));
     out.insert(out.end(), host.begin(), host.end());
     appendU16be(out, port);
+    return out;
+}
+
+std::vector<uint8_t> encodeData(uint32_t xid, const uint8_t* payload,
+                                size_t len) {
+    std::vector<uint8_t> out;
+    out.reserve(sizeof(kMagic) + 5 + len);
+    out.insert(out.end(), kMagic, kMagic + sizeof(kMagic));
+    out.push_back(static_cast<uint8_t>(FrameKind::Data));
     appendU32be(out, xid);
     if (len > 0 && payload) {
         out.insert(out.end(), payload, payload + len);
@@ -51,63 +63,77 @@ std::vector<uint8_t> encodeRequest(const std::string& host, uint16_t port,
     return out;
 }
 
-bool parseRequest(const uint8_t* data, size_t len, Request& out) {
-    if (!hasMagic(data, len)) return false;
-    size_t off = sizeof(kMagic);
-    const uint8_t hostLen = data[off++];
-    if (hostLen == 0 || hostLen > kMaxHostLen ||
-        off + hostLen + 2 + 4 > len) {
-        return false;
-    }
-    out.host.assign(reinterpret_cast<const char*>(data) + off, hostLen);
-    off += hostLen;
-    out.port = readU16be(data + off);
-    off += 2;
-    if (out.port == 0) return false;
-    out.xid = readU32be(data + off);
-    off += 4;
-    out.payload.assign(data + off, data + len);
-    return true;
+std::vector<uint8_t> encodeData(uint32_t xid, const std::vector<uint8_t>& d) {
+    return encodeData(xid, d.data(), d.size());
 }
 
-bool parseRequest(const std::vector<uint8_t>& data, Request& out) {
-    return parseRequest(data.data(), data.size(), out);
-}
-
-std::vector<uint8_t> encodeChunk(const uint8_t* chunk, size_t len, bool end,
-                                 uint32_t xid) {
+std::vector<uint8_t> encodeEnd(uint32_t xid) {
     std::vector<uint8_t> out;
-    out.reserve(sizeof(kMagic) + 1 + 4 + len);
+    out.reserve(sizeof(kMagic) + 5);
     out.insert(out.end(), kMagic, kMagic + sizeof(kMagic));
-    out.push_back(end ? kFlagEnd : 0);
+    out.push_back(static_cast<uint8_t>(FrameKind::End));
     appendU32be(out, xid);
-    if (len > 0 && chunk) {
-        out.insert(out.end(), chunk, chunk + len);
-    }
     return out;
 }
 
-std::vector<uint8_t> encodeChunk(const std::vector<uint8_t>& chunk, bool end,
-                                 uint32_t xid) {
-    return encodeChunk(chunk.data(), chunk.size(), end, xid);
+std::vector<uint8_t> encodeStatus(FrameKind kind, uint32_t xid) {
+    std::vector<uint8_t> out;
+    out.reserve(sizeof(kMagic) + 5);
+    out.insert(out.end(), kMagic, kMagic + sizeof(kMagic));
+    out.push_back(static_cast<uint8_t>(kind));
+    appendU32be(out, xid);
+    return out;
 }
 
-bool parseChunk(const uint8_t* data, size_t len, uint8_t& flags,
-                uint32_t& xid, std::vector<uint8_t>& body) {
+bool parseFrame(const uint8_t* data, size_t len, FrameKind& kind,
+                OpenFrame& open, DataFrame& dataFrame, IdFrame& id) {
     if (!hasMagic(data, len)) return false;
     size_t off = sizeof(kMagic);
-    flags = data[off++];
-    if ((flags & ~kFlagEnd) != 0) return false; // unknown flags: reject
+    const auto k = static_cast<FrameKind>(data[off++]);
     if (off + 4 > len) return false;
-    xid = readU32be(data + off);
+    const uint32_t xid = readU32be(data + off);
     off += 4;
-    body.assign(data + off, data + len);
-    return true;
+
+    id.xid = xid; // every frame carries its exchange id
+
+    switch (k) {
+        case FrameKind::Open: {
+            if (off >= len) return false;
+            const uint8_t hostLen = data[off++];
+            if (hostLen == 0 || hostLen > kMaxHostLen ||
+                off + hostLen + 2 > len) {
+                return false;
+            }
+            open.xid = xid;
+            open.host.assign(reinterpret_cast<const char*>(data) + off,
+                             hostLen);
+            off += hostLen;
+            open.port = readU16be(data + off);
+            if (open.port == 0) return false;
+            kind = k;
+            return true;
+        }
+        case FrameKind::Data: {
+            dataFrame.xid = xid;
+            dataFrame.payload.assign(data + off, data + len);
+            kind = k;
+            return true;
+        }
+        case FrameKind::End:
+        case FrameKind::Ok:
+        case FrameKind::Err: {
+            id.xid = xid;
+            kind = k;
+            return true;
+        }
+        default:
+            return false; // unknown frame kind
+    }
 }
 
-bool parseChunk(const std::vector<uint8_t>& data, uint8_t& flags,
-                uint32_t& xid, std::vector<uint8_t>& body) {
-    return parseChunk(data.data(), data.size(), flags, xid, body);
+bool parseFrame(const std::vector<uint8_t>& bytes, FrameKind& kind,
+                OpenFrame& open, DataFrame& dataFrame, IdFrame& id) {
+    return parseFrame(bytes.data(), bytes.size(), kind, open, dataFrame, id);
 }
 
 } // namespace relay

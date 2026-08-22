@@ -723,6 +723,62 @@ LETHE_TEST_CASE(E2E_BridgeNavigate_HttpTunneledThroughVpnRelay) {
     engine.shutdown();
 }
 
+#ifdef HAVE_OPENSSL
+LETHE_TEST_CASE(E2E_BridgeNavigate_HttpsTunneledThroughVpnRelay) {
+    // The crown-jewel privacy path: a certificate-verified TLS 1.3
+    // navigation carried INSIDE the encrypted tunnel. DoH resolves the
+    // hostname, the relay carries the stream, and the engine's own CA
+    // bundle validates the origin certificate - all at once.
+    CountingMock dohOnly;
+    CHECK_TRUE(dohOnly.start());
+
+    std::string caPem, caKeyPem, srvCertPem, srvKeyPem;
+    CHECK_TRUE(tls_test::generateTestCa(caPem, caKeyPem));
+    CHECK_TRUE(tls_test::generateServerCert(caPem, caKeyPem, "doc.internal",
+                                            srvCertPem, srvKeyPem));
+
+    tls_test::LoopbackTlsServer origin;
+    std::atomic<int> tlsHits{0};
+    origin.setHandler([&](const std::string&) {
+        tlsHits.fetch_add(1);
+        return httpResp(200, "OK",
+            "<html><head><title>Tunneled Secure Page</title></head><body>"
+            "<p>TLS inside the tunnel</p></body></html>");
+    });
+    CHECK_TRUE(origin.start(srvCertPem, srvKeyPem));
+
+    const std::string caFile = tls_test::writeTempFile("lethe_e2e_ca", caPem);
+    CHECK_TRUE(!caFile.empty());
+
+    LiveVpnServer vpn;
+    Engine engine;
+    Config cfg = loopbackConfig(dohOnly, /*incognito=*/true);
+    cfg.caBundlePath = caFile;
+    CHECK_EQ(engine.initialize(cfg), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    CHECK_TRUE(engine.enableVpn(vpn.clientConfig()));
+    CHECK_TRUE(engine.isVpnConnected());
+
+    const std::string url = "https://doc.internal:" +
+                            std::to_string(origin.port()) + "/secure";
+    CHECK_TRUE(bridge.navigate(url));
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("Tunneled Secure Page"));
+    CHECK_TRUE(bridge.getCurrentPageContent().find(
+                   "TLS inside the tunnel") != std::string::npos);
+
+    // One relayed stream; the plain-HTTP mock was never an origin; the TLS
+    // origin saw exactly one handshake.
+    CHECK_EQ(vpn.relayedRequests(), 1u);
+    CHECK_EQ(tlsHits.load(), 1);
+    CHECK_EQ(dohOnly.originHits.load(), 0);
+
+    ::remove(caFile.c_str());
+    engine.shutdown();
+}
+#endif
+
 LETHE_TEST_CASE(E2E_BridgeNavigation_HistoryIsolatedAcrossTabs) {
     CountingMock mock;
     for (const auto* doc : {"/a", "/b", "/c"}) {

@@ -66,6 +66,10 @@ public:
     // The local port this transport is bound to (0 if not bound).
     int localPort() const { return localPort_; }
 
+    // The underlying socket fd (for select()/poll() integration); -1 when
+    // not bound.
+    int nativeFd() const { return socket_; }
+
     // The local host this transport is bound to (empty if not bound).
     std::string localHost() const { return localHost_; }
 
