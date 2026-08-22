@@ -22,7 +22,13 @@ if(BUILD_HARDENED)
     message(STATUS "[lethe] Building with hardened flags")
     add_compile_definitions(-D_FORTIFY_SOURCE=2)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -pipe -flto=auto -fstack-protector-strong -fvisibility=hidden -Wall -Wextra")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -pipe -fstack-protector-strong -fvisibility=hidden -Wall -Wextra")
+        # Linux clang + LTO + static archives drops archive members at link
+        # time (undefined refs to symbols the archive provably contains);
+        # keep LTO on the GNU/Apple toolchains where it links reliably.
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR APPLE)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=auto")
+        endif()
     endif()
 endif()
 

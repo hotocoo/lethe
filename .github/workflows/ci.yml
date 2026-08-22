@@ -91,4 +91,10 @@ jobs:
 
       - name: Tests under ASan+UBSan
         working-directory: build
+        env:
+          # The enforced-sandbox test loads a real seccomp default-deny
+          # filter into this process; LeakSanitizer's exit-time
+          # stop-the-world cannot run under it. ASan memory-error and UBSan
+          # checks stay fully active.
+          ASAN_OPTIONS: detect_leaks=0
         run: ctest --output-on-failure
