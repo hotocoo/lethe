@@ -1,12 +1,15 @@
 # Lethe — Custom Browser for Aletheia Platform
 
+[![CI](https://github.com/hotocoo/lethe/actions/workflows/ci.yml/badge.svg)](https://github.com/hotocoo/lethe/actions/workflows/ci.yml)
+
 Minimalist, high-performance browser with maximum security and a built-in VPN, built as the native browser for the Aletheia OS. Lethe's secure network stack is also used by the OS's LLM agent for private, encrypted web searching.
 
 ## Features
 
 ### Performance
 - **Single-process architecture**: Combined browser/renderer for reduced overhead
-- **Hardware-accelerated rendering**: Full GPU pipeline via Skia
+- **Renderer abstraction**: software pipeline today with a hardware-accelerated
+  backend hook and automatic fallback
 - **Optimized memory management**: Custom allocator with strict limits
 - **Fast startup**: Precompiled components, minimal warm-up time
 - **Efficient network stack**: Connection pooling, HTTP/1.1 with keep-alive
@@ -196,6 +199,8 @@ auto results = bridge.llmWebSearch("aletheia os features");
 
 ## Build Requirements
 
+- Platforms: **Linux and macOS** (portable POSIX sockets; sandboxing uses
+  Seatbelt on macOS and seccomp-bpf on Linux — Windows is not supported)
 - C++20 compiler (Clang 13+ or GCC 11+)
 - CMake >= 3.18
 - OpenSSL >= 3.0 (for VPN cryptography and TLS)
@@ -224,6 +229,27 @@ ninja lethe_core lethe_tests
 # Or with ctest
 cd build && ctest
 ```
+
+### End-to-End Verification
+
+Two layers of e2e run for every change — locally and in CI:
+
+1. **Full-stack suite** (inside `lethe_tests`): browser-grade navigation e2e
+   against real local origins — mock DoH, real TCP/HTTP servers, real TLS 1.3
+   servers whose certificates chain to an engine-provided CA bundle, and page
+   loads pushed THROUGH the encrypted tunnel with exact fetch accounting.
+2. **Deployment-path sim**: `scripts/e2e_vpn_loopback.sh` starts the standalone
+   `lethe-vpn-server` binary, points the standalone `lethe-vpn-e2e-client`
+   binary at it over real loopback UDP, and asserts that a genuine handshake
+   completes and the server decrypts the client's encrypted payload:
+
+   ```bash
+   ./scripts/e2e_vpn_loopback.sh [host] [port]   # defaults: 127.0.0.1 15182
+   ```
+
+CI (`.github/workflows/ci.yml`) builds and runs both layers on Linux
+(gcc + clang; one job also compiles the GTK3 GUI target) and macOS, plus an
+ASan+UBSan build of the entire suite.
 
 The test suite covers:
 - VPN cryptography (X25519, ChaCha20-Poly1305, HMAC, HKDF)
@@ -304,6 +330,8 @@ The test suite covers:
 - `src/renderer/` — Renderer process bindings (Skia + GPU)
 - `src/ui/` — User interface (Qt6/GTK3)
 - `browser/app/` — Main application entry point
+- `tools/` — Standalone reference VPN server and e2e verification client
+- `scripts/` — End-to-end verification scripts (used locally and by CI)
 - `include/` — Public headers by domain
 - `tests/` — Test suite (lightweight framework, no external deps)
 
