@@ -96,6 +96,9 @@ target_link_libraries(lethe-vpn-server PRIVATE lethe_core)
 add_executable(lethe-vpn-e2e-client tools/e2e_client.cc)
 target_link_libraries(lethe-vpn-e2e-client PRIVATE lethe_core)
 
+# Install the runnable network tools alongside the browser.
+install(TARGETS lethe-vpn-server lethe-vpn-e2e-client DESTINATION bin)
+
 # --- GUI application (optional) ---
 if(BUILD_UI)
     if(USE_QT)

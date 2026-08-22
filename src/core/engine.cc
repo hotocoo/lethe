@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <unistd.h>
 #include "core/engine.h"
 #include "config.h"
 #include "security/csp_policy.h"
@@ -28,18 +29,27 @@ Engine::~Engine() {
     if (running_) shutdown(); 
 }
 
+namespace {
+
+// Async-signal-safe termination handler. exit()/iostreams are not
+// async-signal-safe, so the handler only write()s a fixed message, restores
+// the default disposition, and re-raises — the process then dies with the
+// conventional signal status instead of unwinding from signal context.
+extern "C" void letheTerminateHandler(int sig) {
+    const char msg[] = "[lethe] terminating on signal\n";
+    ssize_t ignored = ::write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    (void)ignored;
+    std::signal(sig, SIG_DFL);
+    std::raise(sig);
+}
+
+} // namespace
+
 int Engine::initialize(const Config& cfg) {
     config_ = cfg;
-    
-    std::signal(SIGINT, [](int) {
-        std::cerr << "[lethe] SIGINT — shutting down..." << std::endl;
-        exit(0);
-    });
-    
-    std::signal(SIGTERM, [](int) {
-        std::cerr << "[lethe] SIGTERM — shutting down..." << std::endl;
-        exit(0);
-    });
+
+    std::signal(SIGINT, letheTerminateHandler);
+    std::signal(SIGTERM, letheTerminateHandler);
     
 #if defined(LETHE_SANDBOXING)
     if (config_.sandboxEnabled) {

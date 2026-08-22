@@ -1,11 +1,6 @@
 #ifndef LETHE_CORE_ENGINE_H
 #define LETHE_CORE_ENGINE_H
 
-#include <memory>
-#include <string>
-#include "config.h"
-#include "browser/tab_manager.h"
-#include "renderer/skia_renderer.h"
 #include <chrono>
 #include <cstdint>
 #include <memory>

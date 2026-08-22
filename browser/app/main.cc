@@ -1,4 +1,5 @@
 #include <gtk/gtk.h>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include "core/engine.h"

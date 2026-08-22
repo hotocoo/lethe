@@ -32,7 +32,7 @@ const std::vector<std::string> DOH_PROVIDERS = {
     "https://dns.quad9.net/dns-query"
 };
 
-const int MIN_TLS_VERSION = 0x0304; // TLS 1.2+
+const int MIN_TLS_VERSION = 0x0304; // TLS 1.3 floor
 const int MAX_TLS_VERSION = 0x0305; // TLS 1.3
 const std::string DEFAULT_CIPHERS = 
     "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:"
