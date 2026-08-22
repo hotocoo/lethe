@@ -49,6 +49,24 @@ find_package(ZLIB REQUIRED)
 # GUI) so TLS code paths are compiled and exercised.
 add_compile_definitions(-DHAVE_OPENSSL)
 
+# --- libseccomp (required on Linux for enforced sandboxing) ---
+# src/security/sandbox.cc builds its default-deny filter through libseccomp.
+# Fail loudly instead of silently shipping an unsandboxed browser.
+if(UNIX AND NOT APPLE AND BUILD_WITH_SANDBOX)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(SECCOMP QUIET libseccomp)
+    endif()
+    if(NOT SECCOMP_FOUND)
+        message(FATAL_ERROR
+            "libseccomp development files are required on Linux for the "
+            "enforced sandbox (BUILD_WITH_SANDBOX=ON). Install libseccomp-dev "
+            "(Debian/Ubuntu) or libseccomp-devel (Fedora), or configure with "
+            "-DBUILD_WITH_SANDBOX=OFF to build without sandboxing.")
+    endif()
+    message(STATUS "[lethe] libseccomp: ${SECCOMP_INCLUDE_DIRS} ${SECCOMP_LIBRARIES}")
+endif()
+
 # --- Core library (no UI dependencies) ---
 # This is the heart of Lethe: engine, network, VPN, security, LLM search,
 # and the Aletheia bridge. It can be linked by the GUI app, tests, or the
@@ -82,6 +100,11 @@ target_link_libraries(lethe_core PUBLIC
     OpenSSL::Crypto
     ZLIB::ZLIB
 )
+
+if(SECCOMP_FOUND)
+    target_include_directories(lethe_core PUBLIC ${SECCOMP_INCLUDE_DIRS})
+    target_link_libraries(lethe_core PUBLIC ${SECCOMP_LIBRARIES})
+endif()
 
 if(BUILD_WITH_SANDBOX)
     target_compile_definitions(lethe_core PUBLIC -DLETHE_SANDBOXING)

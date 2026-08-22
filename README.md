@@ -201,6 +201,9 @@ auto results = bridge.llmWebSearch("aletheia os features");
 
 - Platforms: **Linux and macOS** (portable POSIX sockets; sandboxing uses
   Seatbelt on macOS and seccomp-bpf on Linux — Windows is not supported)
+- Linux only: `libseccomp` development files (`libseccomp-dev` on
+  Debian/Ubuntu, `libseccomp-devel` on Fedora) — required by the enforced
+  sandbox; the build fails loudly without them
 - C++20 compiler (Clang 13+ or GCC 11+)
 - CMake >= 3.18
 - OpenSSL >= 3.0 (for VPN cryptography and TLS)
