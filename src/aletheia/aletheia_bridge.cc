@@ -110,10 +110,10 @@ bool AletheiaBridge::loadActiveTab(const std::string& url, bool recordHistory) {
     tabPages_[tabId] = LoadedPage{finalUrl, content.textContent};
 
     // History records real visits only (never back/forward traversal),
-    // and never in incognito sessions.
-    if (recordHistory && !engine_->config().incognitoMode &&
-        engine_->history()) {
-        engine_->history()->addEntry(finalUrl, title);
+    // and never in incognito sessions. Each tab keeps its own history.
+    auto* tabHist = tabs->history(tabId);
+    if (recordHistory && !engine_->config().incognitoMode && tabHist) {
+        tabHist->addEntry(finalUrl, title);
     }
 
     return true;
@@ -142,20 +142,30 @@ bool AletheiaBridge::currentPageLoaded() const {
 }
 
 // --- Session history ---
+//
+// Every traversal and recording below uses the ACTIVE TAB's own history:
+// going back in one tab can never land it on another tab's page.
 
 bool AletheiaBridge::canGoBack() const {
-    return engine_ && engine_->history() && engine_->history()->canGoBack();
+    if (!engine_ || !engine_->tabManager()) return false;
+    const int tabId = engine_->tabManager()->getActiveTab();
+    const auto* h = engine_->tabManager()->history(tabId);
+    return h && h->canGoBack();
 }
 
 bool AletheiaBridge::canGoForward() const {
-    return engine_ && engine_->history() && engine_->history()->canGoForward();
+    if (!engine_ || !engine_->tabManager()) return false;
+    const int tabId = engine_->tabManager()->getActiveTab();
+    const auto* h = engine_->tabManager()->history(tabId);
+    return h && h->canGoForward();
 }
 
 bool AletheiaBridge::traverseHistory(bool forward) {
-    if (!engine_ || !engine_->history() || !engine_->tabManager()) {
-        return false;
-    }
-    auto* hist = engine_->history();
+    if (!engine_ || !engine_->tabManager()) return false;
+    auto* tabs = engine_->tabManager();
+    const int tabId = tabs->getActiveTab();
+    auto* hist = tabId > 0 ? tabs->history(tabId) : nullptr;
+    if (!hist) return false;
 
     // Peek without committing: the cursor moves only if the target loads.
     const auto* target = forward ? hist->peekForward() : hist->peekBack();
@@ -164,10 +174,6 @@ bool AletheiaBridge::traverseHistory(bool forward) {
     // Copy before any load can mutate history (redirects re-record nothing
     // here, but defensive copies keep the traversal atomic).
     const std::string url = target->url;
-
-    auto* tabs = engine_->tabManager();
-    const int tabId = tabs->getActiveTab();
-    if (tabId <= 0) return false;
 
     tabs->navigate(tabId, url);
     if (!loadActiveTab(url, /*recordHistory=*/false)) {

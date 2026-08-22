@@ -127,11 +127,12 @@ Lethe is the native browser of the Aletheia OS, exposed through a unified bridge
   VPN fail-closed policy), the fetched title lands in tab state, the
   readable text is cached per tab for the OS, and history records only
   successful visits outside incognito
-- **Session back/forward**: `goBack`/`goForward` traverse history through
-  the same secure-stack pipeline — the cursor moves only when the target
-  actually loads, traversal is never re-recorded, a new navigation from
-  the past truncates the forward branch, and a traversal blocked by the
-  VPN policy fails closed without moving anything
+- **Session back/forward**: `goBack`/`goForward` traverse PER-TAB history
+  through the same secure-stack pipeline — tabs never share paths — the
+  cursor moves only when the target actually loads, traversal is never
+  re-recorded, a new navigation from the past truncates the forward
+  branch, and a traversal blocked by the VPN policy fails closed without
+  moving anything
 - **VPN control**: Enable/disable the built-in VPN from the OS
 - **LLM search**: The OS LLM accesses the web through Lethe
 - **Status reporting**: Real-time browser and VPN status
@@ -211,7 +212,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (101 tests)
+# Run the full test suite (107 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -252,6 +253,12 @@ The test suite covers:
   hits, cursor and tab restored, then succeeds once the tunnel returns)
 - **Navigation history unit semantics** (cursor model: edges, peeks,
   forward-branch truncation, 1000-entry cap keeping the most recent)
+- **Cross-tab history isolation e2e** (back in one tab never lands on
+  another tab's page; sibling tabs' state untouched by traversals)
+- **CSP decision semantics** ('self' matches only with a document origin
+  and only up to a path boundary - example.org.evil.io fails; originless
+  'self' fails closed; script-scheme URIs denied; host names containing
+  "eval" no longer falsely blocked; policy string built from directives)
 - **LLM text extraction entities** (&amp;, &quot;, &nbsp; decoded in pages)
 - **Reader-mode rendering** (HTML block extraction: titles, headings, lists, entities)
 - **DNS over HTTPS** (mock-provider end-to-end, dead-provider fail-closed, IP-literal bypass)

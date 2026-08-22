@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "browser/navigation_history.h"
+
 namespace lethe {
 
 struct TabInfo {
@@ -46,11 +48,16 @@ public:
 
     // Publish the final URL after redirects (without re-triggering a load).
     void setTabUrl(int tabId, const std::string& url);
-    
+
+    // Per-tab session history. Each tab records and traverses its own
+    // back/forward path; nullptr for unknown tabs.
+    NavigationHistory* history(int tabId);
+
     void closeAllTabs();
 
 private:
     std::map<int, std::unique_ptr<TabInfo>> tabs_;
+    std::map<int, std::unique_ptr<NavigationHistory>> tabHistories_;
     int activeTabId = 0;
     int next_id = 1;
 };

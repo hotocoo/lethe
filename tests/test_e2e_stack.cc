@@ -326,6 +326,12 @@ Config loopbackConfig(const CountingMock& mock, bool incognito) {
     return cfg;
 }
 
+// Session history is PER TAB: tests inspect the active tab's own history.
+NavigationHistory* activeTabHistory(Engine& engine) {
+    const int tabId = engine.tabManager()->getActiveTab();
+    return engine.tabManager()->history(tabId);
+}
+
 LETHE_TEST_CASE(E2E_BridgeOpenUrl_LoadsRendersAndCaches) {
     CountingMock mock;
     CHECK_TRUE(mock.start());
@@ -424,7 +430,7 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_PersistentSessionRecordsHistory) {
     Engine engine;
     CHECK_EQ(engine.initialize(cfg), 0);
     aletheia::AletheiaBridge bridge(&engine);
-    CHECK_TRUE(engine.history() != nullptr);
+    CHECK_TRUE(activeTabHistory(engine) != nullptr);
 
     const std::string urlA =
         "http://doc.internal:" + std::to_string(mock.port()) + "/a";
@@ -437,11 +443,12 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_PersistentSessionRecordsHistory) {
     CHECK_TRUE(bridge.currentPageLoaded());
 
     // Only successfully loaded visits are recorded, with fetched titles.
-    CHECK_EQ(engine.history()->size(), 2u);
-    CHECK_TRUE(engine.history()->containsUrl(urlA));
-    CHECK_TRUE(engine.history()->containsUrl(urlB));
-    CHECK_EQ(engine.history()->entries()[0].url, urlA);
-    CHECK_EQ(engine.history()->entries()[0].title, std::string("Deep Document"));
+    auto* hist = activeTabHistory(engine);
+    CHECK_EQ(hist->size(), 2u);
+    CHECK_TRUE(hist->containsUrl(urlA));
+    CHECK_TRUE(hist->containsUrl(urlB));
+    CHECK_EQ(hist->entries()[0].url, urlA);
+    CHECK_EQ(hist->entries()[0].title, std::string("Deep Document"));
 
     engine.shutdown();
 }
@@ -463,7 +470,7 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_RedirectUpdatesTabUrlAndHistory) {
     Engine engine;
     CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/false)), 0);
     aletheia::AletheiaBridge bridge(&engine);
-    CHECK_TRUE(engine.history() != nullptr);
+    CHECK_TRUE(activeTabHistory(engine) != nullptr);
 
     const std::string baseUrl =
         "http://doc.internal:" + std::to_string(mock.port());
@@ -485,11 +492,11 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_RedirectUpdatesTabUrlAndHistory) {
     CHECK_EQ(mock.originHits.load(), 2);
 
     // History records the destination that was actually read.
-    CHECK_TRUE(engine.history()->containsUrl(finalUrl));
-    CHECK_FALSE(engine.history()->containsUrl(startUrl));
-    CHECK_EQ(engine.history()->entries()[0].url, finalUrl);
-    CHECK_EQ(engine.history()->entries()[0].title,
-             std::string("Final Document"));
+    auto* hist = activeTabHistory(engine);
+    CHECK_TRUE(hist->containsUrl(finalUrl));
+    CHECK_FALSE(hist->containsUrl(startUrl));
+    CHECK_EQ(hist->entries()[0].url, finalUrl);
+    CHECK_EQ(hist->entries()[0].title, std::string("Final Document"));
 
     engine.shutdown();
 }
@@ -587,11 +594,12 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_BackForwardThroughFullStack) {
     CHECK_TRUE(bridge.goBack());          // at b
     CHECK_TRUE(bridge.navigate(urlFor("/d")));
     CHECK_FALSE(bridge.canGoForward());
-    CHECK_EQ(engine.history()->size(), 3u);
-    CHECK_EQ(engine.history()->entries()[0].url, urlFor("/a"));
-    CHECK_EQ(engine.history()->entries()[1].url, urlFor("/b"));
-    CHECK_EQ(engine.history()->entries()[2].url, urlFor("/d"));
-    CHECK_FALSE(engine.history()->containsUrl(urlFor("/c")));
+    auto* hist = activeTabHistory(engine);
+    CHECK_EQ(hist->size(), 3u);
+    CHECK_EQ(hist->entries()[0].url, urlFor("/a"));
+    CHECK_EQ(hist->entries()[1].url, urlFor("/b"));
+    CHECK_EQ(hist->entries()[2].url, urlFor("/d"));
+    CHECK_FALSE(hist->containsUrl(urlFor("/c")));
 
     // Every load and every traversal was a real fetch: 3 visits + back +
     // back + fwd + fwd + back + fresh d = 9 origin requests exactly.
@@ -639,7 +647,7 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_BackBlockedWhenTunnelDown_FailClosed) {
     const int hitsBefore = mock.originHits.load();
     CHECK_FALSE(bridge.goBack());
     CHECK_TRUE(bridge.canGoBack());                          // still able to,
-    CHECK_EQ(engine.history()->current()->url, base + "/b"); // cursor not moved
+    CHECK_EQ(activeTabHistory(engine)->current()->url, base + "/b"); // cursor not moved
     CHECK_EQ(bridge.getCurrentUrl(), base + "/b");
     CHECK_TRUE(bridge.currentPageLoaded());
     CHECK_TRUE(bridge.getCurrentPageContent().find("beta body.") !=
@@ -652,9 +660,57 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_BackBlockedWhenTunnelDown_FailClosed) {
     CHECK_TRUE(engine.isVpnConnected());
     CHECK_TRUE(bridge.goBack());
     CHECK_EQ(bridge.getCurrentTitle(), std::string("Alpha"));
-    CHECK_EQ(engine.history()->current()->url, base + "/a");
+    CHECK_EQ(activeTabHistory(engine)->current()->url, base + "/a");
     CHECK_TRUE(bridge.canGoForward());
     CHECK_EQ(mock.originHits.load(), hitsBefore + 1);
+
+    engine.shutdown();
+}
+
+LETHE_TEST_CASE(E2E_BridgeNavigation_HistoryIsolatedAcrossTabs) {
+    CountingMock mock;
+    for (const auto* doc : {"/a", "/b", "/c"}) {
+        mock.pathResponses[doc] = httpResp(200, "OK",
+            std::string("<html><head><title>") + (doc + 1) +
+            " Document</title></head><body><p>Body of" + doc +
+            ".</p></body></html>");
+    }
+    CHECK_TRUE(mock.start());
+
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/false)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    const std::string base = "http://doc.internal:" + std::to_string(mock.port());
+
+    // Tab 1 builds its own path: a -> b.
+    CHECK_TRUE(bridge.openUrl(base + "/a"));
+    const int tab1 = bridge.getStatus().activeTabId;
+    CHECK_TRUE(bridge.navigate(base + "/b"));
+    CHECK_TRUE(bridge.canGoBack()); // tab1: a behind it
+
+    // Tab 2 opens with a single visit: c.
+    CHECK_TRUE(bridge.openUrl(base + "/c", /*newTab=*/true));
+    const int tab2 = bridge.getStatus().activeTabId;
+    CHECK_TRUE(tab2 != tab1);
+    CHECK_FALSE(bridge.canGoBack()); // tab2 has no past of its own
+    CHECK_FALSE(bridge.goBack());
+
+    // Back in tab 1 must land on TAB 1's past (/a), never tab 2's (/c).
+    engine.tabManager()->setActiveTab(tab1);
+    CHECK_TRUE(bridge.canGoBack());
+    CHECK_FALSE(bridge.canGoForward()); // tab1 sits at its own end: b
+    CHECK_TRUE(bridge.goBack());
+    CHECK_EQ(bridge.getCurrentUrl(), base + "/a");
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("a Document"));
+    CHECK_TRUE(bridge.canGoForward()); // tab1's own b is ahead
+
+    // Tab 2 was untouched by tab 1's traversal.
+    engine.tabManager()->setActiveTab(tab2);
+    CHECK_EQ(bridge.getCurrentUrl(), base + "/c");
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("c Document"));
+    CHECK_FALSE(bridge.canGoBack());
+    CHECK_FALSE(bridge.canGoForward());
 
     engine.shutdown();
 }
@@ -717,15 +773,18 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_IncognitoRecordsNothing) {
     Engine engine;
     CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/true)), 0);
     aletheia::AletheiaBridge bridge(&engine);
-    CHECK_TRUE(engine.history() != nullptr);
+    CHECK_TRUE(activeTabHistory(engine) != nullptr);
 
     const std::string url =
         "http://doc.internal:" + std::to_string(mock.port()) + "/";
     CHECK_TRUE(bridge.openUrl(url));
     CHECK_TRUE(bridge.currentPageLoaded());
 
-    // Incognito sessions load pages but leave no history behind.
-    CHECK_TRUE(engine.history()->empty());
+    // Incognito sessions load pages but leave no history behind - and
+    // therefore have nowhere to go back to.
+    CHECK_TRUE(activeTabHistory(engine)->empty());
+    CHECK_FALSE(bridge.canGoBack());
+    CHECK_FALSE(bridge.goBack());
 
     engine.shutdown();
 }

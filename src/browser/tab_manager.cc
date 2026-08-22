@@ -12,14 +12,20 @@ TabManager::TabManager() {
 
 int TabManager::createTab(const std::string& title, const std::string& url) {
     int id = next_id++;
-    
+
     tabs_[id] = std::make_unique<TabInfo>(id);
     tabs_[id]->title = title;
     tabs_[id]->url = url;
     tabs_[id]->isIncognito = true;
     tabs_[id]->isLoading = false;
-    
+    tabHistories_[id] = std::make_unique<NavigationHistory>();
+
     return id;
+}
+
+NavigationHistory* TabManager::history(int tabId) {
+    auto it = tabHistories_.find(tabId);
+    return it != tabHistories_.end() ? it->second.get() : nullptr;
 }
 
 void TabManager::navigate(int tabId, const std::string& url) {
@@ -46,7 +52,8 @@ void TabManager::closeTab(int tabId) {
     auto it = tabs_.find(tabId);
     if (it != tabs_.end()) {
         tabs_.erase(it);
-        
+        tabHistories_.erase(tabId);
+
         if (activeTabId == tabId && !tabs_.empty()) {
             activeTabId = tabs_.begin()->first;
         }
@@ -108,6 +115,7 @@ void TabManager::setTabUrl(int tabId, const std::string& url) {
 
 void TabManager::closeAllTabs() {
     tabs_.clear();
+    tabHistories_.clear();
     next_id = 1;
     activeTabId = 0;
 }
