@@ -122,7 +122,11 @@ auto page = bridge.llmReadPage("https://example.com/article");
 ### Aletheia OS Integration
 Lethe is the native browser of the Aletheia OS, exposed through a unified bridge API.
 
-- **Native browser control**: Open, navigate, read content
+- **Native browser control**: `openUrl`/`navigate` are real page loads —
+  each document is fetched through Lethe's secure stack (DoH resolution +
+  VPN fail-closed policy), the fetched title lands in tab state, the
+  readable text is cached for the OS, history records only successful
+  visits outside incognito, and a blocked navigation serves nothing
 - **VPN control**: Enable/disable the built-in VPN from the OS
 - **LLM search**: The OS LLM accesses the web through Lethe
 - **Status reporting**: Real-time browser and VPN status
@@ -202,7 +206,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (87 tests)
+# Run the full test suite (91 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -226,6 +230,11 @@ The test suite covers:
 - **Live HTTPS fetching** (real TLS 1.3 handshake with a self-signed cert server)
 - **Live LLM search** (SearchService web search + page read over real HTTP)
 - **Full-stack e2e** (Bridge -> LLM search -> DoH resolution -> VPN policy -> origin, with tunnel up and down)
+- **Browser-grade navigation e2e** (bridge openUrl/navigate really fetch:
+  title extraction into tab state, cached reader text with zero refetch,
+  tunnel-down navigation blocked with zero origin hits then recovery when
+  the same tunnel comes up, incognito vs persistent history)
+- **LLM text extraction entities** (&amp;, &quot;, &nbsp; decoded in pages)
 - **Reader-mode rendering** (HTML block extraction: titles, headings, lists, entities)
 - **DNS over HTTPS** (mock-provider end-to-end, dead-provider fail-closed, IP-literal bypass)
 - **Sandbox enforcement** (workspace write denied, temp write allowed under the live profile)

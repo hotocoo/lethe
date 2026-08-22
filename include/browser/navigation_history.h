@@ -31,6 +31,17 @@ public:
 
     void clear() { entries_.clear(); }
 
+    // Recorded entries, oldest first (for OS introspection and UI).
+    const std::vector<HistoryEntry>& entries() const { return entries_; }
+
+    // Whether any entry records this exact URL.
+    bool containsUrl(const std::string& url) const {
+        for (const auto& e : entries_) {
+            if (e.url == url) return true;
+        }
+        return false;
+    }
+
 private:
     std::vector<HistoryEntry> entries_;
     static constexpr size_t MAX_ENTRIES = 1000;

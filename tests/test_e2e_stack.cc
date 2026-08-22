@@ -263,3 +263,189 @@ LETHE_TEST_CASE(E2E_VpnConnected_AllowsLlmSearchAndRegistersClient) {
 
     engine.shutdown();
 }
+
+// --- Browser-grade navigation e2e ------------------------------------------
+//
+// The OS bridge navigations are real page loads: openUrl/navigate fetch the
+// document through the engine's secure stack (DoH + VPN fail-closed policy),
+// publish the fetched title into tab state, cache the readable text, and
+// record history only outside incognito.
+
+const char* kDocHtml =
+    "<html><head><title>Deep Document</title></head><body>"
+    "<h1>Deep Reading</h1>"
+    "<p>Readable &amp; clean paragraph.</p>"
+    "<ul><li>first item</li><li>second item</li></ul>"
+    "<script>tracker()</script>"
+    "</body></html>";
+
+// Mock serving DoH (doc.internal -> loopback) plus the origin document,
+// counting hits so tests can prove exactly which requests happened.
+struct CountingMock {
+    MockHttpServer server;
+    std::atomic<int> originHits{0};
+    std::atomic<int> dohHits{0};
+
+    bool start() {
+        server.handler_ = [this](const std::string& req) {
+            if (req.find("/dns-query?name=") != std::string::npos) {
+                dohHits++;
+                return httpResp(200, "OK",
+                    "{\"Status\":0,\"Answer\":[{\"name\":\"doc.internal\","
+                    "\"type\":1,\"data\":\"127.0.0.1\"}]}");
+            }
+            originHits++;
+            return httpResp(200, "OK", kDocHtml);
+        };
+        return server.start();
+    }
+    int port() const { return server.port(); }
+};
+
+Config loopbackConfig(const CountingMock& mock, bool incognito) {
+    Config cfg;
+    cfg.incognitoMode = incognito;
+    cfg.dnsProvider =
+        "http://127.0.0.1:" + std::to_string(mock.port()) + "/dns-query";
+    return cfg;
+}
+
+LETHE_TEST_CASE(E2E_BridgeOpenUrl_LoadsRendersAndCaches) {
+    CountingMock mock;
+    CHECK_TRUE(mock.start());
+
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/true)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    const std::string url =
+        "http://doc.internal:" + std::to_string(mock.port()) + "/";
+
+    // Navigation fetches the document for real - the hostname has no DNS
+    // record, so success itself proves the DoH + origin round trip.
+    CHECK_TRUE(bridge.openUrl(url));
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_TRUE(bridge.getStatus().pageLoaded);
+
+    // Fetched title lands in tab state.
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("Deep Document"));
+    CHECK_EQ(mock.originHits.load(), 1);
+    CHECK_TRUE(mock.dohHits.load() >= 1);
+
+    // Reader text is extracted and served from the loaded page without a
+    // second fetch; scripts never reach the reader.
+    const std::string content = bridge.getCurrentPageContent();
+    CHECK_TRUE(content.find("Deep Reading") != std::string::npos);
+    CHECK_TRUE(content.find("Readable & clean paragraph.") != std::string::npos);
+    CHECK_TRUE(content.find("first item") != std::string::npos);
+    CHECK_TRUE(content.find("tracker") == std::string::npos);
+    CHECK_EQ(mock.originHits.load(), 1);
+
+    // Repeated OS reads stay cached.
+    (void)bridge.getCurrentPageContent();
+    (void)bridge.getCurrentPageContent();
+    CHECK_EQ(mock.originHits.load(), 1);
+
+    engine.shutdown();
+}
+
+LETHE_TEST_CASE(E2E_BridgeNavigate_TunnelDownBlocks_ThenTunnelUpRecovers) {
+    CountingMock mock; // origin IS reachable the whole time
+    CHECK_TRUE(mock.start());
+
+    LiveVpnServer vpn;
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/true)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    // Full-tunnel config pointed at a dead endpoint: configured but down.
+    vpn::VpnConfig downCfg;
+    downCfg.endpointHost = "127.0.0.1";
+    downCfg.endpointPort = 1;
+    vpn::Key priv{};
+    CHECK_TRUE(vpn::generatePrivateKey(priv));
+    CHECK_TRUE(vpn::derivePublicKey(priv, downCfg.serverPublicKey));
+    downCfg.allowedCidrs = {"0.0.0.0/0"};
+    CHECK_TRUE(engine.enableVpn(downCfg));
+    CHECK_FALSE(engine.isVpnConnected());
+
+    const std::string url =
+        "http://doc.internal:" + std::to_string(mock.port()) + "/";
+
+    // The navigation intent is recorded, but the load is blocked: the
+    // resolved destination matches the full-tunnel CIDR with the tunnel
+    // down, so NOTHING reaches the origin - zero plaintext attempts.
+    CHECK_TRUE(bridge.navigate(url));
+    CHECK_FALSE(bridge.currentPageLoaded());
+    CHECK_FALSE(bridge.getStatus().pageLoaded);
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("New Tab"));
+    CHECK_TRUE(bridge.getCurrentPageContent().empty());
+    CHECK_EQ(mock.originHits.load(), 0);
+
+    // Bring the same engine's tunnel up against the live reference server:
+    // the very next navigation loads through it and registers the client.
+    CHECK_TRUE(engine.enableVpn(vpn.clientConfig()));
+    CHECK_TRUE(engine.isVpnConnected());
+    CHECK_TRUE(bridge.navigate(url));
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("Deep Document"));
+    CHECK_EQ(mock.originHits.load(), 1);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (vpn.clientCount() == 0 &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    CHECK_EQ(vpn.clientCount(), 1u);
+
+    engine.shutdown();
+}
+
+LETHE_TEST_CASE(E2E_BridgeNavigation_PersistentSessionRecordsHistory) {
+    CountingMock mock;
+    CHECK_TRUE(mock.start());
+
+    Config cfg = loopbackConfig(mock, /*incognito=*/false);
+    Engine engine;
+    CHECK_EQ(engine.initialize(cfg), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+    CHECK_TRUE(engine.history() != nullptr);
+
+    const std::string urlA =
+        "http://doc.internal:" + std::to_string(mock.port()) + "/a";
+    const std::string urlB =
+        "http://doc.internal:" + std::to_string(mock.port()) + "/b";
+
+    CHECK_TRUE(bridge.openUrl(urlA));
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_TRUE(bridge.navigate(urlB));
+    CHECK_TRUE(bridge.currentPageLoaded());
+
+    // Only successfully loaded visits are recorded, with fetched titles.
+    CHECK_EQ(engine.history()->size(), 2u);
+    CHECK_TRUE(engine.history()->containsUrl(urlA));
+    CHECK_TRUE(engine.history()->containsUrl(urlB));
+    CHECK_EQ(engine.history()->entries()[0].url, urlA);
+    CHECK_EQ(engine.history()->entries()[0].title, std::string("Deep Document"));
+
+    engine.shutdown();
+}
+
+LETHE_TEST_CASE(E2E_BridgeNavigation_IncognitoRecordsNothing) {
+    CountingMock mock;
+    CHECK_TRUE(mock.start());
+
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(mock, /*incognito=*/true)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+    CHECK_TRUE(engine.history() != nullptr);
+
+    const std::string url =
+        "http://doc.internal:" + std::to_string(mock.port()) + "/";
+    CHECK_TRUE(bridge.openUrl(url));
+    CHECK_TRUE(bridge.currentPageLoaded());
+
+    // Incognito sessions load pages but leave no history behind.
+    CHECK_TRUE(engine.history()->empty());
+
+    engine.shutdown();
+}

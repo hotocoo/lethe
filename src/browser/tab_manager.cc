@@ -87,6 +87,15 @@ void TabManager::setTabLoading(int tabId, bool loading) {
     }
 }
 
+void TabManager::setTabTitle(int tabId, const std::string& title) {
+    auto it = tabs_.find(tabId);
+    if (it != tabs_.end()) {
+        it->second->title = title;
+    } else {
+        std::cerr << "[lethe] Warning: tab " << tabId << " not found" << std::endl;
+    }
+}
+
 void TabManager::closeAllTabs() {
     tabs_.clear();
     next_id = 1;

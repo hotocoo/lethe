@@ -31,6 +31,9 @@ struct BrowserStatus {
     std::string currentTitle;
     int activeTabId = 0;
     size_t tabCount = 0;
+    // Whether the active tab's current URL was fetched successfully through
+    // Lethe's secure network stack (DoH resolution, VPN fail-closed policy).
+    bool pageLoaded = false;
 };
 
 // The Aletheia OS bridge for Lethe.
@@ -57,7 +60,13 @@ public:
     std::string getCurrentTitle() const;
 
     // Get the readable content of the current page (for the OS / LLM).
+    // Served from the loaded page when current; re-reads otherwise.
     std::string getCurrentPageContent();
+
+    // Whether the active tab's current URL was fetched successfully through
+    // Lethe's secure stack. A blocked navigation (e.g. VPN tunnel down under
+    // a full-tunnel policy) leaves this false - nothing loaded, nothing leaked.
+    bool currentPageLoaded() const;
 
     // Get the browser status.
     BrowserStatus getStatus() const;
@@ -86,9 +95,21 @@ public:
     bool isLlmSearchUsingVpn() const;
 
 private:
+    // Fetch the given URL for the active tab through the engine's secure
+    // stack (DoH + VPN fail-closed policy). On success publishes the document
+    // title to the tab, caches the readable text, and records history when
+    // not incognito. On failure clears the cached page: a blocked navigation
+    // serves nothing.
+    bool loadActiveTab(const std::string& url);
+
     Engine* engine_;
     std::unique_ptr<llm::SearchService> searchService_;
     bool searchInitialized_ = false;
+
+    // State of the last completed load for the active tab.
+    std::string loadedUrl_;
+    std::string loadedText_;
+    bool pageLoaded_ = false;
 };
 
 } // namespace aletheia

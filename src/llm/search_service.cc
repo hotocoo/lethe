@@ -182,13 +182,14 @@ std::string SearchService::extractTextFromHtml(const std::string& html) const {
             continue;
         }
 
-        // Replace HTML entities.
+        // Replace HTML entities (compare length must equal the literal's
+        // full length - including the semicolon - or it never matches).
         if (c == '&') {
             if (html.compare(i, 4, "&lt;") == 0) { text += '<'; i += 3; continue; }
             if (html.compare(i, 4, "&gt;") == 0) { text += '>'; i += 3; continue; }
-            if (html.compare(i, 4, "&amp;") == 0) { text += '&'; i += 3; continue; }
-            if (html.compare(i, 4, "&quot;") == 0) { text += '"'; i += 3; continue; }
-            if (html.compare(i, 2, "&nbsp;") == 0) { text += ' '; i += 5; continue; }
+            if (html.compare(i, 5, "&amp;") == 0) { text += '&'; i += 4; continue; }
+            if (html.compare(i, 6, "&quot;") == 0) { text += '"'; i += 5; continue; }
+            if (html.compare(i, 6, "&nbsp;") == 0) { text += ' '; i += 5; continue; }
         }
 
         text += c;

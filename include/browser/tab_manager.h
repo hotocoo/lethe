@@ -40,6 +40,9 @@ public:
     const TabInfo* getTabInfo(int tabId) const;
     
     void setTabLoading(int tabId, bool loading);
+
+    // Publish the loaded page title (from the fetched document).
+    void setTabTitle(int tabId, const std::string& title);
     
     void closeAllTabs();
 
