@@ -10,6 +10,13 @@
 #include "network/tls_config.h"
 #include "network/vpn/vpn_tunnel.h"
 
+// Declared in network/udp_transport.h (included by the .cc).
+namespace lethe {
+class UdpTransport;
+}
+
+using lethe::UdpTransport;
+
 #ifdef HAVE_OPENSSL
 #include <openssl/ssl.h>
 #endif
@@ -54,6 +61,17 @@ public:
     vpn::VpnTunnel* vpnTunnel() const { return vpnTunnel_.get(); }
     bool isVpnActive() const;
 
+    // --- HTTP-over-tunnel relay (one-shot, plain HTTP only) ---
+    // Share the engine's VPN UDP transport and endpoint. When a tunnel is
+    // CONNECTED and the resolved destination is covered by its CIDRs,
+    // plain-HTTP exchanges are carried THROUGH the encrypted tunnel as
+    // framed one-shot requests (the server connects TCP to the target).
+    // The client never opens direct TCP to covered destinations while the
+    // tunnel is up. TLS destinations are not relayed yet and fail closed
+    // rather than bypass the tunnel. Pass nullptr to disable.
+    void setVpnRelay(UdpTransport* udpTransport,
+                     const std::string& endpointHost, int endpointPort);
+
     // --- Secure DNS (DNS-over-HTTPS) ---
     // Route all hostname resolution through a DoH JSON provider
     // (e.g. https://cloudflare-dns.com/dns-query). When configured,
@@ -64,6 +82,25 @@ public:
     bool isDohEnabled() const { return !dohProvider_.empty(); }
 
 private:
+    // --- Relay state (HTTP-over-tunnel) ---
+    bool relayConfigured() const { return vpnUdp_ != nullptr && !vpnEndpointHost_.empty() && vpnEndpointPort_ > 0; }
+    void resetRelayState();
+    bool flushRelayRequest();
+    bool fetchRelayChunk(int timeoutMs);
+
+    UdpTransport* vpnUdp_ = nullptr;
+    std::string vpnEndpointHost_;
+    int vpnEndpointPort_ = 0;
+    bool relayMode_ = false;
+    std::string relayTargetHost_;
+    int relayTargetPort_ = 0;
+    std::vector<uint8_t> relayOut_;
+    bool relaySent_ = false;
+    std::vector<uint8_t> relayIn_;
+    size_t relayInPos_ = 0;
+    bool relayEof_ = false;
+    uint32_t relayXid_ = 0;
+
     // --- Connection management ---
     bool connectToHost(const std::string& host, int port, const std::string& scheme,
                        const std::chrono::seconds timeout);

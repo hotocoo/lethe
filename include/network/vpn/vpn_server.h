@@ -76,6 +76,19 @@ public:
     // Set the callback invoked for each decrypted client datagram.
     void setDataCallback(DataCallback cb);
 
+    // --- One-shot TCP relay (HTTP-over-tunnel) ---
+    // When enabled (default), a decrypted client payload that carries the
+    // relay magic is interpreted as a relay request: the server connects
+    // TCP to the framed destination, forwards the payload, and streams the
+    // origin's response back to the client as END-framed chunks. Requests
+    // without the magic still reach the data callback unchanged.
+    void setRelayEnabled(bool enabled);
+    bool relayEnabled() const { return relayEnabled_; }
+    // Cap on total bytes relayed back per request. Default: 256 KiB.
+    void setMaxRelayResponseBytes(size_t n);
+    // Number of relay requests handled since start.
+    size_t relayedRequests() const { return relayedRequests_.load(); }
+
     // --- DoS hardening (all knobs have safe defaults) ---
     // Evict clients not seen for this long. Default: 180s.
     void setClientIdleTimeout(std::chrono::milliseconds ms);
@@ -121,6 +134,11 @@ private:
                              const std::string& fromHost, int fromPort);
     ClientSession* findSessionByAddress(const std::string& host, int port);
 
+    // Relay handling: connect TCP to the framed destination, forward the
+    // payload, stream the origin's reply back as encrypted chunks.
+    void handleRelayRequest(const std::string& clientKey,
+                            const std::vector<uint8_t>& plaintext);
+
     Key serverPrivateKey_{};
     Key serverPublicKey_{};
     bool configured_ = false;
@@ -137,6 +155,11 @@ private:
     std::chrono::milliseconds rateLimitWindow_{std::chrono::seconds(10)};
     size_t maxHandshakesPerWindow_ = 16;
     size_t maxClients_ = 1024;
+
+    // Relay settings.
+    bool relayEnabled_ = true;
+    size_t maxRelayResponseBytes_ = 256 * 1024;
+    std::atomic<size_t> relayedRequests_{0};
 
     DataCallback dataCallback_;
 };

@@ -1,9 +1,18 @@
 // vpn_server.cc — Reference implementation of a Lethe VPN server
 
 #include "network/vpn/vpn_server.h"
+#include "network/vpn/vpn_relay.h"
 
 #include <cstring>
 #include <iostream>
+
+#ifdef _WIN32
+#else
+#include <fcntl.h>
+#include <netdb.h>
+#include <sys/select.h>
+#include <unistd.h>
+#endif
 
 namespace lethe {
 namespace vpn {
@@ -132,6 +141,132 @@ void VpnServer::setDataCallback(DataCallback cb) {
     dataCallback_ = std::move(cb);
 }
 
+// --- One-shot TCP relay (HTTP-over-tunnel) -----------------------------------
+
+void VpnServer::setRelayEnabled(bool enabled) {
+    relayEnabled_ = enabled;
+}
+
+void VpnServer::setMaxRelayResponseBytes(size_t n) {
+    maxRelayResponseBytes_ = n;
+}
+
+namespace {
+
+// Connect TCP to host:port with a timeout. Returns -1 on failure.
+int connectTcpWithTimeout(const std::string& host, int port,
+                          std::chrono::milliseconds timeout) {
+    addrinfo hints;
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* res = nullptr;
+    const int rc = ::getaddrinfo(host.c_str(), std::to_string(port).c_str(),
+                                 &hints, &res);
+    if (rc != 0 || !res) return -1;
+
+    int fd = -1;
+    for (addrinfo* ai = res; ai; ai = ai->ai_next) {
+        fd = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (fd < 0) continue;
+
+        // Non-blocking connect bounded by select().
+        const int fl = ::fcntl(fd, F_GETFL, 0);
+        ::fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+        if (::connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) {
+            ::fcntl(fd, F_SETFL, fl);
+            break;
+        }
+        fd_set wfds;
+        FD_ZERO(&wfds);
+        FD_SET(fd, &wfds);
+        timeval tv;
+        tv.tv_sec = static_cast<long>(timeout.count() / 1000);
+        tv.tv_usec = static_cast<suseconds_t>((timeout.count() % 1000) * 1000);
+        if (::select(fd + 1, nullptr, &wfds, nullptr, &tv) > 0) {
+            int soErr = 0;
+            socklen_t len = sizeof(soErr);
+            ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &soErr, &len);
+            if (soErr == 0) {
+                ::fcntl(fd, F_SETFL, fl);
+                break;
+            }
+        }
+        ::close(fd);
+        fd = -1;
+    }
+    ::freeaddrinfo(res);
+    return fd;
+}
+
+} // namespace
+
+void VpnServer::handleRelayRequest(const std::string& clientKey,
+                                   const std::vector<uint8_t>& plaintext) {
+    relayedRequests_.fetch_add(1);
+
+    relay::Request req;
+    auto fail = [&]() {
+        // Always terminate the exchange: an empty END chunk signals failure.
+        (void)sendToClient(
+            clientKey,
+            relay::encodeChunk(nullptr, 0, true, req.xid));
+    };
+
+    if (!relay::parseRequest(plaintext.data(), plaintext.size(), req)) {
+        std::cerr << "[lethe-vpn-server] Malformed relay request" << std::endl;
+        fail();
+        return;
+    }
+
+    const int fd = connectTcpWithTimeout(
+        req.host, req.port, std::chrono::milliseconds(2000));
+    if (fd < 0) {
+        std::cerr << "[lethe-vpn-server] Relay connect failed to "
+                  << req.host << ":" << req.port << std::endl;
+        fail();
+        return;
+    }
+
+    // Forward the request payload.
+    size_t sent = 0;
+    while (sent < req.payload.size()) {
+        const ssize_t n = ::send(fd, req.payload.data() + sent,
+                                 req.payload.size() - sent, 0);
+        if (n <= 0) break;
+        sent += static_cast<size_t>(n);
+    }
+
+    // Stream the origin's response back in MTU-sized chunks. Exactly one
+    // END chunk terminates every exchange.
+    timeval tv;
+    tv.tv_sec = 2; // idle read bound: origins that never close end here
+    tv.tv_usec = 0;
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    std::vector<char> buf(1200);
+    size_t total = 0;
+    bool done = false;
+    while (!done) {
+        const ssize_t n = ::recv(fd, buf.data(), buf.size(), 0);
+        if (n <= 0) break; // clean EOF, timeout, or error: end of stream
+        size_t usable = static_cast<size_t>(n);
+        if (total + usable > maxRelayResponseBytes_) {
+            usable = maxRelayResponseBytes_ - total;
+            done = true; // response cap reached: stop after this chunk
+        }
+        (void)sendToClient(clientKey,
+                           relay::encodeChunk(
+                               reinterpret_cast<uint8_t*>(buf.data()),
+                               usable, false, req.xid));
+        total += usable;
+        if (total >= maxRelayResponseBytes_) done = true;
+    }
+    (void)sendToClient(clientKey,
+                       relay::encodeChunk(nullptr, 0, true, req.xid));
+    ::close(fd);
+}
+
 int VpnServer::port() const {
     return transport_ ? transport_->localPort() : 0;
 }
@@ -142,38 +277,58 @@ std::string VpnServer::host() const {
 
 void VpnServer::handleDatagram(const uint8_t* data, size_t len,
                                const std::string& fromHost, int fromPort) {
-    HandshakeMessage msg;
-    bool isHandshake = HandshakeMessage::deserialize(data, len, msg);
-
-    if (isHandshake && msg.type == HandshakeType::Init) {
-        handleHandshakeInit(msg, fromHost, fromPort);
-        return;
-    }
-
-    // Data packet: look up, decrypt, and stamp the session under the lock;
-    // deliver the callback outside it (the callback may re-enter the server).
+    // AUTHENTICATE FIRST for known sessions: a connected client's datagrams
+    // are always data packets. Trying handshake parsing before decryption
+    // lets arbitrary ciphertext masquerade as an Init (structural match)
+    // and silently swallow real traffic - so session lookup comes first.
+    bool isData = false;
+    bool decryptFailed = false;
     std::vector<uint8_t> plaintext;
     std::string keyHex;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         ClientSession* session = findSessionByAddress(fromHost, fromPort);
-        if (!session || !session->connected || !session->tunnel) {
-            std::cerr << "[lethe-vpn-server] Data packet from unknown client "
-                      << fromHost << ":" << fromPort << std::endl;
-            return;
+        if (session && session->connected && session->tunnel) {
+            if (session->tunnel->decryptDataPacket(data, len, plaintext)) {
+                session->lastSeenTime = std::chrono::steady_clock::now();
+                keyHex = session->keyHex;
+                isData = true;
+            } else {
+                decryptFailed = true;
+            }
         }
-        if (!session->tunnel->decryptDataPacket(data, len, plaintext)) {
-            std::cerr << "[lethe-vpn-server] Failed to decrypt packet from "
-                      << session->keyHex << std::endl;
-            return;
-        }
-        session->lastSeenTime = std::chrono::steady_clock::now();
-        keyHex = session->keyHex;
     }
 
-    if (dataCallback_) {
-        dataCallback_(keyHex, plaintext.data(), plaintext.size());
+    if (isData) {
+        // Relay requests are recognized by magic and never reach the
+        // callback. Delivery happens outside the lock: handlers may
+        // re-enter the server.
+        if (relayEnabled_ &&
+            plaintext.size() >= sizeof(relay::kMagic) &&
+            std::memcmp(plaintext.data(), relay::kMagic,
+                        sizeof(relay::kMagic)) == 0) {
+            handleRelayRequest(keyHex, plaintext);
+            return;
+        }
+        if (dataCallback_) {
+            dataCallback_(keyHex, plaintext.data(), plaintext.size());
+        }
+        return;
     }
+
+    // Not decryptable as data for a known session: it is either garbage or
+    // a genuine (re)handshake from that address - e.g. a rekey whose fresh
+    // ephemerals cannot decrypt under the old session's keys. Fall back to
+    // handshake parsing; anything else is dropped.
+    HandshakeMessage msg;
+    if (HandshakeMessage::deserialize(data, len, msg) &&
+        msg.type == HandshakeType::Init) {
+        handleHandshakeInit(msg, fromHost, fromPort);
+        return;
+    }
+
+    std::cerr << "[lethe-vpn-server] Dropping undecryptable datagram from "
+              << fromHost << ":" << fromPort << std::endl;
 }
 
 void VpnServer::handleHandshakeInit(const HandshakeMessage& msg,

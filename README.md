@@ -51,6 +51,10 @@ Lethe ships with a fully integrated VPN client, so privacy is always available w
   endpoints with backoff, and sends 25s keepalives to hold NAT mappings
 - **MTU enforcement**: Standard 1420-byte WireGuard MTU
 - **DNS over VPN**: Route DNS through the tunnel for leak-free resolution
+- **HTTP over the tunnel**: destinations covered by an UP tunnel are
+  carried as encrypted one-shot relay exchanges — the engine never opens
+  direct TCP to covered hosts while the session is live (TLS destinations
+  fail closed rather than bypass; see the reference server's relay)
 
 ```cpp
 // Enable the built-in VPN
@@ -212,7 +216,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (107 tests)
+# Run the full test suite (114 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -259,6 +263,20 @@ The test suite covers:
   and only up to a path boundary - example.org.evil.io fails; originless
   'self' fails closed; script-scheme URIs denied; host names containing
   "eval" no longer falsely blocked; policy string built from directives)
+- **Tunnel relay framing** (request/chunk encode+parse round trips,
+  malformed rejection, exchange-id staleness filtering)
+- **One-shot HTTP relay over real UDP** (client tunnel -> reference
+  server -> TCP origin -> encrypted chunks back; unreachable targets still
+  terminate cleanly with an END chunk; disabled relay passes payloads to
+  the data callback verbatim)
+- **Tunneled navigation e2e** (bridge fetches a page THROUGH the encrypted
+  tunnel: exactly one relayed request, zero direct client connections to
+  the origin, DoH-only mock untouched; disabling the relay on the server
+  makes further covered navigations fail closed - no plaintext fallback)
+- **Authenticate-first server dispatch** (known-session datagrams decrypt
+  before any handshake parsing, so ciphertext can never masquerade as an
+  Init and swallow traffic; genuine rekeys from known addresses fall back
+  to handshake handling)
 - **LLM text extraction entities** (&amp;, &quot;, &nbsp; decoded in pages)
 - **Reader-mode rendering** (HTML block extraction: titles, headings, lists, entities)
 - **DNS over HTTPS** (mock-provider end-to-end, dead-provider fail-closed, IP-literal bypass)

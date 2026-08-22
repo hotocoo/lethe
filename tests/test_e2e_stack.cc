@@ -133,6 +133,8 @@ public:
     }
 
     size_t clientCount() const { return server_.clientCount(); }
+    size_t relayedRequests() const { return server_.relayedRequests(); }
+    void setRelayEnabled(bool enabled) { server_.setRelayEnabled(enabled); }
 
 private:
     VpnServer server_;
@@ -663,6 +665,60 @@ LETHE_TEST_CASE(E2E_BridgeNavigation_BackBlockedWhenTunnelDown_FailClosed) {
     CHECK_EQ(activeTabHistory(engine)->current()->url, base + "/a");
     CHECK_TRUE(bridge.canGoForward());
     CHECK_EQ(mock.originHits.load(), hitsBefore + 1);
+
+    engine.shutdown();
+}
+
+LETHE_TEST_CASE(E2E_BridgeNavigate_HttpTunneledThroughVpnRelay) {
+    // The DoH mock answers resolution queries ONLY; the origin is a second
+    // server that the HTTP client must never contact directly.
+    CountingMock dohOnly;
+    CHECK_TRUE(dohOnly.start());
+
+    MockHttpServer origin;
+    std::atomic<int> originHits{0};
+    origin.handler_ = [&](const std::string&) {
+        originHits.fetch_add(1);
+        return httpResp(200, "OK",
+            "<html><head><title>Tunneled Page</title></head><body>"
+            "<p>carried through the tunnel</p></body></html>");
+    };
+    CHECK_TRUE(origin.start());
+
+    LiveVpnServer vpn;
+    Engine engine;
+    CHECK_EQ(engine.initialize(loopbackConfig(dohOnly, /*incognito=*/true)), 0);
+    aletheia::AletheiaBridge bridge(&engine);
+
+    // Tunnel up: covered destinations are carried through the relay.
+    CHECK_TRUE(engine.enableVpn(vpn.clientConfig()));
+    CHECK_TRUE(engine.isVpnConnected());
+
+    const std::string url =
+        "http://doc.internal:" + std::to_string(origin.port()) + "/";
+    CHECK_TRUE(bridge.navigate(url));
+    CHECK_TRUE(bridge.currentPageLoaded());
+    CHECK_EQ(bridge.getCurrentTitle(), std::string("Tunneled Page"));
+    CHECK_TRUE(bridge.getCurrentPageContent().find(
+                   "carried through the tunnel") != std::string::npos);
+
+    // The bytes reached the origin EXACTLY once - through the relay - and
+    // never as a direct client TCP connection.
+    CHECK_EQ(originHits.load(), 1);
+    CHECK_EQ(vpn.relayedRequests(), 1u);
+    CHECK_EQ(dohOnly.originHits.load(), 0);
+    CHECK_TRUE(dohOnly.dohHits.load() >= 1);
+
+    // With the relay disabled on the server, the same navigation FAILS
+    // CLOSED: no direct-TCP fallback, no origin contact, no page.
+    vpn.setRelayEnabled(false);
+    const std::string url2 =
+        "http://doc.internal:" + std::to_string(origin.port()) + "/second";
+    CHECK_TRUE(bridge.navigate(url2)); // navigation intent recorded...
+    CHECK_FALSE(bridge.currentPageLoaded()); // ...but nothing loaded
+    CHECK_TRUE(bridge.getCurrentPageContent().empty());
+    CHECK_EQ(originHits.load(), 1);        // origin untouched
+    CHECK_EQ(vpn.relayedRequests(), 1u);   // no new relay exchange
 
     engine.shutdown();
 }

@@ -172,6 +172,13 @@ bool Engine::enableVpn(const vpn::VpnConfig& cfg) {
     config_.vpnEnabled = true;
     config_.vpnConfig = config;
 
+    // Give the HTTP client the relay path: covered destinations are fetched
+    // THROUGH the encrypted tunnel once the session is established.
+    if (httpClient_) {
+        httpClient_->setVpnRelay(vpnTransport_.get(),
+                                 config.endpointHost, config.endpointPort);
+    }
+
     // Perform a real WireGuard-style handshake over UDP. If the endpoint is
     // not reachable yet, maintenance retries with backoff via pumpVpnMaintenance().
     lastHandshakeAttemptMs_ = nowMs();
@@ -189,6 +196,9 @@ bool Engine::disableVpn() {
     vpnTunnel_->wipeSecrets();
     if (vpnTransport_) {
         vpnTransport_->close();
+    }
+    if (httpClient_) {
+        httpClient_->setVpnRelay(nullptr, "", 0);
     }
     config_.vpnEnabled = false;
     std::cout << "[lethe-vpn] VPN disabled" << std::endl;
