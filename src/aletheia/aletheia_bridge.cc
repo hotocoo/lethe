@@ -81,7 +81,10 @@ bool AletheiaBridge::loadActiveTab(const std::string& url, bool recordHistory) {
 
     if (tabId > 0) tabs->setTabLoading(tabId, true);
 
-    llm::PageContent content = searchService_->readPage(url);
+    // Browser navigation is ALWAYS a real fetch through the secure stack -
+    // the page cache serves the LLM's readPage() calls, never document
+    // loads, so every load stays a genuine policy-checked page load.
+    llm::PageContent content = searchService_->readPageFresh(url);
     if (tabId > 0) tabs->setTabLoading(tabId, false);
 
     if (!content.success || tabId <= 0) {
@@ -231,8 +234,9 @@ std::string AletheiaBridge::getCurrentPageContent() {
 
     // Fall back to a live read (URL set outside this bridge, or a tab
     // switch to a page not yet cached here) and remember what came back.
+    // Fresh fetch: the bridge memoizes in tabPages_ itself.
     if (searchService_ && searchInitialized_) {
-        auto content = searchService_->readPage(url);
+        auto content = searchService_->readPageFresh(url);
         if (!content.success) return "";
         const std::string finalUrl =
             content.url.empty() ? url : content.url;

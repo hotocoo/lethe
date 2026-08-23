@@ -51,8 +51,32 @@ All notable changes to Lethe are documented in this file.
 - LLM search service: structured results, readable text extraction over real
   HTTP(S), VPN-routed by default
 
+### Performance (Aletheia workload optimizations)
+- HTTP/1.1 keep-alive connection reuse: repeat fetches to the same origin
+  ride ONE connection instead of paying TCP+TLS setup per request; the
+  server's Connection: close is honored; a stale idle connection is retried
+  transparently exactly once; redirect hops stay on one connection
+- VPN fail-closed policy is re-evaluated on EVERY reused connection: a
+  kept-alive socket can never become a plaintext path around a dropped
+  tunnel
+- DNS-over-HTTPS answer cache: repeat hostnames resolve once within a TTL
+  (300s default, configurable, 0 disables); only successful answers are
+  cached and provider changes invalidate it - fail-closed semantics
+  unchanged
+- Buffered response parsing: header lines and chunked framing no longer
+  cost a select()+recv() syscall pair per byte on plain TCP; buffered bytes
+  survive across keep-alive responses
+- LLM agent caches: successful page reads and identical search queries are
+  memoized with TTL + LRU bounds (config via SearchConfig), so agent
+  re-reads avoid the network entirely; browser navigation uses readPageFresh
+  and keeps fetching every document for real through the secure stack
+- Search result quality: entity-decoded titles, snippets extracted from
+  result blocks, empty/same-engine anchors filtered as noise, duplicate
+  URLs collapsed; caller-supplied headers (User-Agent etc.) now reach the
+  server instead of being shadowed by client defaults
+
 ### Quality & infrastructure
-- 114-test suite (lightweight framework, no external test deps) including
+- 125-test suite (lightweight framework, no external test deps) including
   full-stack navigation e2e against real local origins and TLS origins with
   CA-bundle trust
 - CI: Linux (gcc/clang, incl. a GTK3 GUI job) + macOS build/test/e2e matrix

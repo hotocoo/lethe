@@ -12,7 +12,9 @@ Minimalist, high-performance browser with maximum security and a built-in VPN, b
   backend hook and automatic fallback
 - **Optimized memory management**: Custom allocator with strict limits
 - **Fast startup**: Precompiled components, minimal warm-up time
-- **Efficient network stack**: Connection pooling, HTTP/1.1 with keep-alive
+- **Efficient network stack**: HTTP/1.1 keep-alive connection reuse with
+  transparent stale-connection retry, buffered response parsing, and a TTL
+  cache for DNS-over-HTTPS answers
 
 ### Security
 - **Strict Content Security Policy (CSP)**: No eval(), no inline scripts by default
@@ -115,8 +117,13 @@ auto resp = client.sendRequest(req);  // real socket I/O
 ### LLM Search Integration
 The Aletheia OS LLM uses Lethe's network stack for web access, ensuring all AI-driven searches are private and encrypted.
 
-- **Structured search results**: Title, URL, snippet, relevance score
+- **Structured search results**: Title, URL, snippet, relevance score —
+  titles arrive entity-decoded, snippets are extracted from the result
+  block, and navigation noise (empty/same-engine anchors) is filtered
 - **Readable page extraction**: HTML stripped to clean text for the LLM
+- **Agent-grade caching**: successful page reads and identical search
+  queries are memoized briefly (TTL + LRU bound) so agent re-reads never
+  touch the network; browser navigation always fetches fresh documents
 - **VPN-routed by default**: LLM searches go through the built-in VPN
 - **No telemetry**: Zero tracking of LLM queries
 
@@ -226,7 +233,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (114 tests)
+# Run the full test suite (125 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -317,6 +324,17 @@ The test suite covers:
 - **Reader-mode rendering** (HTML block extraction: titles, headings, lists, entities)
 - **DNS over HTTPS** (mock-provider end-to-end, dead-provider fail-closed, IP-literal bypass)
 - **Sandbox enforcement** (workspace write denied, temp write allowed under the live profile)
+- **HTTP keep-alive** (one connection for repeat fetches, Connection: close
+  honored, stale idle connections retried transparently once, redirect hops
+  staying on one connection)
+- **Keep-alive vs. VPN policy** (a reused connection fails closed when the
+  tunnel drops - kept-alive sockets can never bypass the tunnel policy)
+- **DoH answer cache** (repeat hostnames resolve once; TTL expiry and
+  provider-change invalidation)
+- **LLM page/query caches** (repeat reads without network; readPageFresh
+  always fetches; LRU eviction; clearCaches)
+- **Result parsing quality** (entity-decoded titles, extracted snippets,
+  navigation noise and duplicate URLs filtered)
 - Engine VPN integration
 - LLM search service
 - Aletheia OS bridge

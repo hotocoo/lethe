@@ -12,8 +12,135 @@
 namespace lethe {
 namespace llm {
 
+namespace {
+
+// Decode the common named HTML entities into plain text.
+std::string decodeEntities(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] != '&') { out += in[i]; continue; }
+        if (in.compare(i, 4, "&lt;") == 0) { out += '<'; i += 3; }
+        else if (in.compare(i, 4, "&gt;") == 0) { out += '>'; i += 3; }
+        else if (in.compare(i, 5, "&amp;") == 0) { out += '&'; i += 4; }
+        else if (in.compare(i, 6, "&quot;") == 0) { out += '"'; i += 5; }
+        else if (in.compare(i, 6, "&apos;") == 0) { out += '\''; i += 5; }
+        else if (in.compare(i, 6, "&nbsp;") == 0) { out += ' '; i += 5; }
+        else out += in[i];
+    }
+    return out;
+}
+
+// Strip tags and collapse whitespace - used for anchor titles and snippets.
+std::string stripTags(const std::string& html) {
+    std::string text;
+    text.reserve(html.size() / 2);
+    bool inTag = false;
+    for (char c : html) {
+        if (c == '<') { inTag = true; continue; }
+        if (c == '>') { inTag = false; continue; }
+        if (!inTag) text += c;
+    }
+    std::string collapsed;
+    collapsed.reserve(text.size());
+    bool prevSpace = true;
+    for (char c : text) {
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            if (!prevSpace) collapsed += ' ';
+            prevSpace = true;
+        } else {
+            collapsed += c;
+            prevSpace = false;
+        }
+    }
+    // Trim trailing space left by the collapse loop.
+    while (!collapsed.empty() && collapsed.back() == ' ') collapsed.pop_back();
+    return collapsed;
+}
+
+} // namespace
+
 SearchService::SearchService() = default;
 SearchService::~SearchService() = default;
+
+void SearchService::clearCaches() {
+    pageIndex_.clear();
+    pageLru_.clear();
+    searchIndex_.clear();
+    searchLru_.clear();
+}
+
+bool SearchService::pageCacheGet(const std::string& url, PageContent& out) {
+    auto it = pageIndex_.find(url);
+    if (it == pageIndex_.end()) return false;
+    auto node = it->second;
+    if (std::chrono::steady_clock::now() >= node->second.expires) {
+        pageLru_.erase(node);
+        pageIndex_.erase(it);
+        return false;
+    }
+    out = node->second.content;
+    out.fromCache = true;
+    // Touch: move to front so the LRU bound keeps hot pages.
+    pageLru_.splice(pageLru_.begin(), pageLru_, node);
+    return true;
+}
+
+void SearchService::pageCachePut(const std::string& url, const PageContent& c) {
+    if (!config_.cachePages || config_.maxCachedPages <= 0) return;
+    auto it = pageIndex_.find(url);
+    if (it != pageIndex_.end()) {
+        it->second->second = PageCacheEntry{c,
+            std::chrono::steady_clock::now() +
+                std::chrono::seconds(config_.pageCacheTtlSec)};
+        pageLru_.splice(pageLru_.begin(), pageLru_, it->second);
+        return;
+    }
+    if (static_cast<int>(pageLru_.size()) >= config_.maxCachedPages) {
+        pageIndex_.erase(pageLru_.back().first);
+        pageLru_.pop_back();
+    }
+    pageLru_.emplace_front(url,
+        PageCacheEntry{c, std::chrono::steady_clock::now() +
+                              std::chrono::seconds(config_.pageCacheTtlSec)});
+    pageIndex_[url] = pageLru_.begin();
+}
+
+bool SearchService::searchCacheGet(const std::string& key,
+                                   std::vector<SearchResult>& out) {
+    auto it = searchIndex_.find(key);
+    if (it == searchIndex_.end()) return false;
+    auto node = it->second;
+    if (std::chrono::steady_clock::now() >= node->second.expires) {
+        searchLru_.erase(node);
+        searchIndex_.erase(it);
+        return false;
+    }
+    out = node->second.results;
+    searchLru_.splice(searchLru_.begin(), searchLru_, node);
+    return true;
+}
+
+void SearchService::searchCachePut(
+        const std::string& key, const std::vector<SearchResult>& results) {
+    if (!config_.cacheSearches || config_.maxCachedSearches <= 0) return;
+    auto it = searchIndex_.find(key);
+    if (it != searchIndex_.end()) {
+        it->second->second = SearchCacheEntry{results,
+            std::chrono::steady_clock::now() +
+                std::chrono::seconds(config_.searchCacheTtlSec)};
+        searchLru_.splice(searchLru_.begin(), searchLru_, it->second);
+        return;
+    }
+    if (static_cast<int>(searchLru_.size()) >= config_.maxCachedSearches) {
+        searchIndex_.erase(searchLru_.back().first);
+        searchLru_.pop_back();
+    }
+    searchLru_.emplace_front(key,
+        SearchCacheEntry{results, std::chrono::steady_clock::now() +
+                              std::chrono::seconds(config_.searchCacheTtlSec)});
+    searchIndex_[key] = searchLru_.begin();
+}
 
 bool SearchService::initialize(HttpClient* httpClient, vpn::VpnTunnel* vpnTunnel,
                                const SearchConfig& config) {
@@ -62,7 +189,18 @@ std::vector<SearchResult> SearchService::webSearch(const std::string& query) {
         return results;
     }
 
-    std::string url = buildSearchUrl(query);
+    const std::string url = buildSearchUrl(query);
+    // Identical queries repeat constantly in agent workflows; the cache key
+    // pins engine + query + limit so config changes never serve stale mixes.
+    const std::string cacheKey = config_.searchEngineUrl + "|q=" + query +
+                                 "|n=" + std::to_string(config_.maxResults) +
+                                 "|" + config_.userAgent;
+    if (searchCacheGet(cacheKey, results)) {
+        std::cout << "[lethe-llm] Search (cached): " << query << " -> "
+                  << results.size() << " results" << std::endl;
+        return results;
+    }
+
     std::cout << "[lethe-llm] Searching: " << query << std::endl;
 
     HttpRequest req;
@@ -79,12 +217,23 @@ std::vector<SearchResult> SearchService::webSearch(const std::string& query) {
 
     std::string html(resp.body.begin(), resp.body.end());
     results = parseSearchResults(html);
+    if (!results.empty()) {
+        searchCachePut(cacheKey, results);
+    }
 
     std::cout << "[lethe-llm] Got " << results.size() << " results" << std::endl;
     return results;
 }
 
 PageContent SearchService::readPage(const std::string& url) {
+    return fetchPage(url, /*allowCache=*/true);
+}
+
+PageContent SearchService::readPageFresh(const std::string& url) {
+    return fetchPage(url, /*allowCache=*/false);
+}
+
+PageContent SearchService::fetchPage(const std::string& url, bool allowCache) {
     PageContent content;
     content.url = url;
     if (!initialized_) {
@@ -94,6 +243,15 @@ PageContent SearchService::readPage(const std::string& url) {
     }
 
     std::cout << "[lethe-llm] Reading page: " << url << std::endl;
+
+    // Fresh-cache hit for this exact URL: no network at all. LLM agents
+    // re-read pages between reasoning steps far more than humans do.
+    // Browser navigation (allowCache=false) always fetches for real.
+    if (allowCache && pageCacheGet(url, content)) {
+        std::cout << "[lethe-llm] Page (cached): " << content.title
+                  << " (" << content.textContent.size() << " chars)" << std::endl;
+        return content;
+    }
 
     // Check if this should go through the VPN.
     content.viaVpn = isUsingVpn();
@@ -126,6 +284,10 @@ PageContent SearchService::readPage(const std::string& url) {
     }
 
     content.success = true;
+    // Cache under the REQUESTED url so repeat lookups hit without a
+    // redirect chase; finalUrl stays inside the cached payload.
+    pageCachePut(url, content);
+
     std::cout << "[lethe-llm] Read page: " << content.title
               << " (" << content.textContent.size() << " chars)" << std::endl;
     return content;
@@ -150,7 +312,7 @@ std::string SearchService::extractTitleFromHtml(const std::string& html) const {
     start++;
     size_t end = html.find("</title>", start);
     if (end == std::string::npos) return "";
-    return html.substr(start, end - start);
+    return decodeEntities(html.substr(start, end - start));
 }
 
 std::string SearchService::extractTextFromHtml(const std::string& html) const {
@@ -238,6 +400,7 @@ std::vector<SearchResult> SearchService::parseSearchResults(const std::string& h
     // This is a simplified heuristic parser.
     size_t pos = 0;
     int rank = 1;
+    std::vector<std::string> seenUrls;
     while (rank <= config_.maxResults) {
         // Look for a result link pattern.
         size_t linkStart = html.find("<a ", pos);
@@ -259,15 +422,47 @@ std::vector<SearchResult> SearchService::parseSearchResults(const std::string& h
                 textStart++;
                 size_t textEnd = html.find("</a>", textStart);
                 if (textEnd != std::string::npos) {
-                    std::string title = html.substr(textStart, textEnd - textStart);
+                    // Titles arrive entity-encoded and may contain nested
+                    // tags (e.g. <b>highlighted</b> terms): strip and decode
+                    // so the LLM sees clean text.
+                    std::string title =
+                        decodeEntities(stripTags(html.substr(textStart, textEnd - textStart)));
 
-                    SearchResult result;
-                    result.position = rank++;
-                    result.url = url;
-                    result.title = title;
-                    result.snippet = ""; // Would be extracted in full implementation
-                    result.relevanceScore = 1.0 / static_cast<double>(result.position);
-                    results.push_back(result);
+                    // Navigation/footer anchors carry no visible text; they
+                    // are noise, not results, and would poison the ranking.
+                    if (!title.empty()) {
+                        // Snippet: the readable text between this anchor's
+                        // close and the next result link - typical search
+                        // markup puts the summary right after the link.
+                        std::string snippet;
+                        const size_t afterAnchor = textEnd + 4;
+                        const size_t nextLink = html.find("<a ", afterAnchor);
+                        const size_t scanEnd = nextLink == std::string::npos
+                            ? html.size()
+                            : nextLink;
+                        if (scanEnd > afterAnchor) {
+                            snippet = decodeEntities(stripTags(
+                                html.substr(afterAnchor, scanEnd - afterAnchor)));
+                            // Keep snippets bounded: the LLM wants a hint,
+                            // not a second copy of the page.
+                            if (snippet.size() > 300) snippet.resize(300);
+                        }
+
+                        // Duplicate URLs (common with tracking-wrapped
+                        // result blocks) would waste result slots.
+                        const bool duplicate =
+                            std::find(seenUrls.begin(), seenUrls.end(), url) != seenUrls.end();
+                        if (!duplicate) {
+                            seenUrls.push_back(url);
+                            SearchResult result;
+                            result.position = rank++;
+                            result.url = url;
+                            result.title = title;
+                            result.snippet = snippet;
+                            result.relevanceScore = 1.0 / static_cast<double>(result.position);
+                            results.push_back(result);
+                        }
+                    }
                 }
             }
         }

@@ -80,6 +80,10 @@ public:
     // Empty string disables. IP-literal URLs skip resolution entirely.
     void setDohProvider(const std::string& url);
     bool isDohEnabled() const { return !dohProvider_.empty(); }
+    // TTL for cached DoH answers (default 300s; 0 disables the cache).
+    // Only successful resolutions are ever cached - failures always retry
+    // the provider, so fail-closed semantics are unchanged.
+    void setDohCacheTtl(std::chrono::seconds ttl) { dohCacheTtl_ = ttl; }
 
 private:
     // --- Relay state (streaming HTTP(S)-over-tunnel) ---
@@ -131,6 +135,29 @@ private:
     static std::string urlEncode(const std::string& in);
     static bool looksLikeIpv4(const std::string& s);
 
+    // --- DoH answer cache (host -> resolved IP with expiry) ---
+    void dohCacheStore(const std::string& host, const std::string& ip);
+    bool dohCacheLookup(const std::string& host, std::string& outIp);
+    struct DohEntry {
+        std::string ip;
+        std::chrono::steady_clock::time_point expires{};
+    };
+
+    // --- Buffered connection reads ---
+    // All response parsing pulls through one buffer so header lines and
+    // chunked framing stop costing a syscall per byte, and so bytes read
+    // past a response boundary survive for keep-alive reuse.
+    int fillIoBuf(); // >0 bytes buffered, 0 clean EOF, <0 error/timeout
+    int bufferedReadByte(uint8_t& out);
+    bool bufferedReadExact(uint8_t* dst, size_t n);
+
+    // --- Keep-alive connection reuse ---
+    bool tryReuseConnection(const std::string& scheme, const std::string& host,
+                            int port);
+    // Decide from the just-parsed response whether the connection may serve
+    // another request; closes it when it may not.
+    void finishResponse(HttpResponse& resp);
+
     // --- Raw I/O on the current connection ---
     // Returns >0 bytes read, 0 on clean EOF, -1 on error, -2 on timeout.
     int rawRead(uint8_t* buf, size_t len);
@@ -160,6 +187,11 @@ private:
     std::chrono::steady_clock::time_point dohBootstrapTime_{};
     bool dohBootstrapValid_ = false;
 
+    // DoH answer cache: bounded, success-only, TTL-expired.
+    std::map<std::string, DohEntry> dohCache_;
+    static constexpr size_t kMaxDohCacheEntries = 256;
+    std::chrono::seconds dohCacheTtl_{300};
+
     // Diagnostic reason for the most recent connect failure.
     std::string lastConnectError_;
 
@@ -167,6 +199,21 @@ private:
     int socketFd_ = -1;
     bool usingTls_ = false;
     std::chrono::milliseconds ioTimeout_ = std::chrono::seconds(30);
+
+    // Buffered-read state (persists across keep-alive responses).
+    std::vector<uint8_t> ioBuf_;
+    size_t ioBufPos_ = 0;
+
+    // Keep-alive state.
+    std::string kaScheme_;
+    std::string kaHost_;
+    std::string kaResolvedTarget_;   // address the conn was established to
+    int kaPort_ = 0;
+    bool connectionReusable_ = false;  // established conn may serve another req
+    bool connectionReused_ = false;    // last request rode a reused conn
+    bool peerAllowsKeepAlive_ = true;  // no "Connection: close" in response
+    bool http10Peer_ = false;          // HTTP/1.0 responses default to close
+    bool bodyUntilEof_ = false;        // EOF-delimited body burns the conn
 #ifdef HAVE_OPENSSL
     SSL* ssl_ = nullptr;
     SSL_CTX* sslCtx_ = nullptr;

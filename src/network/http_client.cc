@@ -149,28 +149,47 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
                   << (currentReq.method == HttpMethod::GET ? "GET" : "REQ")
                   << " " << currentUrl << (viaVpn ? " (via VPN)" : "") << std::endl;
 
-        if (!connectToHost(host, port, scheme, currentReq.timeout)) {
-            resp.error = !lastConnectError_.empty()
-                ? lastConnectError_
-                : "Connection failed to " + host + ":" + std::to_string(port);
-            lastConnectError_.clear();
-            return resp;
+        // A reused keep-alive connection can go stale while idle (the peer
+        // closed it). That failure mode is indistinguishable from a flaky
+        // network until the write/read fails - so retry ONCE on a fresh
+        // connection before giving up. Never retried for fresh connections.
+        bool gotResponse = false;
+        for (int attempt = 0; attempt < 2 && !gotResponse; ++attempt) {
+            if (!connectToHost(host, port, scheme, currentReq.timeout)) {
+                resp.error = !lastConnectError_.empty()
+                    ? lastConnectError_
+                    : "Connection failed to " + host + ":" + std::to_string(port);
+                lastConnectError_.clear();
+                return resp;
+            }
+
+            const bool reused = connectionReused_;
+            resp = HttpResponse{}; // no state may leak between attempts/hops
+
+            std::string httpRequest = buildHttpRequest(currentReq, host, path, port);
+            if (!writeAll(httpRequest.data(), httpRequest.size())) {
+                const bool stale = reused && attempt == 0;
+                closeConnection();
+                if (stale) continue;
+                resp.error = "Failed to write request to " + host;
+                return resp;
+            }
+
+            if (!readFullResponse(resp)) {
+                const bool stale = reused && attempt == 0;
+                closeConnection();
+                if (stale) continue;
+                if (resp.error.empty()) {
+                    resp.error = "Failed to read response from " + host;
+                }
+                return resp;
+            }
+            gotResponse = true;
         }
 
-        std::string httpRequest = buildHttpRequest(currentReq, host, path, port);
-        if (!writeAll(httpRequest.data(), httpRequest.size())) {
-            closeConnection();
-            resp.error = "Failed to write request to " + host;
-            return resp;
-        }
-
-        if (!readFullResponse(resp)) {
-            closeConnection();
-            if (resp.error.empty()) resp.error = "Failed to read response from " + host;
-            return resp;
-        }
-
-        closeConnection();
+        // Keep the connection open only when both sides agree it can serve
+        // another request; otherwise tear it down now.
+        finishResponse(resp);
 
         // Follow redirects.
         if (resp.statusCode >= 300 && resp.statusCode < 400) {
@@ -217,6 +236,7 @@ void HttpClient::setDohProvider(const std::string& url) {
     dohProvider_ = url;
     dohProviderIps_.clear();
     dohBootstrapValid_ = false;
+    dohCache_.clear(); // answers pinned to the old provider must not survive
     if (!url.empty()) {
         std::cout << "[lethe-http][doh] provider configured: " << url << std::endl;
     }
@@ -314,7 +334,49 @@ bool HttpClient::refreshDohBootstrap() {
     return !dohProviderIps_.empty();
 }
 
+// --- DoH answer cache -------------------------------------------------------
+
+void HttpClient::dohCacheStore(const std::string& host, const std::string& ip) {
+    if (dohCacheTtl_.count() <= 0) return;
+    // Bound the cache: drop expired entries first; if a pathological burst
+    // still exceeds the cap, start over rather than grow without limit.
+    if (dohCache_.size() >= kMaxDohCacheEntries) {
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it = dohCache_.begin(); it != dohCache_.end();) {
+            if (now >= it->second.expires) it = dohCache_.erase(it);
+            else ++it;
+        }
+        if (dohCache_.size() >= kMaxDohCacheEntries) dohCache_.clear();
+    }
+    dohCache_[host] = DohEntry{ip, std::chrono::steady_clock::now() + dohCacheTtl_};
+}
+
+bool HttpClient::dohCacheLookup(const std::string& host, std::string& outIp) {
+    const auto now = std::chrono::steady_clock::now();
+    auto it = dohCache_.find(host);
+    if (it == dohCache_.end()) return false;
+    if (now >= it->second.expires) {
+        dohCache_.erase(it);
+        return false;
+    }
+    outIp = it->second.ip;
+    return true;
+}
+
 bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
+    // Repeat visits to a host are the common case for both browsing and LLM
+    // page reads: serve them from the TTL cache instead of paying a fresh
+    // DoH round trip (which itself opens TCP+TLS to the provider).
+    if (!dohCache_.empty() || dohCacheTtl_.count() > 0) {
+        std::string cached;
+        if (dohCacheLookup(host, cached)) {
+            outIp = cached;
+            std::cout << "[lethe-http][doh] " << host << " -> " << cached
+                      << " (cached)" << std::endl;
+            return true;
+        }
+    }
+
     std::string pscheme, phost, ppath;
     int pport = 0;
     parseUrl(dohProvider_, pscheme, phost, ppath, pport);
@@ -364,6 +426,7 @@ bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
                 pos = q2;
                 if (looksLikeIpv4(candidate)) {
                     outIp = candidate;
+                    dohCacheStore(host, candidate);
                     std::cout << "[lethe-http][doh] " << host << " -> "
                               << candidate << std::endl;
                     return true;
@@ -389,9 +452,20 @@ void HttpClient::shutdown() {
 bool HttpClient::connectToHost(const std::string& host, int port,
                                const std::string& scheme,
                                const std::chrono::seconds timeout) {
-    closeConnection();
     ioTimeout_ = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
     lastConnectError_.clear();
+
+    // Fast path: an established keep-alive connection to the same
+    // scheme://host:port serves the next request with no TCP or TLS setup,
+    // and skips DNS entirely - the origin was already validated for it.
+    if (tryReuseConnection(scheme, host, port)) {
+        std::cout << "[lethe-http] Reusing keep-alive connection to "
+                  << host << ":" << port << std::endl;
+        return true;
+    }
+
+    closeConnection();
+    connectionReused_ = false;
 
     // Secure DNS: when a DoH provider is configured, target hostnames are
     // resolved through it and the plaintext system resolver is never used.
@@ -413,6 +487,7 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     // the machine while the tunnel is down.
     const bool covered = vpnTunnel_ &&
         vpnTunnel_->shouldRouteThroughVpn(connectTarget);
+    kaResolvedTarget_ = connectTarget; // reused conns re-check this
     if (covered && !isVpnActive()) {
         lastConnectError_ = "Blocked: " + host + " (" + connectTarget +
                             ") requires the VPN tunnel (allowed CIDR match) "
@@ -453,6 +528,14 @@ bool HttpClient::connectToHost(const std::string& host, int port,
         }
         return false;
     }
+
+    // Fresh connection: it becomes reusable only after a clean response
+    // confirms both sides want keep-alive (finishResponse).
+    kaScheme_ = scheme;
+    kaHost_ = host;
+    kaPort_ = port;
+    connectionReusable_ = false;
+    connectionReused_ = false;
 
     if (scheme == "https") {
         return startTls(host); // SNI + certificate name stay the real hostname.
@@ -881,6 +964,104 @@ void HttpClient::closeConnection() {
         socketFd_ = -1;
     }
     usingTls_ = false;
+    // Nothing buffered belongs to a dead connection; keep-alive identity is
+    // meaningless without a live one too.
+    ioBuf_.clear();
+    ioBufPos_ = 0;
+    connectionReusable_ = false;
+    kaScheme_.clear();
+    kaHost_.clear();
+    kaPort_ = 0;
+}
+
+// --- Keep-alive connection reuse -------------------------------------------
+
+bool HttpClient::tryReuseConnection(const std::string& scheme,
+                                    const std::string& host, int port) {
+    if (!connectionReusable_ || socketFd_ < 0) return false;
+    // Relay exchanges are single-use by protocol design (OPEN/DATA/END);
+    // they never leave a reusable socket behind anyway.
+    if (relayMode_) return false;
+    if (kaScheme_ != scheme || kaHost_ != host || kaPort_ != port) return false;
+
+    // Policy re-check on EVERY reuse. The connection may predate a VPN
+    // state change: a kept-alive socket must never become a plaintext
+    // path around the tunnel policy, so a covered destination with the
+    // tunnel down fails closed - exactly like a fresh connect would.
+    const bool covered = vpnTunnel_ &&
+        vpnTunnel_->shouldRouteThroughVpn(kaResolvedTarget_);
+    if (covered && !isVpnActive()) {
+        lastConnectError_ = "Blocked: " + host + " (" + kaResolvedTarget_ +
+                            ") requires the VPN tunnel (allowed CIDR match) "
+                            "but the tunnel is down";
+        std::cerr << "[lethe-http] " << lastConnectError_ << std::endl;
+        closeConnection(); // the stale socket predates the policy change
+        return false;
+    }
+
+    connectionReused_ = true;
+    return true;
+}
+
+void HttpClient::finishResponse(HttpResponse& resp) {
+    // Framing decides - not the status code: a fully-framed redirect or
+    // error response leaves the connection exactly as reusable as a 200,
+    // while an EOF-delimited body or peer "close" burns it either way.
+    const bool fullyFramed =
+        !bodyUntilEof_ &&
+        peerAllowsKeepAlive_ &&
+        !http10Peer_;
+    if (fullyFramed && socketFd_ >= 0 && !relayMode_ &&
+        relayInPos_ == 0) {
+        connectionReusable_ = true;
+        return; // socket stays open for the next same-origin request
+    }
+    closeConnection();
+}
+
+// --- Buffered reads ---------------------------------------------------------
+//
+// One refill per ~16 KiB instead of a select()+recv() pair per byte: header
+// lines, chunked framing, and chunk terminators stop dominating response
+// time on plain TCP, and bytes that land past a response boundary stay here
+// for keep-alive reuse instead of being lost.
+
+int HttpClient::fillIoBuf() {
+    ioBuf_.resize(kReadChunkSize);
+    const int n = rawRead(ioBuf_.data(), kReadChunkSize);
+    if (n <= 0) {
+        ioBuf_.clear();
+        ioBufPos_ = 0;
+        return n;
+    }
+    ioBuf_.resize(static_cast<size_t>(n));
+    ioBufPos_ = 0;
+    return n;
+}
+
+int HttpClient::bufferedReadByte(uint8_t& out) {
+    if (ioBufPos_ >= ioBuf_.size()) {
+        const int r = fillIoBuf();
+        if (r <= 0) return r;
+    }
+    out = ioBuf_[ioBufPos_++];
+    return 1;
+}
+
+bool HttpClient::bufferedReadExact(uint8_t* dst, size_t n) {
+    size_t got = 0;
+    while (got < n) {
+        if (ioBufPos_ >= ioBuf_.size()) {
+            const int r = fillIoBuf();
+            if (r <= 0) return false; // error, timeout, or premature EOF
+        }
+        const size_t avail = ioBuf_.size() - ioBufPos_;
+        const size_t take = std::min(avail, n - got);
+        std::memcpy(dst + got, ioBuf_.data() + ioBufPos_, take);
+        ioBufPos_ += take;
+        got += take;
+    }
+    return true;
 }
 
 // --- Raw I/O ---
@@ -1029,7 +1210,7 @@ bool HttpClient::readLine(std::string& out) {
     out.clear();
     while (true) {
         uint8_t c = 0;
-        int n = rawRead(&c, 1);
+        const int n = bufferedReadByte(c);
         if (n < 0) return false; // error or timeout
         if (n == 0) {
             // EOF: return whatever we have (final line without newline).
@@ -1047,6 +1228,11 @@ bool HttpClient::readLine(std::string& out) {
 // --- Response parsing ---
 
 bool HttpClient::readFullResponse(HttpResponse& resp) {
+    // Framing facts that decide keep-alive eligibility in finishResponse.
+    peerAllowsKeepAlive_ = true;
+    http10Peer_ = false;
+    bodyUntilEof_ = false;
+
     // Status line: "HTTP/1.1 200 OK"
     std::string statusLine;
     if (!readLine(statusLine)) {
@@ -1059,6 +1245,7 @@ bool HttpClient::readFullResponse(HttpResponse& resp) {
         resp.error = "Malformed status line: " + statusLine;
         return false;
     }
+    http10Peer_ = (httpVersion.rfind("HTTP/1.0", 0) == 0);
 
     // Headers until the blank line.
     std::string line;
@@ -1069,6 +1256,12 @@ bool HttpClient::readFullResponse(HttpResponse& resp) {
             std::string value = trimCopy(line.substr(colon + 1));
             resp.headers[key] = value;
         }
+    }
+
+    const std::string connHeader =
+        toLowerCopy(getHeader(resp.headers, "connection"));
+    if (connHeader.find("close") != std::string::npos) {
+        peerAllowsKeepAlive_ = false; // explicit teardown wins over defaults
     }
 
     // Body.
@@ -1093,6 +1286,9 @@ bool HttpClient::readFullResponse(HttpResponse& resp) {
             return false;
         }
     } else {
+        // No length and no chunking: only EOF delimits the body - the
+        // server must close, so this connection is single-use.
+        bodyUntilEof_ = true;
         if (!readBodyUntilClose(resp)) {
             resp.error = "Failed to read body";
             return false;
@@ -1111,13 +1307,11 @@ bool HttpClient::readBodyOfLength(HttpResponse& resp, size_t length) {
     std::vector<uint8_t> chunk(kReadChunkSize);
     while (remaining > 0) {
         size_t want = std::min(remaining, chunk.size());
-        int n = rawRead(chunk.data(), want);
-        if (n < 0) return false;
-        if (n == 0) return false; // premature EOF
+        if (!bufferedReadExact(chunk.data(), want)) return false;
         resp.body.insert(resp.body.end(),
                          reinterpret_cast<char*>(chunk.data()),
-                         reinterpret_cast<char*>(chunk.data() + n));
-        remaining -= static_cast<size_t>(n);
+                         reinterpret_cast<char*>(chunk.data() + want));
+        remaining -= want;
         if (resp.body.size() > kMaxResponseSize) {
             std::cerr << "[lethe-http] Response too large, aborting" << std::endl;
             return false;
@@ -1157,17 +1351,27 @@ bool HttpClient::readChunkedBody(HttpResponse& resp) {
 
         if (!readBodyOfLength(resp, chunkSize)) return false;
 
-        // Consume the CRLF after each chunk.
-        uint8_t c1 = 0, c2 = 0;
-        if (rawRead(&c1, 1) != 1 || rawRead(&c2, 1) != 1) return false;
+        // Consume the CRLF after each chunk (buffered: two bytes, no
+        // per-byte syscalls).
+        uint8_t crlf[2] = {0, 0};
+        if (!bufferedReadExact(crlf, 2)) return false;
     }
 }
 
 bool HttpClient::readBodyUntilClose(HttpResponse& resp) {
+    // Drain anything already buffered first so no byte is skipped, then
+    // pull straight from the connection until EOF.
+    while (ioBufPos_ < ioBuf_.size()) {
+        resp.body.push_back(static_cast<char>(ioBuf_[ioBufPos_++]));
+        if (resp.body.size() > kMaxResponseSize) {
+            std::cerr << "[lethe-http] Response too large, aborting" << std::endl;
+            return false;
+        }
+    }
     std::vector<uint8_t> chunk(kReadChunkSize);
     while (true) {
-        int n = rawRead(chunk.data(), chunk.size());
-        if (n < 0) return n == -2 ? false : false; // timeout or error
+        const int n = rawRead(chunk.data(), chunk.size());
+        if (n < 0) return false; // timeout or error
         if (n == 0) return true; // clean EOF
         resp.body.insert(resp.body.end(),
                          reinterpret_cast<char*>(chunk.data()),
@@ -1302,6 +1506,17 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
         case HttpMethod::PATCH: method = "PATCH"; break;
     }
 
+    // Caller-supplied headers always win: a default is emitted only when
+    // the request does not already carry that header (case-insensitive),
+    // so custom User-Agent / Accept values actually reach the server.
+    auto hasHeader = [&req](const char* name) {
+        const std::string lower = toLowerCopy(name);
+        for (const auto& h : req.headers) {
+            if (toLowerCopy(h.first) == lower) return true;
+        }
+        return false;
+    };
+
     std::string httpRequest;
     httpRequest += method;
     httpRequest += " ";
@@ -1310,13 +1525,25 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
     httpRequest += "Host: ";
     httpRequest += host;
     httpRequest += "\r\n";
-    httpRequest += "User-Agent: ";
-    httpRequest += lethe::USER_AGENT_STRING;
-    httpRequest += "\r\n";
-    httpRequest += "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
-    httpRequest += "Accept-Language: en-US,en;q=0.5\r\n";
-    httpRequest += "Accept-Encoding: gzip, deflate\r\n";
-    httpRequest += "Connection: close\r\n";
+    if (!hasHeader("User-Agent")) {
+        httpRequest += "User-Agent: ";
+        httpRequest += lethe::USER_AGENT_STRING;
+        httpRequest += "\r\n";
+    }
+    if (!hasHeader("Accept")) {
+        httpRequest += "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
+    }
+    if (!hasHeader("Accept-Language")) {
+        httpRequest += "Accept-Language: en-US,en;q=0.5\r\n";
+    }
+    if (!hasHeader("Accept-Encoding")) {
+        httpRequest += "Accept-Encoding: gzip, deflate\r\n";
+    }
+    // HTTP/1.1 connections persist by default; say so explicitly unless
+    // the caller overrides Connection itself.
+    if (!hasHeader("Connection")) {
+        httpRequest += "Connection: keep-alive\r\n";
+    }
 
     for (const auto& header : req.headers) {
         httpRequest += header.first;

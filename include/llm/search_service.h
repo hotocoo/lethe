@@ -14,6 +14,9 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <list>
+#include <unordered_map>
+#include <chrono>
 #include "network/http_client.h"
 #include "network/vpn/vpn_tunnel.h"
 
@@ -37,6 +40,7 @@ struct PageContent {
     std::string textContent; // Extracted readable text
     int statusCode = 0;      // HTTP status code
     bool viaVpn = false;     // Whether this was fetched through the VPN
+    bool fromCache = false;  // Served from the service's TTL/LRU cache
     std::string error;       // Error message if success is false
 };
 
@@ -48,6 +52,15 @@ struct SearchConfig {
     int requestTimeoutSec = 15;  // Per-request timeout
     bool useVpn = true;          // Route search through built-in VPN
     bool extractReadableText = true; // Strip HTML to readable text
+
+    // Caching: LLM agents re-read the same pages and repeat queries far
+    // more than humans do, so successful reads are memoized briefly.
+    bool cachePages = true;          // Memoize successful page reads
+    int maxCachedPages = 32;         // LRU bound for the page cache
+    int pageCacheTtlSec = 600;       // Freshness window for cached pages
+    bool cacheSearches = true;       // Memoize identical query results
+    int maxCachedSearches = 16;      // LRU bound for the search cache
+    int searchCacheTtlSec = 300;     // Freshness window for cached results
 };
 
 // The search service used by the Aletheia OS LLM.
@@ -63,8 +76,15 @@ public:
     // Perform a web search and return structured results for the LLM.
     std::vector<SearchResult> webSearch(const std::string& query);
 
-    // Read a page and return its readable content for the LLM.
+    // Read a page and return its readable content for the LLM. Successful
+    // reads are memoized briefly (TTL+LRU): agent workflows re-read pages
+    // far more often than humans do.
     PageContent readPage(const std::string& url);
+
+    // Read a page with the cache bypassed - always a real network fetch
+    // through the secure stack. Browser navigation uses this so every
+    // document load stays a genuine, policy-checked page load.
+    PageContent readPageFresh(const std::string& url);
 
     // Perform a search and read the top result (convenience for the LLM).
     PageContent searchAndRead(const std::string& query);
@@ -74,6 +94,14 @@ public:
 
     // Whether the search service is properly initialized.
     bool isInitialized() const { return initialized_; }
+
+    // Drop every memoized page and search result (e.g. after a privacy-
+    // sensitive state change). Cache bounds/TTLs come from SearchConfig.
+    void clearCaches();
+
+    // Current cache occupancy (for introspection and tests).
+    size_t pageCacheSize() const { return pageLru_.size(); }
+    size_t searchCacheSize() const { return searchLru_.size(); }
 
 private:
     // Build the search query URL.
@@ -85,8 +113,38 @@ private:
     // Extract the page title from HTML.
     std::string extractTitleFromHtml(const std::string& html) const;
 
+protected:
     // Parse search results from the search engine's HTML response.
+    // Protected: test subclasses exercise it directly.
     std::vector<SearchResult> parseSearchResults(const std::string& html) const;
+
+private:
+
+    // --- TTL+LRU caches (successful fetches only) ---
+    struct PageCacheEntry {
+        PageContent content;
+        std::chrono::steady_clock::time_point expires{};
+    };
+    struct SearchCacheEntry {
+        std::vector<SearchResult> results;
+        std::chrono::steady_clock::time_point expires{};
+    };
+    // list order == recency order (front = most recent).
+    std::list<std::pair<std::string, PageCacheEntry>> pageLru_;
+    std::unordered_map<std::string,
+        std::list<std::pair<std::string, PageCacheEntry>>::iterator> pageIndex_;
+    std::list<std::pair<std::string, SearchCacheEntry>> searchLru_;
+    std::unordered_map<std::string,
+        std::list<std::pair<std::string, SearchCacheEntry>>::iterator> searchIndex_;
+
+    bool pageCacheGet(const std::string& url, PageContent& out);
+    void pageCachePut(const std::string& url, const PageContent& c);
+    bool searchCacheGet(const std::string& key, std::vector<SearchResult>& out);
+    void searchCachePut(const std::string& key,
+                        const std::vector<SearchResult>& results);
+
+    // Shared implementation behind readPage/readPageFresh.
+    PageContent fetchPage(const std::string& url, bool allowCache);
 
     HttpClient* httpClient_ = nullptr;
     vpn::VpnTunnel* vpnTunnel_ = nullptr;
