@@ -13,6 +13,7 @@
 #include "network/vpn/vpn_tunnel.h"
 #include "network/vpn/vpn_config.h"
 #include "browser/navigation_history.h"
+#include "security/cookie_jar.h"
 
 namespace lethe {
 
@@ -33,6 +34,15 @@ struct Config {
     vpn::VpnConfig vpnConfig;  // VPN configuration (used when vpnEnabled)
 };
 
+// Merge LETHE_* environment variables into \p cfg (see README):
+//   LETHE_SANDBOX=0|false|off|no   -> sandboxEnabled=false
+//   LETHE_SANDBOX=<anything else>  -> sandboxEnabled=true
+//   LETHE_DNS_PROVIDER=<url>       -> DoH provider URL
+//   LETHE_DNS_PROVIDER=none|off    -> DoH disabled (empty provider)
+//   LETHE_USER_AGENT_MODE=standard|stealth
+// Callers apply this BEFORE command-line parsing so explicit arguments win.
+void applyEnvironmentOverrides(Config& cfg);
+
 class Engine {
 public:
     Engine();
@@ -48,6 +58,7 @@ public:
     HttpClient* httpClient() { return httpClient_.get(); }
     NavigationHistory* history() { return history_.get(); }
     vpn::VpnTunnel* vpnTunnel() { return vpnTunnel_.get(); }
+    CookieJar* cookieJar() { return cookieJar_.get(); }
     
     bool isRunning() const { return running_; }
     const Config& config() const { return config_; }
@@ -81,6 +92,7 @@ private:
     std::unique_ptr<HttpClient> httpClient_;
     std::unique_ptr<NavigationHistory> history_;
     std::unique_ptr<vpn::VpnTunnel> vpnTunnel_;
+    std::unique_ptr<CookieJar> cookieJar_;
     std::unique_ptr<UdpTransport> vpnTransport_;
     uint64_t lastHandshakeAttemptMs_ = 0;
     uint64_t lastKeepaliveMs_ = 0;

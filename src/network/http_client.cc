@@ -166,7 +166,9 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             const bool reused = connectionReused_;
             resp = HttpResponse{}; // no state may leak between attempts/hops
 
-            std::string httpRequest = buildHttpRequest(currentReq, host, path, port);
+            std::string httpRequest = buildHttpRequest(
+                currentReq, host, path, port,
+                cookieHeaderForHop(currentReq, currentUrl));
             if (!writeAll(httpRequest.data(), httpRequest.size())) {
                 const bool stale = reused && attempt == 0;
                 closeConnection();
@@ -190,6 +192,17 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
         // Keep the connection open only when both sides agree it can serve
         // another request; otherwise tear it down now.
         finishResponse(resp);
+
+        // Every hop's Set-Cookie lands in the partitioned jar under the
+        // top-level site of THIS navigation (redirect hops included).
+        if (cookieJar_ && !resp.setCookieHeaders.empty()) {
+            const std::string hopSite = CookieJar::topLevelSiteFor(currentUrl);
+            const std::string& part =
+                currentReq.topLevelSite.empty() ? hopSite : currentReq.topLevelSite;
+            for (const auto& sc : resp.setCookieHeaders) {
+                cookieJar_->store(part, currentUrl, sc);
+            }
+        }
 
         // Follow redirects.
         if (resp.statusCode >= 300 && resp.statusCode < 400) {
@@ -231,6 +244,15 @@ bool HttpClient::isVpnActive() const {
 }
 
 // --- Secure DNS (DNS-over-HTTPS) ---------------------------------------------
+
+std::string HttpClient::cookieHeaderForHop(const HttpRequest& req,
+                                           const std::string& currentUrl) const {
+    if (!cookieJar_) return "";
+    const std::string hopSite = CookieJar::topLevelSiteFor(currentUrl);
+    const std::string& part =
+        req.topLevelSite.empty() ? hopSite : req.topLevelSite;
+    return cookieJar_->headerFor(part, currentUrl);
+}
 
 void HttpClient::setDohProvider(const std::string& url) {
     dohProvider_ = url;
@@ -1254,6 +1276,11 @@ bool HttpClient::readFullResponse(HttpResponse& resp) {
         if (colon != std::string::npos) {
             std::string key = toLowerCopy(trimCopy(line.substr(0, colon)));
             std::string value = trimCopy(line.substr(colon + 1));
+            if (key == "set-cookie") {
+                // The headers map collapses repeated names; cookies are
+                // per-name state and must survive individually.
+                resp.setCookieHeaders.push_back(value);
+            }
             resp.headers[key] = value;
         }
     }
@@ -1494,7 +1521,8 @@ void HttpClient::parseUrl(const std::string& url, std::string& scheme,
 std::string HttpClient::buildHttpRequest(const HttpRequest& req,
                                          const std::string& host,
                                          const std::string& path,
-                                         int port) {
+                                         int port,
+                                         const std::string& cookieHeader) {
     (void)port;
     std::string method = "GET";
     switch (req.method) {
@@ -1527,7 +1555,8 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
     httpRequest += "\r\n";
     if (!hasHeader("User-Agent")) {
         httpRequest += "User-Agent: ";
-        httpRequest += lethe::USER_AGENT_STRING;
+        httpRequest += defaultUserAgent_.empty() ? lethe::USER_AGENT_STRING
+                                                : defaultUserAgent_.c_str();
         httpRequest += "\r\n";
     }
     if (!hasHeader("Accept")) {
@@ -1549,6 +1578,11 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
         httpRequest += header.first;
         httpRequest += ": ";
         httpRequest += header.second;
+        httpRequest += "\r\n";
+    }
+    if (!cookieHeader.empty() && !hasHeader("Cookie")) {
+        httpRequest += "Cookie: ";
+        httpRequest += cookieHeader;
         httpRequest += "\r\n";
     }
 

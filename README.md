@@ -164,13 +164,17 @@ auto results = bridge.llmWebSearch("aletheia os features");
 ### Privacy
 - **No telemetry or tracking**: Zero external analytics
 - **Cookie partitioning**: Isolated cookie storage per top-level origin
+  (memory-only jar; cookies never touch disk and are purged on exit)
 - **Incognito by default**: Temporary browsing session with auto-purge on exit
+- **Stealth user agent**: optional fixed low-entropy UA profile that reveals
+  neither the platform nor any browser identity (`LETHE_USER_AGENT_MODE=stealth`)
 - **DNS over HTTPS (DoH)**: Encrypted DNS queries via Cloudflare/DNS-over-HTTPS providers
 - **VPN encryption**: All traffic can be encrypted through the built-in tunnel
 
 ### Minimal UI
-- Clean, distraction-free interface with focus mode
-- Tab bar only when needed (auto-hide)
+- Clean, distraction-free interface with focus mode (**Ctrl+Shift+F**
+  hides the address entry and menu button until toggled again)
+- Tab bar only when needed (the strip hides entirely while a single tab is open)
 - No extensions or plugins — pure web rendering
 
 ## Architecture
@@ -233,7 +237,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (125 tests)
+# Run the full test suite (148 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -335,6 +339,13 @@ The test suite covers:
   always fetches; LRU eviction; clearCaches)
 - **Result parsing quality** (entity-decoded titles, extracted snippets,
   navigation noise and duplicate URLs filtered)
+- **Partitioned cookie jar** (per-top-level-site isolation, host-only vs
+  Domain scoping, path rules, Secure/HttpOnly, Max-Age and Expires handling,
+  capacity bound, full wire round trip through HttpClient including a
+  foreign-partition non-leak check and explicit-Cookie-header precedence)
+- **Environment configuration** (LETHE_SANDBOX / LETHE_DNS_PROVIDER /
+  LETHE_USER_AGENT_MODE accepted values, unknown-value fallbacks, untouched
+  defaults when unset; standard vs stealth UA resolution)
 - Engine VPN integration
 - LLM search service
 - Aletheia OS bridge
@@ -361,10 +372,12 @@ The test suite covers:
 Environment variables:
 
 ```bash
-export LETHE_SANDBOX=1          # Enable renderer sandboxing (default: 1)
-export LETHE_DNS_PROVIDER="https://cloudflare-dns.com"
+export LETHE_SANDBOX=1          # 0/false/off/no disables sandboxing
+export LETHE_DNS_PROVIDER="https://cloudflare-dns.com"   # none/off = disable DoH
 export LETHE_USER_AGENT_MODE="standard|stealth"
 ```
+
+Environment is applied first; explicit command-line flags always win over it.
 
 Command line:
 

@@ -89,6 +89,13 @@ void TabBar::updateTabs() {
     if (tabWidgets_.find(activeTab) != tabWidgets_.end()) {
         setActiveTab(activeTab);
     }
+
+    // Tab bar only when needed: with at most one tab there is nothing to
+    // switch between, so hide the strip entirely (including "+").
+    if (box_) {
+        if (tabWidgets_.size() <= 1) gtk_widget_hide(box_);
+        else gtk_widget_show(box_);
+    }
 }
 
 void TabBar::createTabWidget(int tabId) {

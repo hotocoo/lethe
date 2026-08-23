@@ -11,7 +11,33 @@ namespace lethe {
 
 const std::string VERSION = "1.0.0";
 const std::string NAME = "Lethe";
-const std::string USER_AGENT_STRING = 
+
+// Standard mode: full browser identity with a platform-honest OS token.
+inline const char* standardUserAgentString() {
+#if defined(__APPLE__)
+    return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+#else
+    return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+           "Chrome/120.0.0.0 Safari/537.36";
+#endif
+}
+
+// Stealth mode: one fixed low-entropy profile regardless of the actual OS,
+// revealing neither the platform nor any Lethe/Aletheia tokens.
+inline const char* stealthUserAgentString() {
+    return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+           "Chrome/120.0.0.0 Safari/537.36";
+}
+
+// Resolve Config.userAgentMode ("standard" | "stealth") to its UA string.
+// Unknown modes fall back to standard.
+inline const char* userAgentForMode(const std::string& mode) {
+    return mode == "stealth" ? stealthUserAgentString() : standardUserAgentString();
+}
+
+// Kept for source compatibility; identical to standardUserAgentString().
+const std::string USER_AGENT_STRING =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/120.0.0.0 Safari/537.36";
 

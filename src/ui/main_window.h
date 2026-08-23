@@ -22,12 +22,16 @@ public:
 private:
     friend void on_window_destroy(GtkWidget* widget, gpointer data);
     friend void on_entry_activate(GtkWidget* widget, gpointer data);
-    
+    friend void on_focus_mode_activate(GtkWidget* widget, gpointer data);
+
     void setupUI();
     void connectSignals();
-    
+
     GtkWidget* createMenu();
-    
+    // Distraction-free reading: hides address entry and menu button until
+    // toggled again (Ctrl+Shift+F or the menu item).
+    void toggleFocusMode();
+
     Engine* engine_;
     GtkWidget* window_;
     GtkWidget* headerBar_;
@@ -38,6 +42,8 @@ private:
     GtkWidget* tabBox_;
     GtkWidget* scrollWindow_;
     GtkWidget* viewport_;
+    GtkAccelGroup* accelGroup_ = nullptr;
+    bool focusMode_ = false;
 };
 
 } // namespace lethe

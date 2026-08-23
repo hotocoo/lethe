@@ -20,10 +20,12 @@ int main(int argc, char** argv) {
     
     gtk_init(&argc, &argv);
     
-    // Parse command line arguments
+    // Configuration defaults, then LETHE_* environment overrides. Command
+    // line arguments below win over both.
     lethe::Config cfg;
     cfg.sandboxEnabled = true;
     cfg.incognitoMode = true;
+    lethe::applyEnvironmentOverrides(cfg);
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--incognito") == 0) {

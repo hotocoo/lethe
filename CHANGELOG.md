@@ -13,6 +13,8 @@ All notable changes to Lethe are documented in this file.
   final-URL bookkeeping, and session back/forward traversal that fails closed
 - Reader-mode HTML rendering in the viewport (titles, headings, lists,
   entities)
+- Focus mode (Ctrl+Shift+F hides the address entry and menu button) and a
+  tab strip that stays hidden while a single tab is open
 - Aletheia OS bridge: `openUrl`/`navigate`/`goBack`/`goForward`, VPN control,
   LLM web search + page reading, status reporting
 
@@ -50,6 +52,15 @@ All notable changes to Lethe are documented in this file.
   redirect following
 - LLM search service: structured results, readable text extraction over real
   HTTP(S), VPN-routed by default
+- Partitioned cookie jar: per-top-level-site isolation in memory only,
+  host-only/Domain/path/Secure/HttpOnly scoping, Max-Age and Expires expiry,
+  capacity-bounded; Set-Cookie captured on every redirect hop and Cookie
+  attached by partition through HttpClient (explicit caller headers win);
+  Engine purges everything on shutdown — nothing persists to disk
+- Runtime environment configuration: LETHE_SANDBOX, LETHE_DNS_PROVIDER and
+  LETHE_USER_AGENT_MODE are honored at startup; command-line flags win;
+  standard UA now reports the honest platform while stealth mode pins one
+  fixed low-entropy profile
 
 ### Performance (Aletheia workload optimizations)
 - HTTP/1.1 keep-alive connection reuse: repeat fetches to the same origin
@@ -76,7 +87,7 @@ All notable changes to Lethe are documented in this file.
   server instead of being shadowed by client defaults
 
 ### Quality & infrastructure
-- 125-test suite (lightweight framework, no external test deps) including
+- 148-test suite (lightweight framework, no external test deps) including
   full-stack navigation e2e against real local origins and TLS origins with
   CA-bundle trust
 - CI: Linux (gcc/clang, incl. a GTK3 GUI job) + macOS build/test/e2e matrix

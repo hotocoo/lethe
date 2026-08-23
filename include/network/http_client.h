@@ -9,6 +9,7 @@
 #include <cstdint>
 #include "network/tls_config.h"
 #include "network/vpn/vpn_tunnel.h"
+#include "security/cookie_jar.h"
 
 // Declared in network/udp_transport.h (included by the .cc).
 namespace lethe {
@@ -31,6 +32,10 @@ struct HttpRequest {
     std::map<std::string, std::string> headers;
     std::string body;
     std::chrono::seconds timeout = std::chrono::seconds(30);
+    // Top-level site ("https://example.com") used to partition cookies.
+    // Empty derives the partition from the request URL itself, which is
+    // correct for top-level document navigations.
+    std::string topLevelSite;
 };
 
 struct HttpResponse {
@@ -41,6 +46,9 @@ struct HttpResponse {
     std::string error;
     // Final URL after redirects (may differ from the requested URL).
     std::string finalUrl;
+    // Every Set-Cookie value seen on THIS response hop, in wire order
+    // (headers map collapses repeats; cookies must not be collapsed).
+    std::vector<std::string> setCookieHeaders;
 };
 
 class HttpClient {
@@ -84,6 +92,20 @@ public:
     // Only successful resolutions are ever cached - failures always retry
     // the provider, so fail-closed semantics are unchanged.
     void setDohCacheTtl(std::chrono::seconds ttl) { dohCacheTtl_ = ttl; }
+
+    // --- Cookies (partitioned jar owned by Engine) ---
+    // When enabled and the request carries a top-level site (or the URL
+    // implies one), matching cookies ride as a Cookie header and every
+    // Set-Cookie of every response hop lands in the jar under that
+    // partition. An explicit Cookie header from the caller always wins.
+    void enableCookies(CookieJar* jar) { cookieJar_ = jar; }
+    void disableCookies() { cookieJar_ = nullptr; }
+    bool cookiesEnabled() const { return cookieJar_ != nullptr; }
+
+    // Default User-Agent used when the request does not carry one.
+    // Empty restores the built-in standard string.
+    void setUserAgent(std::string ua) { defaultUserAgent_ = std::move(ua); }
+    const std::string& userAgent() const { return defaultUserAgent_; }
 
 private:
     // --- Relay state (streaming HTTP(S)-over-tunnel) ---
@@ -175,7 +197,11 @@ private:
     void parseUrl(const std::string& url, std::string& scheme, std::string& host,
                   std::string& path, int& port);
     std::string buildHttpRequest(const HttpRequest& req, const std::string& host,
-                                 const std::string& path, int port);
+                                 const std::string& path, int port,
+                                 const std::string& cookieHeader);
+    // Cookie header for one request hop under its partition ("" when none).
+    std::string cookieHeaderForHop(const HttpRequest& req,
+                                   const std::string& currentUrl) const;
 
     TLSConfig tlsConfig_;
     bool initialized_ = false;
@@ -194,6 +220,10 @@ private:
 
     // Diagnostic reason for the most recent connect failure.
     std::string lastConnectError_;
+
+    // Partitioned cookie storage (not owned) and configurable UA default.
+    CookieJar* cookieJar_ = nullptr;
+    std::string defaultUserAgent_;
 
     // Current connection state (one connection at a time).
     int socketFd_ = -1;

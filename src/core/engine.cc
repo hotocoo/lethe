@@ -31,6 +31,14 @@ Engine::~Engine() {
 
 namespace {
 
+std::string toLowerCopy(const std::string& s) {
+    std::string out(s);
+    for (char& c : out) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return out;
+}
+
 // Async-signal-safe termination handler. exit()/iostreams are not
 // async-signal-safe, so the handler only write()s a fixed message, restores
 // the default disposition, and re-raises — the process then dies with the
@@ -44,6 +52,23 @@ extern "C" void letheTerminateHandler(int sig) {
 }
 
 } // namespace
+
+void applyEnvironmentOverrides(Config& cfg) {
+    if (const char* sandbox = std::getenv("LETHE_SANDBOX")) {
+        const std::string v = toLowerCopy(std::string(sandbox));
+        const bool off = (v == "0" || v == "false" || v == "off" || v == "no");
+        cfg.sandboxEnabled = !off;
+    }
+    if (const char* dns = std::getenv("LETHE_DNS_PROVIDER")) {
+        const std::string v(dns);
+        const bool disable = (v == "none" || v == "off" || v.empty());
+        cfg.dnsProvider = disable ? "" : v;
+    }
+    if (const char* uaMode = std::getenv("LETHE_USER_AGENT_MODE")) {
+        const std::string v = toLowerCopy(std::string(uaMode));
+        cfg.userAgentMode = (v == "stealth") ? "stealth" : "standard";
+    }
+}
 
 int Engine::initialize(const Config& cfg) {
     config_ = cfg;
@@ -85,6 +110,15 @@ void Engine::shutdown() {
     std::cout << "[lethe] Shutting down components..." << std::endl;
     
     history_.reset();
+    if (cookieJar_) {
+        const size_t purged = cookieJar_->size();
+        cookieJar_->purge();
+        cookieJar_.reset();
+        if (purged > 0) {
+            std::cout << "[lethe] Purged " << purged
+                      << " session cookies (incognito exit)" << std::endl;
+        }
+    }
     if (vpnTransport_) vpnTransport_->close();
     vpnTransport_.reset();
     vpnTunnel_.reset();
@@ -130,9 +164,19 @@ void Engine::init_network_stack() {
         httpClient_->setDohProvider(config_.dnsProvider);
     }
 
+    // User-Agent identity from the configured mode (standard | stealth).
+    httpClient_->setUserAgent(userAgentForMode(config_.userAgentMode));
+
+    // Partitioned cookies, memory-only: nothing persists and Engine purges
+    // the jar on shutdown (incognito-by-default privacy contract).
+    cookieJar_ = std::make_unique<CookieJar>();
+    httpClient_->enableCookies(cookieJar_.get());
+
     std::cout << "[lethe] Network stack initialized (TLS "
               << MIN_TLS_VERSION << "+, DoH: "
-              << (httpClient_->isDohEnabled() ? "on" : "off") << ")" << std::endl;
+              << (httpClient_->isDohEnabled() ? "on" : "off")
+              << ", UA: " << config_.userAgentMode
+              << ", cookies: partitioned)" << std::endl;
 }
 
 void Engine::init_vpn() {

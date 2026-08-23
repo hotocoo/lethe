@@ -24,6 +24,11 @@ void on_entry_activate(GtkWidget* widget, gpointer data) {
     }
 }
 
+void on_focus_mode_activate(GtkWidget* widget, gpointer data) {
+    (void)widget;
+    static_cast<MainWindow*>(data)->toggleFocusMode();
+}
+
 MainWindow::MainWindow(Engine* engine) 
     : engine_(engine), window_(nullptr), headerBar_(nullptr),
       menuButton_(nullptr), menu_(nullptr), entry_(nullptr),
@@ -34,12 +39,28 @@ MainWindow::MainWindow(Engine* engine)
 MainWindow::~MainWindow() {
 }
 
+void MainWindow::toggleFocusMode() {
+    focusMode_ = !focusMode_;
+    if (entry_) gtk_widget_set_visible(entry_, !focusMode_);
+    if (menuButton_) gtk_widget_set_visible(menuButton_, !focusMode_);
+    std::cout << "[lethe] Focus mode " << (focusMode_ ? "ON" : "OFF")
+              << " (Ctrl+Shift+F)" << std::endl;
+}
+
 void MainWindow::create() {
     window_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window_), "Lethe Browser");
     gtk_window_set_default_size(GTK_WINDOW(window_), 1280, 880);
     gtk_window_set_resizable(GTK_WINDOW(window_), TRUE);
-    
+
+    accelGroup_ = gtk_accel_group_new();
+    gtk_window_add_accel_group(GTK_WINDOW(window_), accelGroup_);
+    gtk_accel_group_connect(
+        accelGroup_, GDK_KEY_f,
+        static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
+        GTK_ACCEL_VISIBLE,
+        g_cclosure_new(G_CALLBACK(on_focus_mode_activate), this, nullptr));
+
     setupUI();
     connectSignals();
 }
@@ -94,6 +115,12 @@ GtkWidget* MainWindow::createMenu() {
     GtkWidget* about = gtk_menu_item_new_with_label("About");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu_), about);
     
+    GtkWidget* focus = gtk_menu_item_new_with_label(
+        "Focus Mode (Ctrl+Shift+F)");
+    g_signal_connect(focus, "activate",
+                     G_CALLBACK(on_focus_mode_activate), this);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu_), focus);
+
     GtkWidget* quit = gtk_menu_item_new_with_label("Quit");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu_), quit);
     
