@@ -32,6 +32,13 @@ Minimalist, high-performance browser with maximum security and a built-in VPN, b
 - **DNS over HTTPS (DoH)**: hostname resolution through a DoH JSON provider
   (Cloudflare by default); plaintext system DNS is never used for targets,
   and DoH failures block requests instead of leaking (fail closed)
+- **Navigation request hygiene**: the Referer of every hop is computed
+  under the active Referrer-Policy (browser-standard
+  strict-origin-when-cross-origin by default) - full URL same-origin,
+  origin-only cross-origin, stripped entirely on https->http downgrades;
+  Sec-Fetch-Site/Mode/Dest/User metadata and Upgrade-Insecure-Requests
+  ride on top-level navigations; a fail-closed allowlist refuses every
+  non-http(s) URL scheme before any network I/O, redirect targets included
 - **Built-in VPN**: WireGuard-style encrypted tunnel for all traffic
 
 ### Built-in VPN
@@ -241,7 +248,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (162 tests)
+# Run the full test suite (173 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -316,6 +323,15 @@ The test suite covers:
   the request landing on the TLS origin only, control run without policy
   fails closed against a TLS-only origin, STS received over plain HTTP is
   ignored)
+- **Navigation request hygiene** (Referer computed per hop under
+  Referrer-Policy: full URL same-origin, origin-only cross-origin,
+  stripped on https->http downgrades; response Referrer-Policy headers
+  governing later redirect hops with last-known-token-wins parsing;
+  Sec-Fetch-Site derivation incl. same-site port rule and IP-literal
+  handling; navigation-only Sec-Fetch/UIR emission with caller-header
+  precedence; fail-closed scheme allowlist blocking ftp/file/javascript/
+  data/scheme-less URLs before any I/O and refusing foreign-scheme
+  redirect targets)
 - **Tunnel relay framing** (request/chunk encode+parse round trips,
   malformed rejection, exchange-id staleness filtering)
 - **Streaming HTTP relay over real UDP** (OPEN/DATA/END frames with

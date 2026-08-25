@@ -27,6 +27,15 @@ All notable changes to Lethe are documented in this file.
   any network I/O — plaintext is never attempted and there is no insecure
   fallback; max-age=0 revokes, includeSubDomains covers subdomains,
   IP literals never carry policy, memory-bounded and purged at shutdown
+- Navigation request hygiene: Referer is COMPUTED per hop under the
+  Referrer-Policy engine (strict-origin-when-cross-origin default:
+  full URL same-origin, origin-only cross-origin, nothing survives an
+  https->http downgrade); a response's Referrer-Policy header governs
+  later hops of its request chain (last known token wins, unknown
+  lists ignored); top-level navigations send Sec-Fetch metadata and
+  Upgrade-Insecure-Requests while API fetches stay wire-compatible;
+  a fail-closed allowlist refuses every non-http(s) scheme - including
+  redirect targets - before any network I/O
 - Enforced sandboxing: macOS Seatbelt profile and Linux seccomp-bpf
   default-deny allowlist with `PR_SET_NO_NEW_PRIVS`
 - TLS 1.3-only policy with certificate verification always on; optional
@@ -93,7 +102,7 @@ All notable changes to Lethe are documented in this file.
   server instead of being shadowed by client defaults
 
 ### Quality & infrastructure
-- 162-test suite (lightweight framework, no external test deps) including
+- 173-test suite (lightweight framework, no external test deps) including
   full-stack navigation e2e against real local origins and TLS origins with
   CA-bundle trust
 - CI: Linux (gcc/clang, incl. a GTK3 GUI job) + macOS build/test/e2e matrix

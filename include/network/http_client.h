@@ -27,6 +27,17 @@ namespace lethe {
 
 enum class HttpMethod { GET, POST, PUT, DELETE, HEAD, PATCH };
 
+// How the client may derive the Referer header from a triggering URL.
+// Unset defers to the client default (strict-origin-when-cross-origin).
+enum class ReferrerPolicy {
+    Unset,
+    NoReferrer,                   // never send Referer
+    Origin,                       // origin-only, always
+    StrictOriginWhenCrossOrigin,  // full same-origin; origin-only
+                                  // cross-origin; nothing on downgrade
+    UnsafeUrl,                    // full URL always (explicit opt-in)
+};
+
 struct HttpRequest {
     std::string url;
     HttpMethod method = HttpMethod::GET;
@@ -37,6 +48,21 @@ struct HttpRequest {
     // Empty derives the partition from the request URL itself, which is
     // correct for top-level document navigations.
     std::string topLevelSite;
+    // URL of the document that triggered this request ("" = none). When
+    // set, the Referer sent on every hop is COMPUTED from this URL under
+    // the active policy - it is never pasted verbatim. A caller-supplied
+    // Referer header still wins outright.
+    std::string referrer;
+    // Policy override for this request chain; Unset uses the client
+    // default. Any response's Referrer-Policy header narrows the policy
+    // for later hops of the same chain.
+    ReferrerPolicy referrerPolicy = ReferrerPolicy::Unset;
+    // Marks a top-level user navigation (address bar, link or history
+    // traversal). Navigation requests send Sec-Fetch-Site/Mode/Dest/User
+    // metadata and Upgrade-Insecure-Requests: 1; API-style fetches (LLM
+    // agent traffic) leave this false and their wire format stays
+    // exactly as before.
+    bool navigationRequest = false;
 };
 
 struct HttpResponse {
@@ -117,6 +143,33 @@ public:
     // Empty restores the built-in standard string.
     void setUserAgent(std::string ua) { defaultUserAgent_ = std::move(ua); }
     const std::string& userAgent() const { return defaultUserAgent_; }
+
+    // --- Navigation request hygiene ---
+    // Default referrer policy for requests that do not override it.
+    // StrictOriginWhenCrossOrigin is the browser-standard default: a
+    // triggering URL is only ever revealed in full to its own origin,
+    // reduced to its origin elsewhere, and withheld entirely on any
+    // https -> http downgrade.
+    void setDefaultReferrerPolicy(ReferrerPolicy policy) {
+        defaultReferrerPolicy_ = policy;
+    }
+    ReferrerPolicy defaultReferrerPolicy() const {
+        return defaultReferrerPolicy_;
+    }
+
+    // Parse a Referrer-Policy header value ("no-referrer, unsafe-url").
+    // Per spec, the LAST recognized token wins and unknown tokens are
+    // skipped; returns false when no recognized token remains (such a
+    // header leaves the active policy untouched).
+    static bool parseReferrerPolicy(const std::string& headerValue,
+                                    ReferrerPolicy& out);
+
+    // Derive Sec-Fetch-Site for a hop from the triggering URL ("none"
+    // when there is none; same-origin / same-site / cross-site).
+    // Same-site is best-effort "last two host labels" without a Public
+    // Suffix List; IP-literal hosts are same-site only when identical.
+    static std::string deriveFetchSite(const std::string& referrerUrl,
+                                       const std::string& targetUrl);
 
 private:
     // --- Relay state (streaming HTTP(S)-over-tunnel) ---
@@ -205,11 +258,30 @@ private:
     void maybeDecompressBody(HttpResponse& resp);
 
     // --- URL / request building ---
-    void parseUrl(const std::string& url, std::string& scheme, std::string& host,
-                  std::string& path, int& port);
+    static void parseUrl(const std::string& url, std::string& scheme, std::string& host,
+                         std::string& path, int& port);
     std::string buildHttpRequest(const HttpRequest& req, const std::string& host,
                                  const std::string& path, int port,
-                                 const std::string& cookieHeader);
+                                 const std::string& cookieHeader,
+                                 const std::string& computedReferer,
+                                 const std::string& secFetchSite);
+
+    // --- Navigation request hygiene helpers ---
+    // Referer header value for one hop: computed from the triggering URL
+    // under p policy ("" when the policy withholds it entirely).
+    static std::string refererForHop(const std::string& referrer,
+                                     const std::string& targetUrl,
+                                     ReferrerPolicy policy);
+    // Effective origin "scheme://host[:port]" (default ports omitted).
+    struct HopParts {
+        std::string scheme, host, path;
+        int port = 0;
+    };
+    static HopParts splitHop(const std::string& url);
+    static bool hopSameOrigin(const HopParts& a, const HopParts& b);
+    static std::string hopOrigin(const HopParts& p);
+    // Default referrer policy applied when requests don't override it.
+    ReferrerPolicy defaultReferrerPolicy_ = ReferrerPolicy::StrictOriginWhenCrossOrigin;
     // Cookie header for one request hop under its partition ("" when none).
     std::string cookieHeaderForHop(const HttpRequest& req,
                                    const std::string& currentUrl) const;

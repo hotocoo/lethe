@@ -262,6 +262,10 @@ PageContent SearchService::fetchPage(const std::string& url, bool allowCache) {
     req.headers["User-Agent"] = config_.userAgent;
     req.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
     req.headers["Accept-Language"] = "en-US,en;q=0.5";
+    // readPageFresh IS the browser-navigation path (bridge openUrl /
+    // navigate / history traversal): those fetches carry navigation
+    // metadata on the wire. LLM agent reads stay plain API requests.
+    req.navigationRequest = !allowCache;
 
     HttpResponse resp = httpClient_->sendRequest(req);
     if (!resp.success) {

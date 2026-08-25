@@ -61,11 +61,27 @@ std::string getHeader(const std::map<std::string, std::string>& headers,
     return it->second;
 }
 
+// Best-effort registrable-domain stand-in for the Public Suffix List:
+// the last two labels of an already-lowercased host. Deliberately not
+// PSL-exact (co.uk style multi-label suffixes would misgroup); IP
+// literals never take part in same-site matching at the call sites.
+std::string lastTwoLabels(const std::string& hostLower) {
+    const size_t last = hostLower.find_last_of('.');
+    if (last == std::string::npos || last == 0) return hostLower;
+    const size_t prev = hostLower.find_last_of('.', last - 1);
+    if (prev == std::string::npos) return hostLower;
+    return hostLower.substr(prev + 1);
+}
+
 // Resolve an absolute or relative Location header against a base URL.
 std::string resolveUrl(const std::string& base, const std::string& location) {
     if (location.empty()) return base;
-    // Already an absolute URL.
-    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) {
+    // Already an absolute URL of ANY scheme (http(s), ftp://, ws://, ...).
+    // Whether that scheme may actually be followed is decided later by
+    // the fail-closed scheme allowlist - never here.
+    const size_t schemeSep = location.find("://");
+    if (schemeSep != std::string::npos &&
+        location.find('/') > schemeSep) {
         return location;
     }
 
@@ -129,10 +145,34 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
     std::string currentUrl = req.url;
     HttpRequest currentReq = req;
 
+    // Referrer state across this request chain: starts from the
+    // triggering document (when the caller supplied one), then every
+    // followed redirect makes the previous hop the next hop's referrer.
+    // The policy starts from the request override or the client default,
+    // and any response's Referrer-Policy header narrows it for later
+    // hops of the same chain.
+    std::string hopReferrer = currentReq.referrer;
+    ReferrerPolicy chainPolicy =
+        currentReq.referrerPolicy != ReferrerPolicy::Unset
+            ? currentReq.referrerPolicy
+            : defaultReferrerPolicy_;
+
     for (int redirect = 0; redirect <= kMaxRedirects; redirect++) {
         std::string scheme, host, path;
         int port = 0;
         parseUrl(currentUrl, scheme, host, path, port);
+
+        // Fail-closed scheme allowlist, enforced on EVERY hop BEFORE any
+        // network I/O - including redirect targets, so a Location that
+        // points at ftp:// or javascript: can never drag a navigation
+        // off the secure stack. Only real http(s) is fetchable here.
+        if (scheme != "http" && scheme != "https") {
+            resp.error = "Blocked non-http(s) URL scheme '" + scheme +
+                         "': " + currentUrl;
+            std::cerr << "[lethe-http] " << resp.error << std::endl;
+            closeConnection();
+            return resp;
+        }
 
         if (host.empty()) {
             resp.error = "Invalid URL: " + currentUrl;
@@ -179,9 +219,18 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             const bool reused = connectionReused_;
             resp = HttpResponse{}; // no state may leak between attempts/hops
 
+            // Navigation hygiene is computed per hop, AFTER the HSTS
+            // rewrite above, so downgrade decisions always see the scheme
+            // that will actually hit the wire.
+            const std::string computedReferer =
+                refererForHop(hopReferrer, currentUrl, chainPolicy);
+            const std::string secFetchSite =
+                deriveFetchSite(hopReferrer, currentUrl);
+
             std::string httpRequest = buildHttpRequest(
                 currentReq, host, path, port,
-                cookieHeaderForHop(currentReq, currentUrl));
+                cookieHeaderForHop(currentReq, currentUrl),
+                computedReferer, secFetchSite);
             if (!writeAll(httpRequest.data(), httpRequest.size())) {
                 const bool stale = reused && attempt == 0;
                 closeConnection();
@@ -243,6 +292,23 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             }
         }
 
+        // Referrer-Policy is honored on ANY response of the chain
+        // (redirect hops included): once a recognized policy arrives it
+        // governs every later hop - mirroring how a document's policy
+        // governs its subresource requests. A header with no recognized
+        // token leaves the active policy untouched.
+        const std::string rpHeader =
+            getHeader(resp.headers, "referrer-policy");
+        if (!rpHeader.empty()) {
+            ReferrerPolicy learned;
+            if (parseReferrerPolicy(rpHeader, learned)) {
+                chainPolicy = learned;
+            } else {
+                std::cout << "[lethe-http] Ignoring Referrer-Policy "
+                             "header with no known token" << std::endl;
+            }
+        }
+
         // Follow redirects.
         if (resp.statusCode >= 300 && resp.statusCode < 400) {
             std::string location = getHeader(resp.headers, "location");
@@ -254,7 +320,9 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
                 resp.error = "Too many redirects";
                 return resp;
             }
+            const std::string previousHop = currentUrl;
             currentUrl = resolveUrl(currentUrl, location);
+            hopReferrer = previousHop;
             // Redirects to a different host with POST become GET.
             if (currentReq.method == HttpMethod::POST) {
                 currentReq.method = HttpMethod::GET;
@@ -1508,6 +1576,87 @@ void HttpClient::maybeDecompressBody(HttpResponse& resp) {
     }
 }
 
+// --- Navigation request hygiene ---------------------------------------------
+
+HttpClient::HopParts HttpClient::splitHop(const std::string& url) {
+    HopParts p;
+    parseUrl(url, p.scheme, p.host, p.path, p.port);
+    p.host = toLowerCopy(p.host);
+    return p;
+}
+
+bool HttpClient::hopSameOrigin(const HopParts& a, const HopParts& b) {
+    return a.scheme == b.scheme && a.host == b.host && a.port == b.port;
+}
+
+std::string HttpClient::hopOrigin(const HopParts& p) {
+    std::string origin = p.scheme + "://" + p.host;
+    const bool defaultPort =
+        (p.scheme == "https" && p.port == 443) ||
+        (p.scheme == "http" && p.port == 80);
+    if (!defaultPort) origin += ":" + std::to_string(p.port);
+    return origin;
+}
+
+bool HttpClient::parseReferrerPolicy(const std::string& headerValue,
+                                     ReferrerPolicy& out) {
+    bool found = false;
+    size_t pos = 0;
+    while (pos <= headerValue.size()) {
+        size_t comma = headerValue.find(',', pos);
+        std::string token = trimCopy(toLowerCopy(
+            comma == std::string::npos ? headerValue.substr(pos)
+                                       : headerValue.substr(pos, comma - pos)));
+        // The LAST recognized token wins; unrecognized tokens are skipped
+        // so future policy names degrade gracefully instead of erroring.
+        if (token == "no-referrer") { out = ReferrerPolicy::NoReferrer; found = true; }
+        else if (token == "origin") { out = ReferrerPolicy::Origin; found = true; }
+        else if (token == "strict-origin-when-cross-origin") {
+            out = ReferrerPolicy::StrictOriginWhenCrossOrigin; found = true;
+        }
+        else if (token == "unsafe-url") { out = ReferrerPolicy::UnsafeUrl; found = true; }
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    return found;
+}
+
+std::string HttpClient::deriveFetchSite(const std::string& referrerUrl,
+                                        const std::string& targetUrl) {
+    if (referrerUrl.empty()) return "none";
+    const HopParts r = splitHop(referrerUrl);
+    const HopParts t = splitHop(targetUrl);
+    if (hopSameOrigin(r, t)) return "same-origin";
+    if (r.host == t.host) return "same-site"; // same host, different port
+    if (isIpLiteral(r.host) || isIpLiteral(t.host)) {
+        return "cross-site"; // no same-site guessing for address literals
+    }
+    if (!r.host.empty() && lastTwoLabels(r.host) == lastTwoLabels(t.host)) {
+        return "same-site";
+    }
+    return "cross-site";
+}
+
+std::string HttpClient::refererForHop(const std::string& referrer,
+                                      const std::string& targetUrl,
+                                      ReferrerPolicy policy) {
+    if (referrer.empty() || policy == ReferrerPolicy::NoReferrer) return "";
+    if (policy == ReferrerPolicy::UnsafeUrl) return referrer;
+
+    const HopParts r = splitHop(referrer);
+    const HopParts t = splitHop(targetUrl);
+    // Every implemented policy withholds a secure page's address from
+    // plaintext peers: an https -> http downgrade strips it entirely.
+    if (r.scheme == "https" && t.scheme != "https") return "";
+    // Origin-only policies (and cross-origin targets under the default
+    // policy) reveal only the triggering origin.
+    if (policy == ReferrerPolicy::Origin || !hopSameOrigin(r, t)) {
+        return hopOrigin(r);
+    }
+    // Same-origin under strict-origin-when-cross-origin: full URL.
+    return referrer;
+}
+
 // --- URL / request building ---
 
 void HttpClient::parseUrl(const std::string& url, std::string& scheme,
@@ -1561,7 +1710,9 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
                                          const std::string& host,
                                          const std::string& path,
                                          int port,
-                                         const std::string& cookieHeader) {
+                                         const std::string& cookieHeader,
+                                         const std::string& computedReferer,
+                                         const std::string& secFetchSite) {
     (void)port;
     std::string method = "GET";
     switch (req.method) {
@@ -1606,6 +1757,35 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
     }
     if (!hasHeader("Accept-Encoding")) {
         httpRequest += "Accept-Encoding: gzip, deflate\r\n";
+    }
+    // --- Navigation request hygiene ---
+    // Computed Referer under the active policy; a caller-supplied
+    // Referer header wins outright (same precedence as every default).
+    if (!computedReferer.empty() && !hasHeader("Referer")) {
+        httpRequest += "Referer: ";
+        httpRequest += computedReferer;
+        httpRequest += "\r\n";
+    }
+    // Sec-Fetch-* metadata and Upgrade-Insecure-Requests ride only on
+    // top-level user navigations; API-style fetches stay wire-compatible.
+    if (req.navigationRequest) {
+        if (!hasHeader("Upgrade-Insecure-Requests")) {
+            httpRequest += "Upgrade-Insecure-Requests: 1\r\n";
+        }
+        if (!hasHeader("Sec-Fetch-Site")) {
+            httpRequest += "Sec-Fetch-Site: ";
+            httpRequest += secFetchSite;
+            httpRequest += "\r\n";
+        }
+        if (!hasHeader("Sec-Fetch-Mode")) {
+            httpRequest += "Sec-Fetch-Mode: navigate\r\n";
+        }
+        if (!hasHeader("Sec-Fetch-Dest")) {
+            httpRequest += "Sec-Fetch-Dest: document\r\n";
+        }
+        if (!hasHeader("Sec-Fetch-User")) {
+            httpRequest += "Sec-Fetch-User: ?1\r\n";
+        }
     }
     // HTTP/1.1 connections persist by default; say so explicitly unless
     // the caller overrides Connection itself.
