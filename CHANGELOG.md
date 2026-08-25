@@ -21,6 +21,12 @@ All notable changes to Lethe are documented in this file.
 ### Security
 - Strict CSP decision semantics (`'self'` origin+path-boundary matching,
   fail-closed on originless documents, script-scheme denial)
+- HSTS enforcement (RFC 6797): in-memory policy cache fed by
+  Strict-Transport-Security headers on verified https:// hops only; every
+  later http:// request to a covered host is rewritten to https:// before
+  any network I/O — plaintext is never attempted and there is no insecure
+  fallback; max-age=0 revokes, includeSubDomains covers subdomains,
+  IP literals never carry policy, memory-bounded and purged at shutdown
 - Enforced sandboxing: macOS Seatbelt profile and Linux seccomp-bpf
   default-deny allowlist with `PR_SET_NO_NEW_PRIVS`
 - TLS 1.3-only policy with certificate verification always on; optional
@@ -87,7 +93,7 @@ All notable changes to Lethe are documented in this file.
   server instead of being shadowed by client defaults
 
 ### Quality & infrastructure
-- 148-test suite (lightweight framework, no external test deps) including
+- 162-test suite (lightweight framework, no external test deps) including
   full-stack navigation e2e against real local origins and TLS origins with
   CA-bundle trust
 - CI: Linux (gcc/clang, incl. a GTK3 GUI job) + macOS build/test/e2e matrix

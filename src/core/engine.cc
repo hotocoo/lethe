@@ -110,6 +110,10 @@ void Engine::shutdown() {
     std::cout << "[lethe] Shutting down components..." << std::endl;
     
     history_.reset();
+    if (hstsCache_) {
+        hstsCache_->clear(); // learned HSTS policy never persists
+        hstsCache_.reset();
+    }
     if (cookieJar_) {
         const size_t purged = cookieJar_->size();
         cookieJar_->purge();
@@ -172,11 +176,17 @@ void Engine::init_network_stack() {
     cookieJar_ = std::make_unique<CookieJar>();
     httpClient_->enableCookies(cookieJar_.get());
 
+    // HSTS (RFC 6797): learned Strict-Transport-Security policy upgrades
+    // later http:// requests to https:// before any connection attempt.
+    // Memory-only like the cookie jar - dropped entirely at shutdown.
+    hstsCache_ = std::make_unique<HstsCache>();
+    httpClient_->enableHsts(hstsCache_.get());
+
     std::cout << "[lethe] Network stack initialized (TLS "
               << MIN_TLS_VERSION << "+, DoH: "
               << (httpClient_->isDohEnabled() ? "on" : "off")
               << ", UA: " << config_.userAgentMode
-              << ", cookies: partitioned)" << std::endl;
+              << ", cookies: partitioned, HSTS: enforced)" << std::endl;
 }
 
 void Engine::init_vpn() {

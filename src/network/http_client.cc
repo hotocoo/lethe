@@ -139,6 +139,19 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             return resp;
         }
 
+        // RFC 6797 enforcement BEFORE any network I/O: an http:// request
+        // to a host with a recorded Strict-Transport-Security policy is
+        // rewritten to https:// here - plaintext is never put on the wire
+        // and there is no insecure fallback if TLS then fails.
+        if (scheme == "http" && hstsEnabled() &&
+            hstsCache_->shouldUpgrade(host)) {
+            constexpr const char* kHttpPrefix = "http://";
+            currentUrl = "https://" + currentUrl.substr(strlen(kHttpPrefix));
+            std::cout << "[lethe-http] HSTS upgrade: " << currentUrl
+                      << " enforced before connect" << std::endl;
+            parseUrl(currentUrl, scheme, host, path, port);
+        }
+
         // VPN fail-closed policy is enforced inside connectToHost on the
         // RESOLVED destination address (after DoH), so hostname destinations
         // are protected exactly like IP literals.
@@ -201,6 +214,32 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
                 currentReq.topLevelSite.empty() ? hopSite : currentReq.topLevelSite;
             for (const auto& sc : resp.setCookieHeaders) {
                 cookieJar_->store(part, currentUrl, sc);
+            }
+        }
+
+        // Strict-Transport-Security is honored only on verified https://
+        // hops (RFC 6797 forbids learning policy over plain HTTP) and on
+        // redirect hops too - a 3xx can carry the header just as well.
+        if (hstsEnabled() && scheme == "https") {
+            const std::string sts = getHeader(
+                resp.headers, "strict-transport-security");
+            if (!sts.empty()) {
+                std::chrono::seconds maxAge{0};
+                bool includeSubDomains = false;
+                if (HstsCache::parseStsHeader(sts, maxAge,
+                                              includeSubDomains)) {
+                    hstsCache_->record(host, maxAge, includeSubDomains);
+                    std::cout << "[lethe-http] HSTS policy recorded for "
+                              << host << " (max-age="
+                              << maxAge.count()
+                              << (includeSubDomains ? ", includeSubDomains"
+                                                    : "")
+                              << ")" << std::endl;
+                } else {
+                    std::cout << "[lethe-http] Ignoring malformed "
+                                 "Strict-Transport-Security header"
+                              << std::endl;
+                }
             }
         }
 

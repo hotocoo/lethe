@@ -18,6 +18,10 @@ Minimalist, high-performance browser with maximum security and a built-in VPN, b
 
 ### Security
 - **Strict Content Security Policy (CSP)**: No eval(), no inline scripts by default
+- **HSTS enforcement (RFC 6797)**: Strict-Transport-Security policy learned
+  only over verified HTTPS hops; later plain-http:// requests to covered
+  hosts are rewritten to https:// BEFORE any connection attempt - plaintext
+  is never put on the wire and there is no insecure fallback
 - **Enforced sandboxing**: macOS Seatbelt profile denies file writes outside
   temp locations; Linux seccomp-bpf default-deny allowlist (~90 syscalls)
   with PR_SET_NO_NEW_PRIVS — the whole suite runs under the active sandbox
@@ -237,7 +241,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (148 tests)
+# Run the full test suite (162 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -305,6 +309,13 @@ The test suite covers:
   and only up to a path boundary - example.org.evil.io fails; originless
   'self' fails closed; script-scheme URIs denied; host names containing
   "eval" no longer falsely blocked; policy string built from directives)
+- **HSTS (RFC 6797)** (policy cache semantics: exact + includeSubDomains
+  matching with label-boundary checks, max-age=0 revocation, expiry,
+  IP-literal refusal, capacity bound; STS header parsing incl. malformed
+  rejection; e2e: learned policy upgrades plain-http:// before connect with
+  the request landing on the TLS origin only, control run without policy
+  fails closed against a TLS-only origin, STS received over plain HTTP is
+  ignored)
 - **Tunnel relay framing** (request/chunk encode+parse round trips,
   malformed rejection, exchange-id staleness filtering)
 - **Streaming HTTP relay over real UDP** (OPEN/DATA/END frames with

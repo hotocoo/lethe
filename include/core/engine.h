@@ -14,6 +14,7 @@
 #include "network/vpn/vpn_config.h"
 #include "browser/navigation_history.h"
 #include "security/cookie_jar.h"
+#include "security/hsts_cache.h"
 
 namespace lethe {
 
@@ -59,6 +60,7 @@ public:
     NavigationHistory* history() { return history_.get(); }
     vpn::VpnTunnel* vpnTunnel() { return vpnTunnel_.get(); }
     CookieJar* cookieJar() { return cookieJar_.get(); }
+    HstsCache* hstsCache() { return hstsCache_.get(); }
     
     bool isRunning() const { return running_; }
     const Config& config() const { return config_; }
@@ -93,6 +95,7 @@ private:
     std::unique_ptr<NavigationHistory> history_;
     std::unique_ptr<vpn::VpnTunnel> vpnTunnel_;
     std::unique_ptr<CookieJar> cookieJar_;
+    std::unique_ptr<HstsCache> hstsCache_;
     std::unique_ptr<UdpTransport> vpnTransport_;
     uint64_t lastHandshakeAttemptMs_ = 0;
     uint64_t lastKeepaliveMs_ = 0;

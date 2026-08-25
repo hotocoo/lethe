@@ -10,6 +10,7 @@
 #include "network/tls_config.h"
 #include "network/vpn/vpn_tunnel.h"
 #include "security/cookie_jar.h"
+#include "security/hsts_cache.h"
 
 // Declared in network/udp_transport.h (included by the .cc).
 namespace lethe {
@@ -101,6 +102,16 @@ public:
     void enableCookies(CookieJar* jar) { cookieJar_ = jar; }
     void disableCookies() { cookieJar_ = nullptr; }
     bool cookiesEnabled() const { return cookieJar_ != nullptr; }
+
+    // --- HSTS (RFC 6797, cache owned by Engine) ---
+    // When enabled: Strict-Transport-Security headers on VERIFIED https://
+    // hops are recorded into the cache, and every later http:// request to
+    // a covered host is rewritten to https:// BEFORE any network I/O - the
+    // plaintext request is never attempted, and no insecure fallback
+    // exists (a failed TLS handshake fails the whole request).
+    void enableHsts(HstsCache* cache) { hstsCache_ = cache; }
+    void disableHsts() { hstsCache_ = nullptr; }
+    bool hstsEnabled() const { return hstsCache_ != nullptr; }
 
     // Default User-Agent used when the request does not carry one.
     // Empty restores the built-in standard string.
@@ -224,6 +235,9 @@ private:
     // Partitioned cookie storage (not owned) and configurable UA default.
     CookieJar* cookieJar_ = nullptr;
     std::string defaultUserAgent_;
+
+    // HSTS policy store (not owned); nullptr disables enforcement.
+    HstsCache* hstsCache_ = nullptr;
 
     // Current connection state (one connection at a time).
     int socketFd_ = -1;
