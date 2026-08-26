@@ -27,6 +27,20 @@ using lethe::UdpTransport;
 
 namespace lethe {
 
+// PolicyStream - a live, policy-checked byte pipe to one origin.
+// Returned by HttpClient::dialPolicyChecked() for CONNECT splices in the
+// local policy proxy. The stream OWNS its HttpClient (socket, TLS session
+// or tunnel-relay state); destroying it closes everything. read() returns
+// >0 bytes, 0 on clean EOF (origin END / half-close), -1 on error/timeout.
+struct PolicyStream {
+    virtual ~PolicyStream() = default;
+    virtual ssize_t read(uint8_t* buf, size_t len, int timeoutMs) = 0;
+    virtual bool write(const uint8_t* buf, size_t len) = 0;
+    // Half-close our side: END frame on a relay, shutdown(SHUT_WR) direct.
+    virtual void shutdownWrite() = 0;
+};
+using PolicyStreamPtr = std::unique_ptr<PolicyStream>;
+
 enum class HttpMethod { GET, POST, PUT, DELETE, HEAD, PATCH };
 
 // How the client may derive the Referer header from a triggering URL.
@@ -206,6 +220,49 @@ public:
     // Suffix List; IP-literal hosts are same-site only when identical.
     static std::string deriveFetchSite(const std::string& referrerUrl,
                                        const std::string& targetUrl);
+
+    // --- Embedded full-web engine support (local policy proxy) ---
+    // Configuration for dialPolicyChecked(); mirrors what a configured
+    // client carries, so the proxy can mint per-connection clients with
+    // identical policy without sharing mutable state across threads.
+    struct PolicyDialConfig {
+        TLSConfig tls;
+        std::string dohProvider;          // empty = system DNS (tests)
+        PrivateNetworkPolicy privateNet;
+        UdpTransport* vpnUdp = nullptr;   // enables covered-relay dials
+        vpn::VpnTunnel* vpnTunnel = nullptr; // non-owning; engine owns it
+        std::string relayEndpointHost;
+        int relayEndpointPort = 0;
+        std::chrono::seconds timeout{30};
+        // Raw-tunnel mode (CONNECT splices): policy checks still run in
+        // full, but the proxy NEVER terminates TLS - the caller's bytes
+        // pass through untouched, so the engine keeps end-to-end TLS with
+        // the origin. Certificate pinning cannot apply here (the chain is
+        // invisible); documented honestly rather than faked.
+        bool rawTunnel = false;
+    };
+
+    // Open a live stream to scheme://host:port after running the FULL
+    // request-path policy: DoH-only resolution (or canonicalization of IP
+    // literals), private-network scope check on the RESOLVED address, VPN
+    // fail-closed routing - covered destinations ride the encrypted relay
+    // when the tunnel is up and are REFUSED when it is down. https dials
+    // complete a verified handshake (certificate verification and pins)
+    // before the stream is handed over; CONNECT splices raw bytes through.
+    // On refusal returns nullptr with a named reason in \p error.
+    static PolicyStreamPtr dialPolicyChecked(const PolicyDialConfig& cfg,
+                                             const std::string& scheme,
+                                             const std::string& host,
+                                             int port, std::string& error);
+
+    // Navigation gate for embedded engines: "" = allowed, otherwise the
+    // named refusal. Resolves the URL's host exactly like the request
+    // path would (DoH / literal canonicalization), runs the private-net
+    // guard and the VPN fail-closed decision WITHOUT opening any socket
+    // to the destination.
+    std::string policyCheckUrl(const std::string& url);
+
+    class DialStreamImpl;
 
 private:
     // --- Relay state (streaming HTTP(S)-over-tunnel) ---

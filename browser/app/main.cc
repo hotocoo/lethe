@@ -5,6 +5,8 @@
 #include "core/engine.h"
 #include "security/csp_policy.h"
 #include "network/tls_config.h"
+#include "network/policy_proxy.h"
+#include "ui/fullweb.h"
 #include "ui/main_window.h"
 #include "ui/address_bar.h"
 #include "ui/tab_bar.h"
@@ -61,6 +63,45 @@ int main(int argc, char** argv) {
     // Create main window
     lethe::MainWindow window(&engine);
     window.create();
+    
+    // --- Full-web mode: platform engine behind Lethe policy (Ctrl+Shift+W)
+#if defined(HAVE_FULLWEB)
+    lethe::FullWebConfig fw;
+    fw.tls = tls;
+    fw.dohProvider = cfg.dnsProvider;
+    {
+        lethe::PrivateNetworkPolicy pn;
+        pn.isolatePrivateNetworks = cfg.isolatePrivateNetworks;
+        for (const auto& h : cfg.privateNetworkAllowedHosts)
+            pn.allowedHosts.insert(h);
+        fw.privateNet = pn;
+    }
+    fw.vpnTunnel = engine.vpnTunnel();
+    fw.udpTransport = engine.vpnTransport();
+    fw.relayHost = cfg.vpnConfig.endpointHost;
+    fw.relayPort = cfg.vpnConfig.endpointPort;
+
+    static lethe::PolicyProxyServer webProxy;   // lives for the app loop
+    {
+        lethe::PolicyProxyServer::Options po;
+        po.tls = tls;
+        po.dohProvider = cfg.dnsProvider;
+        po.privateNet = fw.privateNet;
+        po.vpnTunnel = engine.vpnTunnel();
+        po.udpTransport = engine.vpnTransport();
+        po.relayHost = fw.relayHost;
+        po.relayPort = fw.relayPort;
+        if (webProxy.start(po)) fw.proxyPort = webProxy.port();
+    }
+
+    window.setFullWebCallback([&fw](const std::string& url) {
+        if (url.empty()) return;
+        static lethe::FullWebWindow win(fw);
+        std::string err;
+        if (!win.open(url, err))
+            std::cerr << "[lethe-fullweb] " << err << std::endl;
+    });
+#endif
     
     // Create address bar
     lethe::AddressBar addressBar;

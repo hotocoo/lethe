@@ -5,6 +5,11 @@
 
 namespace lethe {
 
+static void on_fullweb_activate(GtkWidget*, gpointer data) {
+    static_cast<MainWindow*>(data)->triggerFullWeb();
+}
+
+
 // Namespace-scope (not static) so they match the friend declarations in
 // MainWindow and can reach private members through the passed pointer.
 void on_window_destroy(GtkWidget* widget, gpointer data) {
@@ -60,6 +65,11 @@ void MainWindow::create() {
         static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
         GTK_ACCEL_VISIBLE,
         g_cclosure_new(G_CALLBACK(on_focus_mode_activate), this, nullptr));
+    gtk_accel_group_connect(
+        accelGroup_, GDK_KEY_w,
+        static_cast<GdkModifierType>(GDK_CONTROL_MASK | GDK_SHIFT_MASK),
+        GTK_ACCEL_VISIBLE,
+        g_cclosure_new(G_CALLBACK(on_fullweb_activate), this, nullptr));
 
     setupUI();
     connectSignals();
@@ -121,10 +131,22 @@ GtkWidget* MainWindow::createMenu() {
                      G_CALLBACK(on_focus_mode_activate), this);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu_), focus);
 
+    // Full-web mode: opens the address-bar URL in the platform web engine
+    // (WKWebView / WebKitGTK) behind Lethe policy. Ctrl+Shift+W.
+    GtkWidget* fullweb =
+        gtk_menu_item_new_with_label("Open in Full Web (Ctrl+Shift+W)");
+    g_signal_connect(fullweb, "activate",
+                     G_CALLBACK(on_fullweb_activate), this);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu_), fullweb);
+
     GtkWidget* quit = gtk_menu_item_new_with_label("Quit");
     gtk_menu_shell_append(GTK_MENU_SHELL(menu_), quit);
     
     return menu_;
+}
+
+void MainWindow::triggerFullWeb() {
+    if (fullWebCallback_) fullWebCallback_(entryText());
 }
 
 void MainWindow::connectSignals() {

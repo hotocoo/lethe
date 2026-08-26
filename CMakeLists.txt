@@ -11,6 +11,7 @@ option(USE_QT "Use Qt for UI (recommended)" OFF)
 option(USE_GTK "Use GTK for UI (fallback)" ON)
 option(BUILD_TESTS "Build test suite" ON)
 option(BUILD_UI "Build the GUI application" ON)
+option(USE_FULLWEB "Embed the platform web engine for full-web mode" ON)
 
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0")
@@ -156,6 +157,10 @@ if(BUILD_UI)
         message(STATUS "[lethe] Building GUI application")
 
         file(GLOB_RECURSE SRC_UI src/ui/*.cc)
+# Backend-specific full-web sources are added by the USE_FULLWEB branch
+# below; the generic glob must not leak them across platforms.
+list(FILTER SRC_UI EXCLUDE REGEX "fullweb_gtk\.cc$")
+list(FILTER SRC_UI EXCLUDE REGEX "fullweb_mac\.mm$")
 
         add_executable(lethe
             "browser/app/main.cc"
@@ -178,6 +183,35 @@ if(BUILD_UI)
         target_link_libraries(lethe PRIVATE
             lethe_core
         )
+
+        # --- Full-web mode: embed the platform web engine ---
+        if(USE_FULLWEB)
+            if(APPLE)
+                message(STATUS "[lethe] full-web: APPLE branch (WKWebView)")
+                enable_language(OBJCXX)
+                find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
+                target_sources(lethe PRIVATE src/ui/fullweb_mac.mm)
+                set_source_files_properties(src/ui/fullweb_mac.mm
+                    PROPERTIES LANGUAGE OBJCXX)
+                target_compile_definitions(lethe PRIVATE HAVE_FULLWEB)
+                target_link_libraries(lethe PRIVATE ${WEBKIT_FRAMEWORK})
+            elseif(UNIX)
+                find_package(PkgConfig QUIET)
+                if(PkgConfig_FOUND)
+                    pkg_check_modules(WEBKITGTK QUIET IMPORTED_TARGET webkit2gtk-4.1)
+                    if(NOT WEBKITGTK_FOUND)
+                        pkg_check_modules(WEBKITGTK QUIET IMPORTED_TARGET webkit2gtk-4.0)
+                    endif()
+                    if(WEBKITGTK_FOUND)
+                        target_sources(lethe PRIVATE src/ui/fullweb_gtk.cc)
+                        target_compile_definitions(lethe PRIVATE HAVE_FULLWEB)
+                        target_link_libraries(lethe PRIVATE PkgConfig::WEBKITGTK)
+                    else()
+                        message(STATUS "[lethe] webkit2gtk not found - full-web mode disabled")
+                    endif()
+                endif()
+            endif()
+        endif()
 
         if(USE_QT6)
             target_compile_definitions(lethe PRIVATE -DUSE_QT6)

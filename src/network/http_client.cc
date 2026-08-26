@@ -1997,5 +1997,154 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
     return httpRequest;
 }
 
+// ============================================================
+// --- Embedded full-web engine support -----------------------
+// ============================================================
+
+// Live checked stream. Owns its client so socket / TLS / relay state all
+// share one lifetime, and so per-connection state never crosses threads.
+class HttpClient::DialStreamImpl : public PolicyStream {
+public:
+    explicit DialStreamImpl(std::unique_ptr<HttpClient> cli)
+        : cli_(std::move(cli)) {}
+    ~DialStreamImpl() override {
+        if (cli_) {
+            cli_->closeConnection();
+            cli_->shutdown();
+        }
+    }
+    ssize_t read(uint8_t* buf, size_t len, int timeoutMs) override {
+        if (!cli_) return -1;
+        cli_->ioTimeout_ = std::chrono::milliseconds(timeoutMs);
+        const int r = cli_->rawRead(buf, len);
+        // Map the internal timeout marker to a plain error for splice
+        // callers; they own the connection-lifetime policy.
+        return r == -2 ? -1 : static_cast<ssize_t>(r);
+    }
+    bool write(const uint8_t* buf, size_t len) override {
+        if (!cli_) return false;
+        return cli_->writeAll(reinterpret_cast<const char*>(buf), len);
+    }
+    void shutdownWrite() override {
+        if (!cli_) return;
+#ifdef HAVE_OPENSSL
+        if (cli_->relayMode_ && !cli_->usingTls_) {
+            cli_->relaySendEnd();
+            return;
+        }
+        if (cli_->relayMode_ && cli_->usingTls_ && cli_->ssl_ == nullptr) {
+            cli_->relaySendEnd();
+            return;
+        }
+#endif
+        if (cli_->socketFd_ >= 0) ::shutdown(cli_->socketFd_, SHUT_WR);
+    }
+
+private:
+    std::unique_ptr<HttpClient> cli_;
+};
+
+PolicyStreamPtr HttpClient::dialPolicyChecked(const PolicyDialConfig& cfg,
+                                              const std::string& scheme,
+                                              const std::string& host,
+                                              int port,
+                                              std::string& error) {
+    // Fail closed on everything that is not an ordinary web origin. The
+    // proxy exists to carry embedded-engine traffic, never to become an
+    // open relay into file://, ftp://, or exotic handlers.
+    if (scheme != "http" && scheme != "https") {
+        error = "Blocked: scheme not permitted (" + scheme + ")";
+        return nullptr;
+    }
+    auto cli = std::make_unique<HttpClient>();
+    if (!cli->initialize(cfg.tls)) {
+        error = "client init failed";
+        return nullptr;
+    }
+    if (!cfg.dohProvider.empty()) cli->setDohProvider(cfg.dohProvider);
+    cli->setPrivateNetworkPolicy(cfg.privateNet);
+    if (cfg.vpnTunnel) {
+        // Non-owning alias: the engine keeps tunnel lifetime.
+        cli->setVpnTunnel(std::shared_ptr<vpn::VpnTunnel>(
+            cfg.vpnTunnel, [](vpn::VpnTunnel*) {}));
+    }
+    if (cfg.vpnUdp && !cfg.relayEndpointHost.empty() &&
+        cfg.relayEndpointPort > 0) {
+        cli->setVpnRelay(cfg.vpnUdp, cfg.relayEndpointHost,
+                         cfg.relayEndpointPort);
+    }
+
+    // connectToHost IS the policy pipeline: DoH resolution (fail-closed),
+    // private-network scope check on the resolved address, VPN routing
+    // decision, then either the encrypted relay or a direct dial with a
+    // verified TLS handshake for https.
+    // Raw-tunnel mode dials plain and leaves TLS to the caller: the policy
+    // decisions above are identical, only termination differs.
+    const std::string dialScheme =
+        (cfg.rawTunnel && scheme == "https") ? "http" : scheme;
+    if (!cli->connectToHost(host, port, dialScheme, cfg.timeout)) {
+        error = cli->lastConnectError_.empty()
+                    ? ("connect failed for " + host)
+                    : cli->lastConnectError_;
+        cli->closeConnection();
+        cli->shutdown();
+        return nullptr;
+    }
+    if (!cfg.rawTunnel && scheme == "https" &&
+        !cli->verifyCertificatePins(host)) {
+        error = cli->lastConnectError_.empty()
+                    ? "certificate pin mismatch"
+                    : cli->lastConnectError_;
+        cli->closeConnection();
+        cli->shutdown();
+        return nullptr;
+    }
+    return std::make_unique<DialStreamImpl>(std::move(cli));
+}
+
+std::string HttpClient::policyCheckUrl(const std::string& url) {
+    std::string scheme, path, host;
+    int port = 0;
+    parseUrl(url, scheme, host, path, port);
+    if (scheme != "http" && scheme != "https") {
+        return "Blocked: scheme not permitted (" + scheme + ")";
+    }
+
+    // Mirror connectToHost's resolution prelude exactly: DoH answers are
+    // authoritative when configured; numeric spell-outs are canonicalized
+    // so isolation sees what would actually be dialed. No socket to the
+    // destination is opened here.
+    std::string connectTarget = host;
+    bool targetIsIp = false;
+    std::string guardAddress;
+    if (!dohProvider_.empty() && !isIpLiteral(host)) {
+        std::string ip;
+        if (!dohResolve(host, ip)) {
+            return "Blocked: secure DNS (DoH) lookup failed for " + host;
+        }
+        connectTarget = ip;
+        guardAddress = ip;
+        targetIsIp = true;
+    } else {
+        const std::string canon = canonicalNumericAddress(host);
+        if (!canon.empty()) {
+            guardAddress = canon;
+            targetIsIp = true;
+        }
+    }
+    if (targetIsIp) {
+        const std::string deny = privateNetGuard_.check(host, guardAddress);
+        if (!deny.empty()) return deny;
+    }
+    const bool covered =
+        vpnTunnel_ && vpnTunnel_->shouldRouteThroughVpn(connectTarget);
+    if (covered && !isVpnActive()) {
+        return "Blocked: " + host + " (" + connectTarget +
+               ") requires the VPN tunnel (allowed CIDR match) but the "
+               "tunnel is down";
+    }
+    return "";
+}
+
 } // namespace lethe
 

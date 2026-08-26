@@ -82,6 +82,8 @@ public:
     HttpClient* httpClient() { return httpClient_.get(); }
     NavigationHistory* history() { return history_.get(); }
     vpn::VpnTunnel* vpnTunnel() { return vpnTunnel_.get(); }
+    // Shared UDP transport used for tunnel relay exchanges (full-web proxy).
+    UdpTransport* vpnTransport() { return vpnTransport_.get(); }
     CookieJar* cookieJar() { return cookieJar_.get(); }
     HstsCache* hstsCache() { return hstsCache_.get(); }
     CertPinner* certPinner() { return certPinner_.get(); }
