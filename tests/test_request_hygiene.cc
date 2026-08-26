@@ -181,6 +181,94 @@ HttpClient makeClient() {
     return c;
 }
 
+// Minimal loopback DoH provider answering every A query with 127.0.0.1.
+// HTTPS e2e tests resolve names through this instead of the system
+// resolver: runner images no longer guarantee "localhost" resolves from
+// /etc/hosts, and the engine's production path is DoH anyway.
+class MockDohServer {
+public:
+    bool start() {
+        listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (listenFd_ < 0) return false;
+        int reuse = 1;
+        ::setsockopt(listenFd_, SOL_SOCKET, SO_REUSEADDR, &reuse,
+                     sizeof(reuse));
+        sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = htons(0);
+        if (::bind(listenFd_, reinterpret_cast<sockaddr*>(&addr),
+                   sizeof(addr)) < 0 ||
+            ::listen(listenFd_, 16) < 0) {
+            ::close(listenFd_);
+            listenFd_ = -1;
+            return false;
+        }
+        socklen_t len = sizeof(addr);
+        ::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&addr), &len);
+        port_ = ntohs(addr.sin_port);
+        thread_ = std::thread([this]() {
+            while (running_) {
+                fd_set rfds;
+                FD_ZERO(&rfds);
+                FD_SET(listenFd_, &rfds);
+                timeval tv;
+                tv.tv_sec = 0;
+                tv.tv_usec = 100000;
+                if (::select(listenFd_ + 1, &rfds, nullptr, nullptr, &tv) <=
+                    0) {
+                    continue;
+                }
+                const int fd = ::accept(listenFd_, nullptr, nullptr);
+                if (fd < 0) continue;
+                char req[2048];
+                ssize_t got = 0;
+                while (got < static_cast<ssize_t>(sizeof(req)) - 1) {
+                    const ssize_t n =
+                        ::recv(fd, req + got, sizeof(req) - 1 - got, 0);
+                    if (n <= 0) break;
+                    got += n;
+                    req[got] = '\0';
+                    if (std::strstr(req, "\r\n\r\n")) break;
+                }
+                const std::string body =
+                    "{\"Answer\":[{\"type\":1,\"data\":\"127.0.0.1\"}]}";
+                const std::string resp =
+                    std::string("HTTP/1.1 200 OK\r\n"
+                                "Content-Type: application/dns-json\r\n"
+                                "Content-Length: ") +
+                    std::to_string(body.size()) +
+                    "\r\nConnection: close\r\n\r\n" + body;
+                const ssize_t ignored [[maybe_unused]] =
+                    ::send(fd, resp.data(), resp.size(), 0);
+                ::close(fd);
+            }
+        });
+        return true;
+    }
+
+    int port() const { return port_; }
+
+    void stop() {
+        running_ = false;
+        if (listenFd_ >= 0) {
+            ::shutdown(listenFd_, SHUT_RDWR);
+            ::close(listenFd_);
+            listenFd_ = -1;
+        }
+        if (thread_.joinable()) thread_.join();
+    }
+
+    ~MockDohServer() { stop(); }
+
+private:
+    int listenFd_ = -1;
+    int port_ = 0;
+    bool running_ = true;
+    std::thread thread_;
+};
+
 } // namespace
 
 // --- Unit semantics ----------------------------------------------------------
@@ -373,6 +461,12 @@ LETHE_TEST_CASE(Referer_HttpsDowngradeIsStrippedEntirely) {
     const std::string bundle = tls_test::writeTempFile("hygiene_ca", caPem);
     CHECK_FALSE(bundle.empty());
 
+    // Resolve "localhost" through the mock DoH provider instead of the
+    // system resolver: runner environments do not guarantee hosts-file
+    // localhost, and DoH is the engine's production resolution path.
+    MockDohServer doh;
+    CHECK_TRUE(doh.start());
+
     tls_test::LoopbackTlsServer tlsSrv;
     CHECK_TRUE(tlsSrv.start(certPem, keyPem));
     HygieneServer plain;
@@ -388,6 +482,8 @@ LETHE_TEST_CASE(Referer_HttpsDowngradeIsStrippedEntirely) {
     TLSConfig cfg;
     cfg.setCaBundlePath(bundle);
     CHECK_TRUE(client.initialize(cfg));
+    client.setDohProvider("http://127.0.0.1:" + std::to_string(doh.port()) +
+                          "/dns-query");
 
     HttpRequest req;
     req.url = "https://localhost:" + std::to_string(tlsSrv.port()) + "/secure";
