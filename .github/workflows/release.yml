@@ -109,7 +109,8 @@ jobs:
         run: |
           $ver = (Select-String -Path CMakeLists.txt -Pattern 'project\(lethe VERSION ([0-9.]+)').Matches[0].Groups[1].Value
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build/lethe-win/Release/lethe-win.exe "dist/Lethe-$ver-windows-x64.exe"
+          $exe = Get-ChildItem -Recurse -Filter lethe-win.exe build | Select-Object -First 1
+          Copy-Item $exe.FullName "dist/Lethe-$ver-windows-x64.exe"
       - name: Attach to release
         env:
           GH_TOKEN: ${{ github.token }}
