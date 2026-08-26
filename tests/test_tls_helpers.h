@@ -8,6 +8,7 @@
 // the engine via Config.caBundlePath so a REAL certificate-verified TLS
 // handshake can be exercised end to end without touching the system store.
 
+#include <csignal>
 #include <cstring>
 #include <functional>
 #include <string>
@@ -160,6 +161,12 @@ public:
         if (!sslCtx_) return false;
         SSL_CTX_set_min_proto_version(sslCtx_, TLS1_3_VERSION);
 
+        // Tests deliberately tear connections down mid-protocol (e.g.
+        // pin-mismatch aborts right after the handshake). Writing into
+        // such sockets would raise SIGPIPE and kill the whole test
+        // binary, so the disposition is neutralized for this thread pool.
+        ::signal(SIGPIPE, SIG_IGN);
+
         BIO* certBio = BIO_new_mem_buf(certPem.data(),
                                        static_cast<int>(certPem.size()));
         X509* x509 = PEM_read_bio_X509(certBio, nullptr, nullptr, nullptr);
@@ -250,8 +257,10 @@ private:
             request.append(buf, static_cast<size_t>(n));
         }
         const std::string resp = handler_(request);
-        SSL_write(ssl, resp.data(), static_cast<int>(resp.size()));
-        SSL_shutdown(ssl);
+        if (!resp.empty()) {
+            SSL_write(ssl, resp.data(), static_cast<int>(resp.size()));
+            SSL_shutdown(ssl);
+        }
         SSL_free(ssl);
         ::close(fd);
     }

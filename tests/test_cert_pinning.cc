@@ -39,6 +39,7 @@ public:
     using Handler = std::function<std::string(const std::string&)>;
 
     bool start() {
+        ::signal(SIGPIPE, SIG_IGN); // clients may vanish mid-exchange
         listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
         if (listenFd_ < 0) return false;
         int reuse = 1;
