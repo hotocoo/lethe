@@ -280,7 +280,7 @@ message(STATUS "  UI: ${BUILD_UI}")
 # the navigation layer and is honest about that in its header comment.
 if(WIN32)
     add_executable(lethe-win WIN32 src/win/lethe_win.cpp)
-    target_compile_definitions(lethe-win PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_definitions(lethe-win PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
     target_link_libraries(lethe-win PRIVATE user32 gdi32 shell32 shlwapi ws2_32 ole32 oleaut32 uuid)
     if(DEFINED WEBVIEW2_DIR AND EXISTS "${WEBVIEW2_DIR}/build/native/include/WebView2.h")
         target_include_directories(lethe-win PRIVATE "${WEBVIEW2_DIR}/build/native/include")

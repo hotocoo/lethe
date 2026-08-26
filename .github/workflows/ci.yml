@@ -107,9 +107,9 @@ jobs:
       - name: Restore WebView2 SDK
         shell: pwsh
         run: |
-          nuget install Microsoft.Web.WebView2 -Version 1.0.2210.55 -OutputDirectory packages
-          $dir = Get-ChildItem packages/Microsoft.Web.WebView2 -Directory | Select-Object -First 1
-          echo "WEBVIEW2_DIR=$($dir.FullName)" >> $env:GITHUB_ENV
+          nuget install Microsoft.Web.WebView2 -Version 1.0.2210.55 -OutputDirectory packages -NonInteractive
+          $pkg = Resolve-Path 'packages/Microsoft.Web.WebView2.1.0.2210.55'
+          echo "WEBVIEW2_DIR=$pkg" >> $env:GITHUB_ENV
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWEBVIEW2_DIR="${env:WEBVIEW2_DIR}"
       - name: Build lethe-win
