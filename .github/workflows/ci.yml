@@ -39,6 +39,9 @@ jobs:
           sudo apt-get install -y ninja-build libseccomp-dev
           if [ "${{ matrix.gui }}" = "true" ]; then
             sudo apt-get install -y libgtk-3-dev
+            # Full-web engine: 4.1 API on 24.04+, 4.0 fallback on older.
+            sudo apt-get install -y libwebkit2gtk-4.1-dev || \
+              sudo apt-get install -y libwebkit2gtk-4.0-dev || true
           fi
 
       - name: Install dependencies (macOS)
