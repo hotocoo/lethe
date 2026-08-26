@@ -220,6 +220,7 @@ void CookieJar::store(const std::string& topLevelSite,
     if (partition.empty()) return;
 
     bool hasDomainAttr = false;
+    bool hasPathAttr = false;
     bool deleteExisting = false;
 
     // Attribute walk.
@@ -252,8 +253,22 @@ void CookieJar::store(const std::string& topLevelSite,
                 c.domain = d;
                 c.hostOnly = false;
                 hasDomainAttr = true;
+            } else if (attrIs(aName, "samesite")) {
+                const std::string v = toLowerCopy(aValue);
+                if (v == "lax") {
+                    c.sameSite = SameSite::Lax;
+                } else if (v == "strict") {
+                    c.sameSite = SameSite::Strict;
+                } else if (v == "none") {
+                    c.sameSite = SameSite::None;
+                }
+                // Unknown values leave Unspecified: the processor ignores
+                // attributes it does not recognize (RFC6265bis 5.7.1).
             } else if (attrIs(aName, "path")) {
-                if (!aValue.empty() && aValue.front() == '/') c.path = aValue;
+                if (!aValue.empty() && aValue.front() == '/') {
+                    c.path = aValue;
+                    hasPathAttr = true;
+                }
             } else if (attrIs(aName, "max-age")) {
                 try {
                     const long secs = std::stol(aValue);
@@ -287,6 +302,26 @@ void CookieJar::store(const std::string& topLevelSite,
         c.path = directoryOf(req.path);
     }
 
+    // RFC6265bis: SameSite=None opts a cookie into CROSS-SITE delivery and
+    // is therefore only ever accepted WITH the Secure attribute; without it
+    // the whole Set-Cookie is rejected outright.
+    if (c.sameSite == SameSite::None && !c.secure) return;
+
+    // Cookie-name prefixes (RFC6265bis 4.1.3), matched case-insensitively.
+    const std::string lowerName = toLowerCopy(c.name);
+    if (lowerName.rfind("__secure-", 0) == 0 ||
+        lowerName.rfind("__host-", 0) == 0) {
+        // Both prefixes are security assertions: they demand the Secure
+        // attribute and an https:// origin - such a cookie can never be
+        // planted over plaintext http.
+        if (!c.secure || req.scheme != "https") return;
+    }
+    if (lowerName.rfind("__host-", 0) == 0) {
+        // __Host- additionally pins the cookie to THIS exact host at the
+        // site root: host-only (no Domain attribute) and explicit Path=/.
+        if (!c.hostOnly || !hasPathAttr || c.path != "/") return;
+    }
+
     Key key{partition, c.domain, c.path, c.name};
     auto existing = cookies_.find(key);
     if (deleteExisting) {
@@ -301,7 +336,8 @@ void CookieJar::store(const std::string& topLevelSite,
 }
 
 std::string CookieJar::headerFor(const std::string& topLevelSite,
-                                 const std::string& requestUrl) const {
+                                 const std::string& requestUrl,
+                                 const CookieRequestContext& ctx) const {
     const UrlParts req = splitUrl(requestUrl);
     if (req.host.empty()) return "";
     const std::string partition =
@@ -309,6 +345,11 @@ std::string CookieJar::headerFor(const std::string& topLevelSite,
     if (partition.empty()) return "";
 
     const auto now = std::chrono::steady_clock::now();
+    // SameSite: cross-site when the initiator lives on another site than
+    // the request itself (scheme counted; no initiator = never cross-site).
+    const bool crossSite =
+        !ctx.initiatorUrl.empty() &&
+        topLevelSiteFor(ctx.initiatorUrl) != topLevelSiteFor(requestUrl);
     std::string header;
     for (const auto& kv : cookies_) {
         if (kv.first.partition != partition) continue;
@@ -318,10 +359,35 @@ std::string CookieJar::headerFor(const std::string& topLevelSite,
         if (c.hostOnly ? (req.host != c.domain)
                        : !domainMatches(req.host, c.domain)) continue;
         if (!pathMatches(req.path.empty() ? "/" : req.path, c.path)) continue;
+        // RFC6265bis SameSite delivery filter.
+        switch (c.sameSite) {
+        case SameSite::Strict:
+            if (crossSite) continue; // never crosses sites
+            break;
+        case SameSite::Lax:
+        case SameSite::Unspecified:
+            // Lax-by-default: cross-site only on safe-method top-level
+            // navigations - the classic link-click allowance.
+            if (crossSite && !(ctx.topNavigation && ctx.safeMethod)) continue;
+            break;
+        case SameSite::None:
+            break; // explicit cross-site allowance (Secure was required)
+        }
         if (!header.empty()) header += "; ";
         header += c.name + "=" + c.value;
     }
     return header;
+}
+
+std::string CookieJar::headerFor(const std::string& topLevelSite,
+                                 const std::string& requestUrl) const {
+    // Same-site shorthand: the initiator IS the target site, so no
+    // matching cookie is withheld by SameSite.
+    CookieRequestContext ctx;
+    ctx.initiatorUrl = requestUrl;
+    ctx.topNavigation = true;
+    ctx.safeMethod = true;
+    return headerFor(topLevelSite, requestUrl, ctx);
 }
 
 size_t CookieJar::size() const {

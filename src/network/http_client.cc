@@ -229,7 +229,7 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
 
             std::string httpRequest = buildHttpRequest(
                 currentReq, host, path, port,
-                cookieHeaderForHop(currentReq, currentUrl),
+                cookieHeaderForHop(currentReq, currentUrl, hopReferrer),
                 computedReferer, secFetchSite);
             if (!writeAll(httpRequest.data(), httpRequest.size())) {
                 const bool stale = reused && attempt == 0;
@@ -352,13 +352,30 @@ bool HttpClient::isVpnActive() const {
 
 // --- Secure DNS (DNS-over-HTTPS) ---------------------------------------------
 
-std::string HttpClient::cookieHeaderForHop(const HttpRequest& req,
-                                           const std::string& currentUrl) const {
+std::string HttpClient::cookieHeaderForHop(
+    const HttpRequest& req, const std::string& currentUrl,
+    const std::string& hopInitiator) const {
     if (!cookieJar_) return "";
     const std::string hopSite = CookieJar::topLevelSiteFor(currentUrl);
     const std::string& part =
         req.topLevelSite.empty() ? hopSite : req.topLevelSite;
-    return cookieJar_->headerFor(part, currentUrl);
+
+    // SameSite context of THIS hop: the initiator is the triggering
+    // document (first hop) or the previous redirect hop; navigation kind
+    // and method safety decide whether Lax cookies may ride cross-site.
+    CookieRequestContext ctx;
+    ctx.initiatorUrl = hopInitiator;
+    ctx.topNavigation = req.navigationRequest;
+    switch (req.method) {
+    case HttpMethod::GET:
+    case HttpMethod::HEAD:
+        ctx.safeMethod = true;
+        break;
+    default:
+        ctx.safeMethod = false; // POST/PUT/PATCH/DELETE never count as safe
+        break;
+    }
+    return cookieJar_->headerFor(part, currentUrl, ctx);
 }
 
 void HttpClient::setDohProvider(const std::string& url) {

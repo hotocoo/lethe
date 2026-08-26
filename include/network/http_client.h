@@ -283,8 +283,12 @@ private:
     // Default referrer policy applied when requests don't override it.
     ReferrerPolicy defaultReferrerPolicy_ = ReferrerPolicy::StrictOriginWhenCrossOrigin;
     // Cookie header for one request hop under its partition ("" when none).
+    // \p hopInitiator is the URL that triggered THIS hop (the caller's
+    // referrer on the first hop, the previous hop while redirecting); it
+    // drives the RFC6265bis SameSite delivery decision in the jar.
     std::string cookieHeaderForHop(const HttpRequest& req,
-                                   const std::string& currentUrl) const;
+                                   const std::string& currentUrl,
+                                   const std::string& hopInitiator) const;
 
     TLSConfig tlsConfig_;
     bool initialized_ = false;

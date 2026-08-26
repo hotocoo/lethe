@@ -353,3 +353,239 @@ LETHE_TEST_CASE(HttpClient_ExplicitCookieHeaderWins) {
 
     server.stop();
 }
+
+// --- SameSite + cookie-name-prefix hardening (RFC6265bis) ---------------------
+
+namespace {
+
+CookieRequestContext ctxFrom(const std::string& initiator,
+                                        bool topNav, bool safe) {
+    CookieRequestContext c;
+    c.initiatorUrl = initiator;
+    c.topNavigation = topNav;
+    c.safeMethod = safe;
+    return c;
+}
+
+} // namespace
+
+LETHE_TEST_CASE(CookieJar_SameSiteNoneRequiresSecure) {
+    CookieJar jar;
+    // Opting INTO cross-site delivery without Secure is rejected outright,
+    // even when planted from an https origin.
+    jar.store("https://site.com", "https://site.com/",
+              "n=1; SameSite=None; Path=/");
+    CHECK_EQ(jar.size(), size_t(0));
+    // With Secure it sticks - and then rides every context, cross-site
+    // subresource included.
+    jar.store("https://site.com", "https://site.com/",
+              "ok=1; SameSite=None; Secure; Path=/");
+    CHECK_EQ(jar.size(), size_t(1));
+    CHECK_EQ(jar.headerFor("https://site.com", "https://site.com/x",
+                           ctxFrom("https://other.net/", false, true)),
+             std::string("ok=1"));
+}
+
+LETHE_TEST_CASE(CookieJar_SameSiteValueParsing) {
+    CookieJar jar;
+    // Values parse case-insensitively; UNKNOWN values are ignored (the
+    // cookie becomes Unspecified -> enforced as Lax), never treated as None.
+    jar.store("https://s.com", "https://s.com/",
+              "a=1; SameSite=STRICT; Path=/");
+    jar.store("https://s.com", "https://s.com/", "b=2; samesite=Lax; Path=/");
+    jar.store("https://s.com", "https://s.com/",
+              "c=3; SoMeSiTe=Nonsense; Path=/");
+    const auto crossNav = ctxFrom("https://evil.net/", true, true);
+    const auto crossSub = ctxFrom("https://evil.net/", false, true);
+    const std::string nav =
+        jar.headerFor("https://s.com", "https://s.com/", crossNav);
+    CHECK(nav.find("a=1") == std::string::npos);  // strict withheld
+    CHECK(nav.find("b=2") != std::string::npos);  // lax rode top navigation
+    CHECK(nav.find("c=3") != std::string::npos);  // unspecified == lax
+    const std::string sub =
+        jar.headerFor("https://s.com", "https://s.com/", crossSub);
+    CHECK(sub.find("b=2") == std::string::npos);  // lax blocked on subresource
+    CHECK(sub.find("c=3") == std::string::npos);
+}
+
+LETHE_TEST_CASE(CookieJar_SameSiteStrictNeverCrossesSites) {
+    CookieJar jar;
+    jar.store("https://s.com", "https://s.com/", "s=1; SameSite=Strict; Path=/");
+    // Same-site initiator: delivered.
+    CHECK_EQ(jar.headerFor("https://s.com", "https://s.com/x",
+                           ctxFrom("https://s.com/page", true, true)),
+             std::string("s=1"));
+    // Even a top-level safe GET navigation from elsewhere is refused.
+    CHECK(jar.headerFor("https://s.com", "https://s.com/x",
+                        ctxFrom("https://evil.net/", true, true)).empty());
+}
+
+LETHE_TEST_CASE(CookieJar_LaxCrossSiteMatrix) {
+    CookieJar jar;
+    jar.store("https://s.com", "https://s.com/", "l=1; SameSite=Lax; Path=/");
+    // Top-level GET navigation from a foreign site: the classic link click.
+    CHECK_EQ(jar.headerFor("https://s.com", "https://s.com/x",
+                           ctxFrom("https://news.net/story", true, true)),
+             std::string("l=1"));
+    // Top-level POST: exactly what SameSite exists to stop.
+    CHECK(jar.headerFor("https://s.com", "https://s.com/x",
+                        ctxFrom("https://news.net/story", true, false)).empty());
+    // Embedded subresource / API fetch: withheld despite safe method.
+    CHECK(jar.headerFor("https://s.com", "https://s.com/x",
+                        ctxFrom("https://news.net/story", false, true)).empty());
+    // No initiator (typed address bar): never considered cross-site.
+    CHECK_EQ(jar.headerFor("https://s.com", "https://s.com/x",
+                           ctxFrom("", true, true)), std::string("l=1"));
+}
+
+LETHE_TEST_CASE(CookieJar_UnspecifiedEnforcedAsLax) {
+    CookieJar jar;
+    // No SameSite attribute at all: Lax-by-default, so a cross-site POST
+    // navigation carries nothing.
+    jar.store("https://s.com", "https://s.com/", "p=1; Path=/");
+    CHECK(jar.headerFor("https://s.com", "https://s.com/x",
+                        ctxFrom("https://evil.net/", true, false)).empty());
+    CHECK_EQ(jar.headerFor("https://s.com", "https://s.com/x",
+                           ctxFrom("https://evil.net/", true, true)),
+             std::string("p=1"));
+}
+
+LETHE_TEST_CASE(CookieJar_SecureNamePrefixRules) {
+    CookieJar jar;
+    // __Secure- without Secure: rejected.
+    jar.store("https://s.com", "https://s.com/", "__Secure-id=7; Path=/");
+    CHECK_EQ(jar.size(), size_t(0));
+    // __Secure- over plaintext http: rejected even WITH Secure.
+    jar.store("https://s.com", "http://s.com/",
+              "__Secure-id=7; Secure; Path=/");
+    CHECK_EQ(jar.size(), size_t(0));
+    // Conforming: Secure + https.
+    jar.store("https://s.com", "https://s.com/", "__Secure-id=7; Secure; Path=/");
+    CHECK_EQ(jar.size(), size_t(1));
+    // Prefix match is case-INSENSITIVE per RFC6265bis.
+    jar.store("https://s.com", "https://s.com/",
+              "__secure-low=1; secure; path=/");
+    CHECK_EQ(jar.size(), size_t(2));
+}
+
+LETHE_TEST_CASE(CookieJar_HostNamePrefixRules) {
+    CookieJar jar;
+    // Conforming __Host- cookie: Secure + https + host-only + explicit /.
+    jar.store("https://s.com", "https://s.com/", "__Host-sid=abc; Secure; Path=/");
+    CHECK_EQ(jar.size(), size_t(1));
+    CHECK_EQ(jar.headerFor("https://s.com", "https://s.com/deep/path"),
+             std::string("__Host-sid=abc"));
+    // Stays pinned to the exact host.
+    CHECK(jar.headerFor("https://www.s.com", "https://www.s.com/").empty());
+
+    // Every violation rejects the WHOLE cookie.
+    jar.store("https://s.com", "https://s.com/", "__Host-nosec=1; Path=/");
+    CHECK_EQ(jar.size(), size_t(1)); // missing Secure
+    jar.store("https://s.com", "http://s.com/", "__Host-plain=1; Secure; Path=/");
+    CHECK_EQ(jar.size(), size_t(1)); // plaintext origin
+    jar.store("https://s.com", "https://s.com/",
+              "__Host-dom=1; Secure; Domain=s.com; Path=/");
+    CHECK_EQ(jar.size(), size_t(1)); // Domain attribute present
+    jar.store("https://s.com", "https://s.com/",
+              "__Host-deep=1; Secure; Path=/account");
+    CHECK_EQ(jar.size(), size_t(1)); // path not /
+    // Missing EXPLICIT Path=/ is rejected even though the defaulted path
+    // would have computed to "/" for this request.
+    jar.store("https://s.com", "https://s.com/", "__Host-def=1; Secure");
+    CHECK_EQ(jar.size(), size_t(1));
+
+    // A rejected Set-Cookie can neither plant nor DELETE: the conforming
+    // cookie survives a prefix-violating deletion attempt.
+    jar.store("https://s.com", "https://s.com/", "__Host-sid=x; Max-Age=0");
+    CHECK_EQ(jar.size(), size_t(1));
+    CHECK_EQ(jar.headerFor("https://s.com", "https://s.com/"),
+             std::string("__Host-sid=abc"));
+}
+
+LETHE_TEST_CASE(HttpClient_SameSiteWireEnforcement) {
+    EchoServer server;
+    CHECK(server.start());
+    const std::string base = "http://127.0.0.1:" + std::to_string(server.port());
+
+    server.setHandler([](const std::string& req) {
+        if (req.rfind("GET /set", 0) == 0 || req.rfind("POST /set", 0) == 0) {
+            return simpleResponse(
+                "Set-Cookie: nav=lax1; SameSite=Lax; Path=/\r\n"
+                "Set-Cookie: sub=strict1; SameSite=Strict; Path=/\r\n"
+                // None without Secure must never land in the jar.
+                "Set-Cookie: bad=ns1; SameSite=None; Path=/\r\n");
+        }
+        const size_t pos = req.find("Cookie:");
+        const std::string seen =
+            pos == std::string::npos
+                ? std::string("(none)")
+                : req.substr(pos, req.find("\r\n", pos) - pos);
+        return simpleResponse("X-Saw-Cookie: " + seen + "\r\n",
+                              "<html>ok</html>");
+    });
+
+    TLSConfig tls;
+    tls.init_modern_tls_config(0x0304, 0x0304);
+    CookieJar jar;
+    HttpClient client;
+    CHECK(client.initialize(tls));
+    client.enableCookies(&jar);
+
+    const auto saw = [](const HttpResponse& r) {
+        const auto it = r.headers.find("x-saw-cookie");
+        return it == r.headers.end() ? std::string() : it->second;
+    };
+
+    HttpRequest plant; // no initiator: all conforming cookies are stored
+    plant.url = base + "/set";
+    plant.topLevelSite = base;
+    HttpResponse r1 = client.sendRequest(plant);
+    CHECK(r1.success);
+    CHECK_EQ(r1.setCookieHeaders.size(), size_t(3));
+    CHECK_EQ(jar.size(), size_t(2)); // SameSite=None w/o Secure rejected
+
+    // Cross-site SUBRESOURCE-style fetch (foreign initiator, navigationRequest
+    // unset): Lax AND Strict stay home - nothing rides.
+    HttpRequest apiFetch;
+    apiFetch.url = base + "/check";
+    apiFetch.topLevelSite = base;
+    apiFetch.referrer = "http://tracker.example/ad.html";
+    HttpResponse r2 = client.sendRequest(apiFetch);
+    CHECK(r2.success);
+    CHECK(saw(r2).find("(none)") != std::string::npos);
+
+    // Cross-site TOP-LEVEL GET navigation: Lax rides, Strict stays home.
+    HttpRequest navGet;
+    navGet.url = base + "/check";
+    navGet.topLevelSite = base;
+    navGet.referrer = "http://news.example/story";
+    navGet.navigationRequest = true;
+    HttpResponse r3 = client.sendRequest(navGet);
+    CHECK(r3.success);
+    CHECK(saw(r3).find("nav=lax1") != std::string::npos);
+    CHECK(saw(r3).find("sub=strict1") == std::string::npos);
+
+    // Cross-site top-level POST: even the Lax cookie stays home.
+    HttpRequest navPost;
+    navPost.url = base + "/check";
+    navPost.method = HttpMethod::POST;
+    navPost.topLevelSite = base;
+    navPost.referrer = "http://forum.example/thread";
+    navPost.navigationRequest = true;
+    HttpResponse r4 = client.sendRequest(navPost);
+    CHECK(r4.success);
+    CHECK(saw(r4).find("(none)") != std::string::npos);
+
+    // Typed address (no initiator at all): every matching cookie is sent,
+    // Strict included - user-initiated navigation is same-site context.
+    HttpRequest direct;
+    direct.url = base + "/check";
+    direct.topLevelSite = base;
+    direct.navigationRequest = true;
+    HttpResponse r5 = client.sendRequest(direct);
+    CHECK(r5.success);
+    CHECK(saw(r5).find("nav=lax1") != std::string::npos);
+    CHECK(saw(r5).find("sub=strict1") != std::string::npos);
+
+    server.stop();
+}

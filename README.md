@@ -32,6 +32,13 @@ Minimalist, high-performance browser with maximum security and a built-in VPN, b
 - **DNS over HTTPS (DoH)**: hostname resolution through a DoH JSON provider
   (Cloudflare by default); plaintext system DNS is never used for targets,
   and DoH failures block requests instead of leaking (fail closed)
+- **SameSite cookie enforcement (RFC6265bis)**: Lax-by-default delivery -
+  cookies are withheld from every cross-site request except safe-method
+  top-level navigations; Strict cookies never cross sites; SameSite=None
+  is accepted only together with Secure. The __Secure- and __Host- name
+  prefixes are enforced at storage time (__Host- additionally demands an
+  https origin, no Domain attribute, and an explicit Path=/), and a
+  rejected Set-Cookie can neither plant nor delete stored state
 - **Navigation request hygiene**: the Referer of every hop is computed
   under the active Referrer-Policy (browser-standard
   strict-origin-when-cross-origin by default) - full URL same-origin,
@@ -248,7 +255,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (173 tests)
+# Run the full test suite (181 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -323,6 +330,13 @@ The test suite covers:
   the request landing on the TLS origin only, control run without policy
   fails closed against a TLS-only origin, STS received over plain HTTP is
   ignored)
+- **SameSite + cookie name prefixes (RFC6265bis)** (None-without-Secure
+  rejected at store time AND on the wire; Lax/Strict/unspecified matrix -
+  top-level safe-method GET rides cross-site while POST and subresource
+  fetches stay home and an initiator-less navigation delivers everything;
+  case-insensitive attribute values and prefix matching; __Secure- needs
+  Secure plus https, __Host- needs host-only plus explicit Path=/; a
+  rejected Set-Cookie cannot delete a conforming cookie it collides with)
 - **Navigation request hygiene** (Referer computed per hop under
   Referrer-Policy: full URL same-origin, origin-only cross-origin,
   stripped on https->http downgrades; response Referrer-Policy headers

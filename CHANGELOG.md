@@ -27,6 +27,16 @@ All notable changes to Lethe are documented in this file.
   any network I/O — plaintext is never attempted and there is no insecure
   fallback; max-age=0 revokes, includeSubDomains covers subdomains,
   IP literals never carry policy, memory-bounded and purged at shutdown
+- SameSite cookie semantics (RFC6265bis): Lax-by-default delivery with
+  the top-level-navigation/safe-method allowance; SameSite=None honored
+  only with Secure (rejected outright otherwise); __Secure-/__Host-
+  name-prefix enforcement at storage time, matched case-insensitively,
+  with __Host- requiring a host-only cookie from an https origin carrying
+  an explicit Path=/; a rejected Set-Cookie neither plants nor deletes
+  state. HttpClient hands every hop (redirect hops included) its real
+  initiator URL, navigation kind, and RFC7231 method safety to the jar,
+  so cross-site subresource/API traffic never carries Lax or Strict
+  cookies while genuine link-click navigations still work
 - Navigation request hygiene: Referer is COMPUTED per hop under the
   Referrer-Policy engine (strict-origin-when-cross-origin default:
   full URL same-origin, origin-only cross-origin, nothing survives an
@@ -102,7 +112,7 @@ All notable changes to Lethe are documented in this file.
   server instead of being shadowed by client defaults
 
 ### Quality & infrastructure
-- 173-test suite (lightweight framework, no external test deps) including
+- 181-test suite (lightweight framework, no external test deps) including
   full-stack navigation e2e against real local origins and TLS origins with
   CA-bundle trust
 - CI: Linux (gcc/clang, incl. a GTK3 GUI job) + macOS build/test/e2e matrix
