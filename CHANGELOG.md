@@ -19,6 +19,15 @@ All notable changes to Lethe are documented in this file.
   LLM web search + page reading, status reporting
 
 ### Security
+- Private-network isolation (SSRF guard): every hop's RESOLVED destination
+  is scope-classified before any socket or tunnel exchange; non-loopback
+  private scopes (RFC1918, CGNAT, link-local/cloud-metadata, IPv6 ULA,
+  NAT64/6to4/IPv4-mapped embedded IPv4, TEST-NET/benchmarking/multicast/
+  reserved) fail closed with named reasons; numeric IPv4 spell-outs are
+  canonicalized through the dialing resolver (glibc octal vs Apple decimal
+  leading-zero semantics both honored); loopback stays reachable and
+  LETHE_PRIVATE_NET_MODE / LETHE_PRIVATE_NET_ALLOW configure the escape
+  hatches
 - Strict CSP decision semantics (`'self'` origin+path-boundary matching,
   fail-closed on originless documents, script-scheme denial)
 - HSTS enforcement (RFC 6797): in-memory policy cache fed by
@@ -112,7 +121,7 @@ All notable changes to Lethe are documented in this file.
   server instead of being shadowed by client defaults
 
 ### Quality & infrastructure
-- 181-test suite (lightweight framework, no external test deps) including
+- 191-test suite (lightweight framework, no external test deps) including
   full-stack navigation e2e against real local origins and TLS origins with
   CA-bundle trust
 - CI: Linux (gcc/clang, incl. a GTK3 GUI job) + macOS build/test/e2e matrix

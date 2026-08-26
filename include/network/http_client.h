@@ -11,6 +11,7 @@
 #include "network/vpn/vpn_tunnel.h"
 #include "security/cookie_jar.h"
 #include "security/hsts_cache.h"
+#include "security/private_network_guard.h"
 
 // Declared in network/udp_transport.h (included by the .cc).
 namespace lethe {
@@ -157,6 +158,29 @@ public:
         return defaultReferrerPolicy_;
     }
 
+    // --- Private-network (SSRF) isolation ---
+    // Every hop's RESOLVED destination address - the DoH answer for a
+    // hostname, an IP literal, or a canonicalized numeric spelling-out -
+    // is scope-classified BEFORE any socket is opened and BEFORE the
+    // encrypted-tunnel relay path is chosen. Destinations in non-permitted
+    // private scopes (RFC1918, CGNAT, link-local/cloud-metadata, IPv6 ULA,
+    // embedded-IPv4 wrappers, reserved ranges) fail closed with a named
+    // reason; loopback stays reachable while allowLoopback is set, and
+    // explicit hostnames can be re-admitted via PrivateNetworkPolicy.
+    void setPrivateNetworkPolicy(PrivateNetworkPolicy policy) {
+        privateNetGuard_.setPolicy(std::move(policy));
+    }
+    const PrivateNetworkPolicy& privateNetworkPolicy() const {
+        return privateNetGuard_.policy();
+    }
+
+    // Canonicalize every numeric IPv4/IPv6 spelling the platform's
+    // resolvers accept - dotted quads plus the inet_aton family (decimal
+    // "2130706433", octal "0177.0.0.1", mixed-radix and short forms) that
+    // inet_pton refuses - into standard text form. Returns "" for anything
+    // that would need name resolution. Purely local: no DNS, no network.
+    static std::string canonicalNumericAddress(const std::string& host);
+
     // Parse a Referrer-Policy header value ("no-referrer, unsafe-url").
     // Per spec, the LAST recognized token wins and unknown tokens are
     // skipped; returns false when no recognized token remains (such a
@@ -220,6 +244,9 @@ private:
     bool dohResolve(const std::string& host, std::string& outIp);
     static std::string urlEncode(const std::string& in);
     static bool looksLikeIpv4(const std::string& s);
+
+    // Private-network isolation decision maker (stateless policy holder).
+    PrivateNetworkGuard privateNetGuard_;
 
     // --- DoH answer cache (host -> resolved IP with expiry) ---
     void dohCacheStore(const std::string& host, const std::string& ip);
@@ -328,6 +355,7 @@ private:
     std::string kaScheme_;
     std::string kaHost_;
     std::string kaResolvedTarget_;   // address the conn was established to
+    bool kaTargetIsIp_ = false;      // target was classifiable at connect
     int kaPort_ = 0;
     bool connectionReusable_ = false;  // established conn may serve another req
     bool connectionReused_ = false;    // last request rode a reused conn

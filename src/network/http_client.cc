@@ -17,6 +17,8 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
@@ -395,6 +397,38 @@ bool HttpClient::isIpLiteral(const std::string& host) {
            ::inet_pton(AF_INET6, host.c_str(), &v6) == 1;
 }
 
+std::string HttpClient::canonicalNumericAddress(const std::string& host) {
+    // The platform resolver is the single source of truth: openTcp() dials
+    // through getaddrinfo, so AI_NUMERICHOST (purely local - no DNS, no
+    // network) sees exactly what a connection WOULD dial. This also keeps
+    // documented platform divergences honest: glibc reads leading-zero
+    // octets as octal ("0177.0.0.1" -> 127.0.0.1) while Apple resolvers
+    // read them as decimal ("0177.0.0.1" -> 177.0.0.1); either way the
+    // guard classifies the address that would actually be dialed.
+    if (host.empty()) return ""; // some platforms accept "" as a wildcard
+    addrinfo hints;
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
+    addrinfo* res = nullptr;
+    if (::getaddrinfo(host.c_str(), "0", &hints, &res) != 0 || !res) {
+        return "";
+    }
+    char buf[INET6_ADDRSTRLEN] = {0};
+    std::string out;
+    const void* src = res->ai_family == AF_INET
+        ? static_cast<const void*>(
+              &reinterpret_cast<sockaddr_in*>(res->ai_addr)->sin_addr)
+        : static_cast<const void*>(
+              &reinterpret_cast<sockaddr_in6*>(res->ai_addr)->sin6_addr);
+    if (::inet_ntop(res->ai_family, src, buf, sizeof(buf))) {
+        out = buf;
+    }
+    ::freeaddrinfo(res);
+    return out;
+}
+
 std::string HttpClient::urlEncode(const std::string& in) {
     static const char* hex = "0123456789ABCDEF";
     std::string out;
@@ -617,6 +651,8 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     // resolved through it and the plaintext system resolver is never used.
     // Failure is fatal for the request (fail closed), never a silent leak.
     std::string connectTarget = host;
+    bool targetIsIp = false;
+    std::string guardAddress; // destination address the isolation guard sees
     if (!dohProvider_.empty() && !isIpLiteral(host)) {
         std::string ip;
         if (!dohResolve(host, ip)) {
@@ -625,6 +661,36 @@ bool HttpClient::connectToHost(const std::string& host, int port,
             return false;
         }
         connectTarget = ip;
+        guardAddress = ip;
+        targetIsIp = true;
+    } else {
+        // No DoH for this hop (IP literal, or legacy plaintext-DNS mode):
+        // still canonicalize numeric spell-outs ("2130706433", "0177.0.0.1",
+        // "0x7f000001") that getaddrinfo happily dials although they look
+        // nothing like an address, so isolation sees exactly what would be
+        // dialed. AI_NUMERICHOST keeps that purely local.
+        const std::string canon = canonicalNumericAddress(host);
+        if (!canon.empty()) {
+            guardAddress = canon;
+            targetIsIp = true;
+        }
+        // A non-numeric hostname without DoH resolves inside openTcp(); the
+        // engine enables DoH by default precisely so every destination is
+        // resolved - and therefore guarded - before any connection attempt.
+    }
+
+    // Private-network (SSRF) isolation on the RESOLVED destination, before
+    // any socket or tunnel exchange. Applies to direct dials and to relayed
+    // exchanges alike: a covered destination must not be smuggled through
+    // the tunnel into the VPN exit's own private network either.
+    if (targetIsIp) {
+        const std::string deny =
+            privateNetGuard_.check(host, guardAddress);
+        if (!deny.empty()) {
+            lastConnectError_ = deny;
+            std::cerr << "[lethe-http] " << deny << std::endl;
+            return false;
+        }
     }
 
     // Built-in VPN routing policy — fail closed on the RESOLVED destination.
@@ -634,6 +700,7 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     const bool covered = vpnTunnel_ &&
         vpnTunnel_->shouldRouteThroughVpn(connectTarget);
     kaResolvedTarget_ = connectTarget; // reused conns re-check this
+    kaTargetIsIp_ = targetIsIp;
     if (covered && !isVpnActive()) {
         lastConnectError_ = "Blocked: " + host + " (" + connectTarget +
                             ") requires the VPN tunnel (allowed CIDR match) "
@@ -1143,6 +1210,20 @@ bool HttpClient::tryReuseConnection(const std::string& scheme,
         std::cerr << "[lethe-http] " << lastConnectError_ << std::endl;
         closeConnection(); // the stale socket predates the policy change
         return false;
+    }
+
+    // Isolation re-check mirrors the VPN one so every entry point into the
+    // network path consults the same policy; it is a cheap classification
+    // of the address this connection was established to.
+    if (kaTargetIsIp_) {
+        const std::string deny =
+            privateNetGuard_.check(host, kaResolvedTarget_);
+        if (!deny.empty()) {
+            lastConnectError_ = deny;
+            std::cerr << "[lethe-http] " << deny << std::endl;
+            closeConnection();
+            return false;
+        }
     }
 
     connectionReused_ = true;

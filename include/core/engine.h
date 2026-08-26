@@ -30,6 +30,14 @@ struct Config {
     bool useHardwareAcceleration = true;
     int maxOpenConnections = 128;
 
+    // Private-network isolation (SSRF guard): fetches whose RESOLVED
+    // destination lands in a non-loopback private scope (RFC1918, CGNAT,
+    // link-local/cloud-metadata, IPv6 ULA, embedded-IPv4 wrappers,
+    // reserved ranges) fail closed. Loopback stays reachable for local
+    // development; trusted intranet names can be re-admitted explicitly.
+    bool isolatePrivateNetworks = true;
+    std::vector<std::string> privateNetworkAllowedHosts;
+
     // Built-in VPN
     bool vpnEnabled = false;
     vpn::VpnConfig vpnConfig;  // VPN configuration (used when vpnEnabled)
@@ -41,6 +49,10 @@ struct Config {
 //   LETHE_DNS_PROVIDER=<url>       -> DoH provider URL
 //   LETHE_DNS_PROVIDER=none|off    -> DoH disabled (empty provider)
 //   LETHE_USER_AGENT_MODE=standard|stealth
+//   LETHE_PRIVATE_NET_MODE=isolate|open -> private-network SSRF guard
+//       (isolate = default; open = legacy unrestricted fetching)
+//   LETHE_PRIVATE_NET_ALLOW=a,b,c  -> exact intranet hostnames the guard
+//       re-admits despite private-scope answers (case-insensitive)
 // Callers apply this BEFORE command-line parsing so explicit arguments win.
 void applyEnvironmentOverrides(Config& cfg);
 

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <unistd.h>
 #include "core/engine.h"
 #include "config.h"
@@ -67,6 +68,27 @@ void applyEnvironmentOverrides(Config& cfg) {
     if (const char* uaMode = std::getenv("LETHE_USER_AGENT_MODE")) {
         const std::string v = toLowerCopy(std::string(uaMode));
         cfg.userAgentMode = (v == "stealth") ? "stealth" : "standard";
+    }
+    if (const char* pnMode = std::getenv("LETHE_PRIVATE_NET_MODE")) {
+        const std::string v = toLowerCopy(std::string(pnMode));
+        // Only an explicit "open" (or the usual off spellings) lifts
+        // isolation; anything unknown keeps the safe default.
+        cfg.isolatePrivateNetworks =
+            !(v == "open" || v == "off" || v == "0" || v == "false" ||
+              v == "no");
+    }
+    if (const char* allowList = std::getenv("LETHE_PRIVATE_NET_ALLOW")) {
+        cfg.privateNetworkAllowedHosts.clear();
+        std::istringstream stream(allowList);
+        std::string item;
+        while (std::getline(stream, item, ',')) {
+            std::string host = toLowerCopy(item);
+            const size_t start = host.find_first_not_of(" \t");
+            if (start == std::string::npos) continue;
+            const size_t end = host.find_last_not_of(" \t");
+            cfg.privateNetworkAllowedHosts.push_back(
+                host.substr(start, end - start + 1));
+        }
     }
 }
 
@@ -182,11 +204,25 @@ void Engine::init_network_stack() {
     hstsCache_ = std::make_unique<HstsCache>();
     httpClient_->enableHsts(hstsCache_.get());
 
+    // Private-network isolation (SSRF guard): every hop's resolved
+    // destination is scope-classified before any socket or tunnel
+    // exchange; trusted intranet names ride the explicit allowlist.
+    PrivateNetworkPolicy netPolicy;
+    netPolicy.isolatePrivateNetworks = config_.isolatePrivateNetworks;
+    netPolicy.allowLoopback = true;
+    for (const auto& host : config_.privateNetworkAllowedHosts) {
+        netPolicy.allowedHosts.insert(host);
+    }
+    httpClient_->setPrivateNetworkPolicy(std::move(netPolicy));
+
     std::cout << "[lethe] Network stack initialized (TLS "
               << MIN_TLS_VERSION << "+, DoH: "
               << (httpClient_->isDohEnabled() ? "on" : "off")
               << ", UA: " << config_.userAgentMode
-              << ", cookies: partitioned, HSTS: enforced)" << std::endl;
+              << ", cookies: partitioned, HSTS: enforced"
+              << ", private-net: "
+              << (config_.isolatePrivateNetworks ? "isolated" : "open")
+              << ")" << std::endl;
 }
 
 void Engine::init_vpn() {

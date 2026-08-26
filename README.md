@@ -46,6 +46,17 @@ Minimalist, high-performance browser with maximum security and a built-in VPN, b
   Sec-Fetch-Site/Mode/Dest/User metadata and Upgrade-Insecure-Requests
   ride on top-level navigations; a fail-closed allowlist refuses every
   non-http(s) URL scheme before any network I/O, redirect targets included
+- **Private-network isolation (SSRF guard)**: every hop's RESOLVED
+  destination address - DoH answer, IP literal, or numeric spelling-out -
+  is scope-classified BEFORE any socket is opened and before the tunnel
+  relay path is chosen; non-loopback private scopes (RFC1918, CGNAT,
+  link-local incl. cloud-metadata endpoints, IPv6 ULA, NAT64/6to4/
+  IPv4-mapped wrappers embedding private space, TEST-NET/benchmarking/
+  multicast/reserved ranges) fail closed with named reasons; numeric
+  spell-outs like http://2130706433/ are canonicalized through the dialing
+  resolver so they cannot dodge the check; loopback stays reachable for
+  local development and trusted intranet names can be re-admitted via
+  LETHE_PRIVATE_NET_ALLOW
 - **Built-in VPN**: WireGuard-style encrypted tunnel for all traffic
 
 ### Built-in VPN
@@ -255,7 +266,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (181 tests)
+# Run the full test suite (191 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -346,6 +357,14 @@ The test suite covers:
   precedence; fail-closed scheme allowlist blocking ftp/file/javascript/
   data/scheme-less URLs before any I/O and refusing foreign-scheme
   redirect targets)
+- **Private-network isolation** (IPv4/IPv6 scope classifier matrix incl.
+  IPv4-mapped/NAT64/6to4/compat embedded addresses; guard decisions with
+  per-host allowlist, loopback toggle, master switch and fail-closed on
+  unclassifiable destinations; resolver-authoritative canonicalization of
+  numeric spell-outs across glibc vs Apple leading-zero semantics; e2e:
+  named-private, redirect-to-private, and metadata-endpoint hops blocked
+  after resolution with zero origin hits while ordinary loopback
+  navigation through mock DoH keeps working)
 - **Tunnel relay framing** (request/chunk encode+parse round trips,
   malformed rejection, exchange-id staleness filtering)
 - **Streaming HTTP relay over real UDP** (OPEN/DATA/END frames with
@@ -416,6 +435,8 @@ Environment variables:
 export LETHE_SANDBOX=1          # 0/false/off/no disables sandboxing
 export LETHE_DNS_PROVIDER="https://cloudflare-dns.com"   # none/off = disable DoH
 export LETHE_USER_AGENT_MODE="standard|stealth"
+export LETHE_PRIVATE_NET_MODE="isolate"   # open = disable SSRF isolation
+export LETHE_PRIVATE_NET_ALLOW="intranet.corp,print.server"  # guard exceptions
 ```
 
 Environment is applied first; explicit command-line flags always win over it.
