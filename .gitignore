@@ -8,3 +8,6 @@ build/
 cmake-build-*/
 .vscode/
 .DS_Store
+build-linux/
+packages/
+dist/

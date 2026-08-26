@@ -128,6 +128,14 @@ bool Sandbox::apply() {
     return applySeccompAllowlist();
 
 #elif defined(__APPLE__) && defined(LETHE_SANDBOXING)
+    // Seatbelt is once-per-process: a second sandbox_init inside an already
+    // sandboxed process fails with EPERM (observed on locked-down hosts and
+    // GitHub runners). Re-application is a no-op success by definition -
+    // the profile is already active.
+    static bool alreadyApplied = false;
+    if (alreadyApplied) {
+        return true;
+    }
     std::cout << "[lethe] Applying macOS sandbox (Seatbelt)..." << std::endl;
 
     // The Seatbelt API is deprecated but remains the only supported way to
@@ -144,6 +152,7 @@ bool Sandbox::apply() {
         return false;
     }
 #pragma clang diagnostic pop
+    alreadyApplied = true;
     std::cout << "[lethe] Seatbelt profile active (file writes limited to temp)"
               << std::endl;
     return true;

@@ -10,6 +10,11 @@ option(USE_PREBUILT_CHROMIUM "Use prebuilt Chromium SDK" OFF)
 option(USE_QT "Use Qt for UI (recommended)" OFF)
 option(USE_GTK "Use GTK for UI (fallback)" ON)
 option(BUILD_TESTS "Build test suite" ON)
+if(WIN32)
+    set(BUILD_TESTS OFF)
+    set(BUILD_UI OFF)
+    set(BUILD_WITH_SANDBOX OFF)
+endif()
 option(BUILD_UI "Build the GUI application" ON)
 option(USE_FULLWEB "Embed the platform web engine for full-web mode" ON)
 
@@ -49,12 +54,18 @@ if(APPLE)
         link_directories("${OPENSSL_PREFIX}/lib")
     endif()
 endif()
-find_package(OpenSSL REQUIRED)
-find_package(ZLIB REQUIRED)
+if(NOT WIN32)
+    find_package(OpenSSL REQUIRED)
+    find_package(ZLIB REQUIRED)
+else()
+    # Windows builds only the WebView2 host; the POSIX core is not compiled.
+endif()
 
 # OpenSSL is a hard requirement: expose it to all targets (core lib, tests,
 # GUI) so TLS code paths are compiled and exercised.
-add_compile_definitions(-DHAVE_OPENSSL)
+if(NOT WIN32)
+    add_compile_definitions(-DHAVE_OPENSSL)
+endif()
 
 # --- libseccomp (required on Linux for enforced sandboxing) ---
 # src/security/sandbox.cc builds its default-deny filter through libseccomp.
