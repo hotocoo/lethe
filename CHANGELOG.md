@@ -19,6 +19,13 @@ All notable changes to Lethe are documented in this file.
   LLM web search + page reading, status reporting
 
 ### Security
+- Certificate pinning: per-host SPKI SHA-256 pins ("sha256-<base64>") that
+  narrow what a VERIFIED chain may contain - leaf, intermediate, or root may
+  satisfy; enforced on every TLS handshake (direct and TLS-over-tunnel alike,
+  redirect hops included) right after ordinary verification, failing closed
+  before any request bytes leave; configured via Config.certPins or
+  LETHE_CERT_PINS, malformed entries rejected loudly instead of silently
+  weakening a host's constraint
 - Private-network isolation (SSRF guard): every hop's RESOLVED destination
   is scope-classified before any socket or tunnel exchange; non-loopback
   private scopes (RFC1918, CGNAT, link-local/cloud-metadata, IPv6 ULA,
@@ -121,7 +128,7 @@ All notable changes to Lethe are documented in this file.
   server instead of being shadowed by client defaults
 
 ### Quality & infrastructure
-- 191-test suite (lightweight framework, no external test deps) including
+- 205-test suite (lightweight framework, no external test deps) including
   full-stack navigation e2e against real local origins and TLS origins with
   CA-bundle trust
 - CI: Linux (gcc/clang, incl. a GTK3 GUI job) + macOS build/test/e2e matrix

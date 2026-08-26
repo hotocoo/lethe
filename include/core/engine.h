@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include "config.h"
@@ -13,6 +14,7 @@
 #include "network/vpn/vpn_tunnel.h"
 #include "network/vpn/vpn_config.h"
 #include "browser/navigation_history.h"
+#include "security/cert_pinner.h"
 #include "security/cookie_jar.h"
 #include "security/hsts_cache.h"
 
@@ -38,6 +40,12 @@ struct Config {
     bool isolatePrivateNetworks = true;
     std::vector<std::string> privateNetworkAllowedHosts;
 
+    // Certificate pinning: per-host SPKI SHA-256 pins ("sha256-<base64>").
+    // A pinned host accepts only TLS chains containing at least one
+    // certificate whose SubjectPublicKeyInfo hashes to a listed pin.
+    // Additive to certificate verification; enforced on every hop.
+    std::map<std::string, std::vector<std::string>> certPins;
+
     // Built-in VPN
     bool vpnEnabled = false;
     vpn::VpnConfig vpnConfig;  // VPN configuration (used when vpnEnabled)
@@ -53,6 +61,9 @@ struct Config {
 //       (isolate = default; open = legacy unrestricted fetching)
 //   LETHE_PRIVATE_NET_ALLOW=a,b,c  -> exact intranet hostnames the guard
 //       re-admits despite private-scope answers (case-insensitive)
+//   LETHE_CERT_PINS=host1=sha256-A,sha256-B;host2=sha256-C
+//       per-host certificate pins (SPKI SHA-256); malformed entries are
+//       skipped with a warning - they never silently disable a pin
 // Callers apply this BEFORE command-line parsing so explicit arguments win.
 void applyEnvironmentOverrides(Config& cfg);
 
@@ -73,6 +84,7 @@ public:
     vpn::VpnTunnel* vpnTunnel() { return vpnTunnel_.get(); }
     CookieJar* cookieJar() { return cookieJar_.get(); }
     HstsCache* hstsCache() { return hstsCache_.get(); }
+    CertPinner* certPinner() { return certPinner_.get(); }
     
     bool isRunning() const { return running_; }
     const Config& config() const { return config_; }
@@ -108,6 +120,7 @@ private:
     std::unique_ptr<vpn::VpnTunnel> vpnTunnel_;
     std::unique_ptr<CookieJar> cookieJar_;
     std::unique_ptr<HstsCache> hstsCache_;
+    std::unique_ptr<CertPinner> certPinner_;
     std::unique_ptr<UdpTransport> vpnTransport_;
     uint64_t lastHandshakeAttemptMs_ = 0;
     uint64_t lastKeepaliveMs_ = 0;

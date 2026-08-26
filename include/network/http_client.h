@@ -9,6 +9,7 @@
 #include <cstdint>
 #include "network/tls_config.h"
 #include "network/vpn/vpn_tunnel.h"
+#include "security/cert_pinner.h"
 #include "security/cookie_jar.h"
 #include "security/hsts_cache.h"
 #include "security/private_network_guard.h"
@@ -140,6 +141,17 @@ public:
     void disableHsts() { hstsCache_ = nullptr; }
     bool hstsEnabled() const { return hstsCache_ != nullptr; }
 
+    // --- Certificate pinning (SPKI SHA-256, store owned by Engine) ---
+    // Hosts carrying pins accept only TLS chains in which at least one
+    // certificate's SubjectPublicKeyInfo hashes to a configured pin.
+    // Enforcement runs on EVERY handshake - direct TCP and TLS-over-tunnel
+    // alike, redirect hops included - right after (and in addition to)
+    // ordinary certificate verification. A mismatch fails closed: the
+    // connection is torn down and the request never goes out.
+    void enableCertPinning(CertPinner* pinner) { certPinner_ = pinner; }
+    void disableCertPinning() { certPinner_ = nullptr; }
+    bool certPinningEnabled() const { return certPinner_ != nullptr; }
+
     // Default User-Agent used when the request does not carry one.
     // Empty restores the built-in standard string.
     void setUserAgent(std::string ua) { defaultUserAgent_ = std::move(ua); }
@@ -236,6 +248,11 @@ private:
     bool openTcp(const std::string& target, int port);
     // TLS handshake on the current socket; SNI/cert name = tlsHostname.
     bool startTls(const std::string& tlsHostname);
+    // Post-handshake pin enforcement for tlsHostname. No-op unless the
+    // host carries pins; walks the peer chain (leaf first) computing SPKI
+    // SHA-256 digests and requires one match. Sets lastConnectError_ on
+    // mismatch ("Blocked: certificate pin mismatch for <host>").
+    bool verifyCertificatePins(const std::string& tlsHostname);
     void closeConnection();
 
     // --- Secure DNS helpers ---
@@ -341,6 +358,9 @@ private:
 
     // HSTS policy store (not owned); nullptr disables enforcement.
     HstsCache* hstsCache_ = nullptr;
+
+    // Certificate pin store (not owned); nullptr disables enforcement.
+    CertPinner* certPinner_ = nullptr;
 
     // Current connection state (one connection at a time).
     int socketFd_ = -1;

@@ -32,6 +32,8 @@
 
 #ifdef HAVE_OPENSSL
 #include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/x509.h>
 #endif
 
 #include "config.h"
@@ -907,6 +909,13 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
             }
         }
 
+        // Pin enforcement applies on the tunnel path exactly as on a
+        // direct socket - same chain, same host, same fail-closed rule.
+        if (!verifyCertificatePins(tlsHostname)) {
+            closeConnection();
+            return false;
+        }
+
         const SSL* sslConst = ssl_;
         std::cout << "[lethe-http] TLS established over tunnel with "
                   << tlsHostname << " ("
@@ -934,6 +943,11 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
         return false;
     }
 
+    if (!verifyCertificatePins(tlsHostname)) {
+        closeConnection();
+        return false;
+    }
+
     const SSL* sslConst = ssl_;
     std::cout << "[lethe-http] TLS established with " << tlsHostname << " ("
               << SSL_get_version(sslConst) << ")" << std::endl;
@@ -943,6 +957,70 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
               << std::endl;
     closeConnection();
     return false;
+#endif
+}
+
+bool HttpClient::verifyCertificatePins(const std::string& tlsHostname) {
+#ifdef HAVE_OPENSSL
+    if (!certPinner_ || !certPinner_->hasPins(tlsHostname)) {
+        return true; // host carries no pins: nothing to enforce
+    }
+
+    // Inspect the full peer chain, leaf first. Standard pinning semantics:
+    // a pin may be satisfied by the leaf, an intermediate, or the root.
+    // SSL_get_peer_cert_chain includes the leaf on the client side; the
+    // explicit leaf fetch covers exotic servers that omit it.
+    std::vector<X509*> inspect;
+    X509* leaf =
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        SSL_get1_peer_certificate(ssl_);
+#else
+        SSL_get_peer_certificate(ssl_);
+#endif
+    if (leaf) inspect.push_back(leaf);
+    if (STACK_OF(X509)* chain = SSL_get_peer_cert_chain(ssl_)) {
+        for (int i = 0; i < sk_X509_num(chain); ++i) {
+            inspect.push_back(sk_X509_value(chain, i));
+        }
+    }
+
+    bool matched = false;
+    for (X509* cert : inspect) {
+        X509_PUBKEY* pk = X509_get_X509_PUBKEY(cert);
+        if (!pk) continue;
+        unsigned char* der = nullptr;
+        const int derLen = i2d_X509_PUBKEY(pk, &der);
+        if (derLen <= 0 || !der) continue;
+        unsigned char md[EVP_MAX_MD_SIZE];
+        unsigned int mdLen = 0;
+        const bool hashed =
+            EVP_Digest(der, static_cast<size_t>(derLen), md, &mdLen,
+                       EVP_sha256(), nullptr) == 1;
+        OPENSSL_free(der);
+        if (!hashed || mdLen != CertPinner::kDigestSize) continue;
+
+        CertPinner::Digest digest{};
+        std::copy(md, md + CertPinner::kDigestSize, digest.begin());
+        if (certPinner_->matchesAny(tlsHostname, digest)) {
+            matched = true;
+            break;
+        }
+    }
+    if (leaf) X509_free(leaf);
+
+    if (!matched) {
+        lastConnectError_ = "Blocked: certificate pin mismatch for " +
+                            tlsHostname +
+                            " (no pinned SPKI found in the peer chain)";
+        std::cerr << "[lethe-http] " << lastConnectError_ << std::endl;
+        return false;
+    }
+    std::cout << "[lethe-http] Certificate pin verified for "
+              << tlsHostname << std::endl;
+    return true;
+#else
+    (void)tlsHostname;
+    return true;
 #endif
 }
 

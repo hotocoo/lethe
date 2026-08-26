@@ -29,6 +29,13 @@ Minimalist, high-performance browser with maximum security and a built-in VPN, b
 - **Memory protection**: ASLR, DEP, stack canaries, heap metadata separation
 - **Secure TLS configuration**: TLS 1.3+, modern cipher suites only,
   certificate verification on by default
+- **Certificate pinning**: per-host SPKI SHA-256 pins ("sha256-<base64>",
+  HPKP spelling) narrow what a VERIFIED chain may contain — a pinned host
+  accepts only chains in which the leaf, an intermediate, or the root
+  hashes to a configured pin. Enforcement rides every handshake (direct
+  TCP and TLS-over-tunnel alike, redirect hops included) and a mismatch
+  fails closed before any HTTP bytes leave; pins are additive to
+  verification and never weaken it
 - **DNS over HTTPS (DoH)**: hostname resolution through a DoH JSON provider
   (Cloudflare by default); plaintext system DNS is never used for targets,
   and DoH failures block requests instead of leaking (fail closed)
@@ -266,7 +273,7 @@ ninja lethe_core lethe_tests
 ## Running Tests
 
 ```bash
-# Run the full test suite (191 tests)
+# Run the full test suite (205 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -357,6 +364,14 @@ The test suite covers:
   precedence; fail-closed scheme allowlist blocking ftp/file/javascript/
   data/scheme-less URLs before any I/O and refusing foreign-scheme
   redirect targets)
+- **Certificate pinning** (pin spelling parse/format round trips incl.
+  padded and unpadded base64, malformed rejection at configuration time,
+  case-insensitive exact-host matching with strict no-match for unpinned
+  hosts, multi-pin OR semantics; e2e: a correct leaf pin admits a verified
+  TLS 1.3 connection while any other digest fails closed BEFORE the HTTP
+  request is sent - origins count zero requests - and pins re-arm per
+  redirect hop by that hop's own host name, blocking a chain whose second
+  hop violates its pin even when the first hop was correctly pinned)
 - **Private-network isolation** (IPv4/IPv6 scope classifier matrix incl.
   IPv4-mapped/NAT64/6to4/compat embedded addresses; guard decisions with
   per-host allowlist, loopback toggle, master switch and fail-closed on
@@ -437,6 +452,7 @@ export LETHE_DNS_PROVIDER="https://cloudflare-dns.com"   # none/off = disable Do
 export LETHE_USER_AGENT_MODE="standard|stealth"
 export LETHE_PRIVATE_NET_MODE="isolate"   # open = disable SSRF isolation
 export LETHE_PRIVATE_NET_ALLOW="intranet.corp,print.server"  # guard exceptions
+export LETHE_CERT_PINS="api.corp=sha256-<base64>,sha256-<base64>;vpn.corp=sha256-<base64>"
 ```
 
 Environment is applied first; explicit command-line flags always win over it.

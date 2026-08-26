@@ -111,6 +111,37 @@ LETHE_TEST_CASE(Env_UserAgentModeStandardAndUnknown) {
     CHECK(cfg2.userAgentMode == "standard");
 }
 
+LETHE_TEST_CASE(Env_CertPinsParsing) {
+    EnvGuard g("LETHE_CERT_PINS");
+    ::setenv("LETHE_CERT_PINS",
+             "Example.com=sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,"
+             "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB;"
+             "OTHER.test=sha256-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC;"
+             "broken;=;=sha256-DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+             1);
+    Config cfg;
+    applyEnvironmentOverrides(cfg);
+
+    CHECK_EQ(cfg.certPins.size(), static_cast<size_t>(2)); // malformed skipped
+    CHECK_TRUE(cfg.certPins.count("example.com") == 1);    // lowercased
+    CHECK_TRUE(cfg.certPins.count("other.test") == 1);
+    CHECK_EQ(cfg.certPins["example.com"].size(), static_cast<size_t>(2));
+    CHECK_EQ(cfg.certPins["example.com"][0],
+             "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    CHECK_EQ(cfg.certPins["example.com"][1],
+             "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+    CHECK_EQ(cfg.certPins["other.test"].size(), static_cast<size_t>(1));
+}
+
+LETHE_TEST_CASE(Env_CertPinsUnsetLeavesConfigUntouched) {
+    EnvGuard g("LETHE_CERT_PINS"); // unset
+    Config cfg;
+    cfg.certPins["preset.test"].push_back(
+        "sha256-EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
+    applyEnvironmentOverrides(cfg);
+    CHECK_TRUE(cfg.certPins.count("preset.test") == 1);
+}
+
 LETHE_TEST_CASE(Ua_ModesResolveToDistinctStrings) {
     const std::string standard = userAgentForMode("standard");
     const std::string stealth = userAgentForMode("stealth");

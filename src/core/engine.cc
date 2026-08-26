@@ -90,6 +90,35 @@ void applyEnvironmentOverrides(Config& cfg) {
                 host.substr(start, end - start + 1));
         }
     }
+    // Certificate pins: "host1=sha256-A,sha256-B;host2=sha256-C".
+    // Malformed entries are skipped loudly - a dropped pin is announced
+    // rather than silently weakening the host's constraint.
+    if (const char* pinsEnv = std::getenv("LETHE_CERT_PINS")) {
+        cfg.certPins.clear();
+        std::istringstream stream(pinsEnv);
+        std::string hostSpec;
+        while (std::getline(stream, hostSpec, ';')) {
+            const size_t eq = hostSpec.find('=');
+            if (eq == std::string::npos) {
+                if (!hostSpec.empty()) {
+                    std::cerr << "[lethe] LETHE_CERT_PINS: ignoring malformed"
+                              << " entry (no '='): " << hostSpec << std::endl;
+                }
+                continue;
+            }
+            const std::string host = toLowerCopy(hostSpec.substr(0, eq));
+            if (host.empty()) continue;
+            std::istringstream pinStream(hostSpec.substr(eq + 1));
+            std::string pin;
+            while (std::getline(pinStream, pin, ',')) {
+                const size_t start = pin.find_first_not_of(" \t");
+                if (start == std::string::npos) continue;
+                const size_t end = pin.find_last_not_of(" \t");
+                cfg.certPins[host].push_back(
+                    pin.substr(start, end - start + 1));
+            }
+        }
+    }
 }
 
 int Engine::initialize(const Config& cfg) {
@@ -135,6 +164,9 @@ void Engine::shutdown() {
     if (hstsCache_) {
         hstsCache_->clear(); // learned HSTS policy never persists
         hstsCache_.reset();
+    }
+    if (certPinner_) {
+        certPinner_.reset(); // pins are process configuration, never persisted
     }
     if (cookieJar_) {
         const size_t purged = cookieJar_->size();
@@ -215,6 +247,31 @@ void Engine::init_network_stack() {
     }
     httpClient_->setPrivateNetworkPolicy(std::move(netPolicy));
 
+    // Certificate pinning: pinned hosts accept only chains whose SPKI
+    // hashes match a configured pin - on every hop, redirects included.
+    size_t pinTotal = 0;
+    if (!config_.certPins.empty()) {
+        certPinner_ = std::make_unique<CertPinner>();
+        for (const auto& [host, pinList] : config_.certPins) {
+            for (const auto& pin : pinList) {
+                if (!certPinner_->addPin(host, pin)) {
+                    std::cerr << "[lethe] Invalid certificate pin for "
+                              << host << " ignored: " << pin << std::endl;
+                    continue;
+                }
+                ++pinTotal;
+            }
+        }
+        if (certPinner_->pinCount() > 0) {
+            httpClient_->enableCertPinning(certPinner_.get());
+            std::cout << "[lethe] Certificate pinning active for "
+                      << certPinner_->hostCount() << " host(s), "
+                      << certPinner_->pinCount() << " pin(s)" << std::endl;
+        } else {
+            certPinner_.reset();
+        }
+    }
+
     std::cout << "[lethe] Network stack initialized (TLS "
               << MIN_TLS_VERSION << "+, DoH: "
               << (httpClient_->isDohEnabled() ? "on" : "off")
@@ -222,6 +279,7 @@ void Engine::init_network_stack() {
               << ", cookies: partitioned, HSTS: enforced"
               << ", private-net: "
               << (config_.isolatePrivateNetworks ? "isolated" : "open")
+              << ", pins: " << pinTotal
               << ")" << std::endl;
 }
 
