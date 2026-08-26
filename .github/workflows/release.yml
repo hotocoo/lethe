@@ -112,8 +112,9 @@ jobs:
           $exe = Get-ChildItem -Recurse -Filter lethe-win.exe build | Select-Object -First 1
           Copy-Item $exe.FullName "dist/Lethe-$ver-windows-x64.exe"
       - name: Attach to release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$env:TAG" >/dev/null 2>&1 || gh release create "$env:TAG" --title "Lethe $env:TAG" --generate-notes
-          gh release upload "$env:TAG" dist/*.exe --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Lethe $TAG" --generate-notes
+          gh release upload "$TAG" dist/*.exe --clobber
