@@ -98,3 +98,19 @@ jobs:
           # checks stay fully active.
           ASAN_OPTIONS: detect_leaks=0
         run: ctest --output-on-failure
+
+  windows-webview:
+    name: Windows WebView2 host
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.2210.55 -OutputDirectory packages
+          $dir = Get-ChildItem packages/Microsoft.Web.WebView2 -Directory | Select-Object -First 1
+          echo "WEBVIEW2_DIR=$($dir.FullName)" >> $env:GITHUB_ENV
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWEBVIEW2_DIR="${env:WEBVIEW2_DIR}"
+      - name: Build lethe-win
+        run: cmake --build build --config Release --target lethe-win

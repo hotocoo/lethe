@@ -83,3 +83,33 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "Lethe $TAG" --generate-notes
           gh release upload "$TAG" dist/*.tar.gz --clobber
+
+  windows:
+    name: Windows .exe (WebView2)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - name: Restore WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.2210.55 -OutputDirectory packages
+          $dir = Get-ChildItem packages/Microsoft.Web.WebView2 -Directory | Select-Object -First 1
+          echo "WEBVIEW2_DIR=$($dir.FullName)" >> $env:GITHUB_ENV
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWEBVIEW2_DIR="${env:WEBVIEW2_DIR}"
+          cmake --build build --config Release --target lethe-win
+      - name: Stage exe
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path CMakeLists.txt -Pattern 'project\(lethe VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build/lethe-win/Release/lethe-win.exe "dist/Lethe-$ver-windows-x64-setup.exe"
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$env:TAG" >/dev/null 2>&1 || gh release create "$env:TAG" --title "Lethe $env:TAG" --generate-notes
+          gh release upload "$env:TAG" dist/*.exe --clobber
