@@ -18,6 +18,34 @@ endif()
 option(BUILD_UI "Build the GUI application" ON)
 option(USE_FULLWEB "Embed the platform web engine for full-web mode" ON)
 
+# ---------------------------------------------------------------------------
+# Windows: ships ONLY the WebView2 full-web host (src/win/lethe_win.cpp).
+# The POSIX core (sockets, Seatbelt/seccomp sandboxing) does not build there
+# yet; early-return so no POSIX target is even configured.
+# ---------------------------------------------------------------------------
+if(WIN32)
+    add_executable(lethe-win WIN32 src/win/lethe_win.cpp)
+    target_compile_definitions(lethe-win PRIVATE
+        UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    target_link_libraries(lethe-win PRIVATE
+        user32 gdi32 shell32 shlwapi ws2_32 ole32 oleaut32 uuid comctl32)
+    if(DEFINED WEBVIEW2_DIR AND EXISTS "${WEBVIEW2_DIR}/build/native/include/WebView2.h")
+        target_include_directories(lethe-win PRIVATE
+            "${WEBVIEW2_DIR}/build/native/include")
+        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+            target_link_libraries(lethe-win PRIVATE
+                "${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib")
+        else()
+            target_link_libraries(lethe-win PRIVATE
+                "${WEBVIEW2_DIR}/build/native/x86/WebView2LoaderStatic.lib")
+        endif()
+    else()
+        message(FATAL_ERROR "WEBVIEW2_DIR must point at the extracted "
+            "Microsoft.Web.WebView2 nuget package")
+    endif()
+    return()
+endif()
+
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0")
     # Build for native architecture only (Homebrew libs may be single-arch).
@@ -284,23 +312,3 @@ message(STATUS "  Sandbox: ${BUILD_WITH_SANDBOX}")
 message(STATUS "  Hardened: ${BUILD_HARDENED}")
 message(STATUS "  Tests: ${BUILD_TESTS}")
 message(STATUS "  UI: ${BUILD_UI}")
-
-# --- Windows: WebView2 full-web host (.exe) ---
-# Built by the windows CI job (MSVC + WebView2 SDK via nuget). The POSIX
-# core does not compile on Windows yet; this host enforces Lethe policy at
-# the navigation layer and is honest about that in its header comment.
-if(WIN32)
-    add_executable(lethe-win WIN32 src/win/lethe_win.cpp)
-    target_compile_definitions(lethe-win PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
-    target_link_libraries(lethe-win PRIVATE user32 gdi32 shell32 shlwapi ws2_32 ole32 oleaut32 uuid)
-    if(DEFINED WEBVIEW2_DIR AND EXISTS "${WEBVIEW2_DIR}/build/native/include/WebView2.h")
-        target_include_directories(lethe-win PRIVATE "${WEBVIEW2_DIR}/build/native/include")
-        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-            target_link_libraries(lethe-win PRIVATE "${WEBVIEW2_DIR}/build/native/x64/WebView2LoaderStatic.lib")
-        else()
-            target_link_libraries(lethe-win PRIVATE "${WEBVIEW2_DIR}/build/native/x86/WebView2LoaderStatic.lib")
-        endif()
-    else()
-        message(STATUS "[lethe] WEBVIEW2_DIR not provided - lethe-win will not link WebView2")
-    endif()
-endif()
