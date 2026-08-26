@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(lethe VERSION 1.0.0 LANGUAGES CXX)
+project(lethe VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,7 +33,7 @@ if(BUILD_HARDENED)
     endif()
 endif()
 
-add_compile_definitions(-DLETHE_VERSION="1.0.0")
+add_compile_definitions(-DLETHE_VERSION="1.1.0")
 add_compile_definitions(-DLETHE_MIN_TLS_VERSION=0x0304)
 add_compile_definitions(-DLETHE_MAX_TLS_VERSION=0x0305)
 
@@ -124,6 +124,10 @@ target_link_libraries(lethe-vpn-server PRIVATE lethe_core)
 
 # End-to-end VPN client (for verifying a running lethe-vpn-server).
 add_executable(lethe-vpn-e2e-client tools/e2e_client.cc)
+
+# Local throughput probe of the real HTTP stack (used by docs/COMPARISON.md).
+add_executable(lethe-fetch-bench EXCLUDE_FROM_ALL tools/fetch_bench.cc)
+target_link_libraries(lethe-fetch-bench PRIVATE lethe_core)
 target_link_libraries(lethe-vpn-e2e-client PRIVATE lethe_core)
 
 # Install the runnable network tools alongside the browser.

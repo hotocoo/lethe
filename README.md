@@ -14,22 +14,29 @@ Prebuilt, self-contained binaries ship with every release:
 | `Lethe-<ver>-macos-arm64.dmg` | macOS 13+ (Apple Silicon) | Bundles its own GTK/OpenSSL runtime — no Homebrew required |
 | `lethe-<ver>-linux-<arch>-ubuntu24.04.tar.gz` | Linux (glibc 2.39+) | Needs system GTK3 / OpenSSL 3 / libseccomp |
 | `lethe-<ver>-linux-x86_64-ubuntu22.04.tar.gz` | Linux x86_64 | Same runtime deps on older glibc |
+| `Lethe-<ver>-windows-x64.exe` | Windows 10+ (x64) | WebView2 host; Evergreen runtime auto-installs |
+
+Honest cross-browser security/performance comparison:
+**docs/COMPARISON.md** — including where Lethe loses.
 
 ## Scope & Honest Limitations (read before judging)
 
-Lethe v1.0.0 is a **privacy-hardened network stack with a reader-mode
-front end**, not a full web engine:
+Lethe ships two rendering paths, and honesty about both:
 
-- Pages render as extracted readable text (titles, headings, lists).
-  There is **no JavaScript execution, no CSS layout, and no media
-  playback** — YouTube-style sites do not work in the reader viewport.
-  This is a deliberate attack-surface trade-off of the minimal engine,
-  and the reason Lethe can make strong no-JS guarantees today.
-- Full-web mode (platform engine embedding behind Lethe's policy
-  proxy) is tracked for the next release; until then Lethe is honest
-  about what it cannot render.
-- The macOS DMG is ad-hoc signed (no Apple Developer ID notarization
-  yet); Gatekeeper requires right-click → Open on first launch.
+- **Reader mode** (default): extracted readable text only — no JS/CSS/
+  media execution. Strong no-JS guarantees, YouTube-class sites do NOT
+  work here by design.
+- **Full-web mode** (Ctrl+Shift+W / menu): embeds the PLATFORM engine —
+  WKWebView (macOS), WebKitGTK (Linux), WebView2 (Windows .exe) — so
+  JavaScript, CSS and video work. Every navigation is gated by Lethe's
+  policy (DoH-only resolution, private-network guard, VPN fail-closed);
+  on Linux all transport rides the local policy proxy. Inside CONNECT
+  tunnels TLS stays end-to-end, so pinning/HSTS inspection does not apply
+  there (documented, not hidden).
+- The reader renderer is single-process with no renderer sandbox; see
+  docs/COMPARISON.md for the full honest weakness list.
+- The macOS DMG is ad-hoc signed (no Developer ID notarization yet);
+  right-click → Open on first launch.
 
 Everything the README claims below the renderer line — DoH-only
 resolution, HSTS, certificate pinning, SSRF isolation, partitioned

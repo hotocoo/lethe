@@ -2,6 +2,22 @@
 
 All notable changes to Lethe are documented in this file.
 
+## [1.1.0] — 2025
+
+### Full-web mode: platform engines behind Lethe policy
+- Local PolicyProxyServer: HTTP forwarding + CONNECT splicing where every
+  dial runs DoH-only resolution, private-network scope checks and VPN
+  fail-closed routing; CONNECT is raw so engines keep end-to-end TLS
+- macOS: WKWebView embedding with navigation gating and raster-scale
+  control (FSR-style downscale AND DLAA-style supersampling up to 2.0x)
+- Linux: WebKitGTK wired to the local proxy for subresource-level
+  transport enforcement
+- Windows: WebView2 host executable (.exe) with navigation policy gate,
+  resolved-address scope classification and native RasterizationScale
+- docs/COMPARISON.md: honest cross-browser security/performance audit
+  (Chrome/Firefox/Safari/Edge/Brave/Tor), including Lethe's weaknesses
+- 5 new proxy security tests incl. verified TLS 1.3 splice; suite at 210
+
 ## [1.0.0] — 2025
 
 ### Browser engine & OS integration
