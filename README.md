@@ -4,6 +4,38 @@
 
 Minimalist, high-performance browser with maximum security and a built-in VPN, built as the native browser for the Aletheia OS. Lethe's secure network stack is also used by the OS's LLM agent for private, encrypted web searching.
 
+## Downloads
+
+Prebuilt, self-contained binaries ship with every release:
+**https://github.com/hotocoo/lethe/releases/latest**
+
+| Artifact | Platform | Notes |
+|---|---|---|
+| `Lethe-<ver>-macos-arm64.dmg` | macOS 13+ (Apple Silicon) | Bundles its own GTK/OpenSSL runtime — no Homebrew required |
+| `lethe-<ver>-linux-<arch>-ubuntu24.04.tar.gz` | Linux (glibc 2.39+) | Needs system GTK3 / OpenSSL 3 / libseccomp |
+| `lethe-<ver>-linux-x86_64-ubuntu22.04.tar.gz` | Linux x86_64 | Same runtime deps on older glibc |
+
+## Scope & Honest Limitations (read before judging)
+
+Lethe v1.0.0 is a **privacy-hardened network stack with a reader-mode
+front end**, not a full web engine:
+
+- Pages render as extracted readable text (titles, headings, lists).
+  There is **no JavaScript execution, no CSS layout, and no media
+  playback** — YouTube-style sites do not work in the reader viewport.
+  This is a deliberate attack-surface trade-off of the minimal engine,
+  and the reason Lethe can make strong no-JS guarantees today.
+- Full-web mode (platform engine embedding behind Lethe's policy
+  proxy) is tracked for the next release; until then Lethe is honest
+  about what it cannot render.
+- The macOS DMG is ad-hoc signed (no Apple Developer ID notarization
+  yet); Gatekeeper requires right-click → Open on first launch.
+
+Everything the README claims below the renderer line — DoH-only
+resolution, HSTS, certificate pinning, SSRF isolation, partitioned
+cookies, WireGuard-style VPN with fail-closed routing — is real,
+socket-level code exercised by the 205-test suite and e2e scripts.
+
 ## Features
 
 ### Performance
