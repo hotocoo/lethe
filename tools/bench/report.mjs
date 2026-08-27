@@ -33,7 +33,7 @@ const sites = docs[0].sites || [];
 if (sites.length) {
   out += '| Site | Metric | ' + labels.join(' | ') + ' |\n|---|---|' + labels.map(() => '---').join('|') + '|\n';
   for (const site of sites) {
-    for (const [metric, key, d] of [['TTFB', 'ttfb', 0], ['First paint', 'fcp', 0], ['load event', 'load', 0], ['Requests', 'resources', 0], ['Bytes (KB)', 'bytes', 0]]) {
+    for (const [metric, key, d] of [['TTFB', 'ttfb', 0], ['First paint', 'fcp', 0], ['load event', 'load', 0], ['Requests', 'resources', 0], ['Reported bytes (KB)*', 'bytes', 0]]) {
       const cells = labels.map(l => {
         const ps = by(l).flatMap(doc => doc.pageload.filter(p => p.url === site || (p.url && site && p.url.replace(/\/$/, '') === site.replace(/\/$/, ''))));
         if (!ps.length) return 'n/a';
@@ -44,7 +44,7 @@ if (sites.length) {
       out += `| ${metric === 'TTFB' ? site.replace(/^https?:\/\//, '') : ''} | ${metric} | ${cells.join(' | ')} |\n`;
     }
   }
-  out += '\n';
+  out += '\n\\* Transfer sizes as the page\'s own Performance API reports them. WebKit reports 0 for cross-origin resources without `Timing-Allow-Origin`, Chromium reports them; the bytes column is therefore comparable between Lethe variants, not between Lethe and Chrome. Request counts are comparable.\n\n';
 }
 
 // Benchmarks
@@ -55,7 +55,8 @@ for (const [name, key] of [['Speedometer 3.1 (higher is better)', 'speedometer']
 }
 const yt = labels.map(l => { const v = by(l).map(d => d.youtube).filter(y => y && !y.error); if (!v.length) return null;
   const dropped = median(v.map(y => y.droppedFrames)), total = median(v.map(y => y.totalFrames));
-  const marks = by(l).map(d => { const a = d.memory.find(m => m.name === 'youtube:start'), b = d.memory.find(m => m.name === 'youtube:end'); return a && b ? { cpu: b.cpuSec - a.cpuSec, rss: b.rssMb } : null; }).filter(Boolean);
+  // A sample taken after the process already exited (early harness race) has fewer processes / less CPU than at start: discard it.
+  const marks = by(l).map(d => { const a = d.memory.find(m => m.name === 'youtube:start'), b = d.memory.find(m => m.name === 'youtube:end'); return a && b && b.processes >= 3 && b.cpuSec >= a.cpuSec ? { cpu: b.cpuSec - a.cpuSec, rss: b.rssMb } : null; }).filter(Boolean);
   return `${fmt(dropped)}/${fmt(total)} dropped, ${fmt(median(v.map(y => y.height)))}p, CPU ${fmt(median(marks.map(m => m.cpu)), 1)} s / 20 s, RSS ${fmt(median(marks.map(m => m.rss)))} MB`; });
 if (yt.some(v => v)) rows.push(`| YouTube 20 s muted playback | ${yt.map(v => v ?? 'n/a').join(' | ')} |`);
 if (rows.length) {

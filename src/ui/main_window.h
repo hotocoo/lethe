@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "core/engine.h"
+#include "network/doh_resolver.h"
 #include "network/http_client.h"
 #include "network/tls_config.h"
 
@@ -35,6 +36,7 @@ struct ShellOptions {
     TLSConfig tls;
     int proxyPort = 0;         // local PolicyProxyServer (0 = none)
     std::shared_ptr<SharedDohCache> dohCache;  // shared by gate, reader, proxy
+    std::shared_ptr<SharedDohResolver> dohResolver;  // keep-alive pool, same sharing
     std::string proxyAuthToken; // per-launch secret WebKit presents to the proxy
     bool httpsFirst = true;     // upgrade top-level http:// to https:// first
     bool trackerBlocking = true; // built-in third-party tracker rules (content filter)

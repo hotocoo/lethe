@@ -24,6 +24,7 @@
 #include <string>
 
 #include "core/engine.h"
+#include "network/doh_resolver.h"
 #include "network/http_client.h"
 #include "network/tls_config.h"
 
@@ -38,6 +39,7 @@ struct ShellContext {
     bool httpsFirst = true;   // upgrade top-level http:// to https:// first
     bool trackerBlocking = true;  // built-in third-party tracker rules (WKContentRuleList)
     std::shared_ptr<SharedDohCache> dohCache;  // shared by gate, reader, proxy
+    std::shared_ptr<SharedDohResolver> dohResolver;  // keep-alive pool, same sharing
     bool persistent = false;  // false = ephemeral (incognito) data store
     std::string homeUrl;      // "" = built-in new-tab page
     std::function<void()> onTerminate;  // engine/proxy shutdown

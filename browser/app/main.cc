@@ -115,6 +115,22 @@ int main(int argc, char** argv) {
     if (const char* sc = std::getenv("LETHE_DOH_SHARED_CACHE");
         !(sc && (std::string(sc) == "0" || std::string(sc) == "off")))
         shell.dohCache = std::make_shared<lethe::SharedDohCache>();
+    // LETHE_DOH_POOL=0 disables the pool (per-query provider handshakes, as
+    // in 0.1.0) so its effect can be measured with tools/bench.
+    const char* poolEnv = std::getenv("LETHE_DOH_POOL");
+    const bool usePool = !(poolEnv && (std::string(poolEnv) == "0" || std::string(poolEnv) == "off"));
+    if (!cfg.dnsProvider.empty() && usePool) {
+        const lethe::TLSConfig rtls = tls;
+        const std::string provider = cfg.dnsProvider;
+        auto cache = shell.dohCache;
+        shell.dohResolver = std::make_shared<lethe::SharedDohResolver>([rtls, provider, cache]() {
+            auto c = std::make_unique<lethe::HttpClient>();
+            c->initialize(rtls);
+            c->setDohProvider(provider);
+            if (cache) c->setSharedDohCache(cache);
+            return c;
+        });
+    }
 #if defined(HAVE_FULLWEB)
     shell.webkitSandbox = webkitSandbox;
 #endif
@@ -125,6 +141,8 @@ int main(int argc, char** argv) {
         po.tls = tls;
         po.dohProvider = cfg.dnsProvider;
         po.dohCache = shell.dohCache;
+        po.dohResolver = shell.dohResolver;
+        po.disableDohResolverPool = !usePool;
         po.authToken = lethe::PolicyProxyServer::generateAuthToken();
         if (po.authToken.empty()) {
             std::cerr << "[lethe] cannot generate proxy auth token (CSPRNG failure)" << std::endl;

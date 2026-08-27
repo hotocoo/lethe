@@ -6,6 +6,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "network/doh_resolver.h"
 #include "network/http_client.h"
 #include "network/tls_config.h"
 
@@ -35,6 +36,13 @@ public:
         // every proxied connection still shares one; pass the browser's
         // cache to share with the navigation gate and reader as well.
         std::shared_ptr<SharedDohCache> dohCache;
+        // Shared keep-alive DoH resolver pool; created here when null and a
+        // provider is set, so proxied connections never pay TCP + TLS to the
+        // provider per query.
+        std::shared_ptr<SharedDohResolver> dohResolver;
+        // Measurement switch: do not auto-create the pool (per-query
+        // provider handshakes, the 0.1.0 behaviour).
+        bool disableDohResolverPool = false;
         // Private-network policy applied verbatim.
         PrivateNetworkPolicy privateNet;
         // Shared VPN tunnel for routing decisions + covered relaying.

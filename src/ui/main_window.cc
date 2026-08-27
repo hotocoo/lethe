@@ -30,6 +30,7 @@ std::unique_ptr<HttpClient> makeClient(Engine* engine, const ShellOptions& o) {
     const Config& cfg = engine->config();
     if (!cfg.dnsProvider.empty()) c->setDohProvider(cfg.dnsProvider);
     if (o.dohCache) c->setSharedDohCache(o.dohCache);
+    if (o.dohResolver) c->setSharedDohResolver(o.dohResolver);
     PrivateNetworkPolicy pn;
     pn.isolatePrivateNetworks = cfg.isolatePrivateNetworks;
     for (const auto& h : cfg.privateNetworkAllowedHosts) pn.allowedHosts.insert(h);

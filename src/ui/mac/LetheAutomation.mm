@@ -104,12 +104,21 @@
 }
 
 - (void)next {
-    // Refresh current tab: prefer the key window if it is one of ours.
+    // Refresh current tab like a user's eyes would: the key window when the
+    // app is active; otherwise the selected tab of the current window's tab
+    // group (another app - e.g. a benchmark's Chrome - holding focus must
+    // not change what the script sees).
     NSWindowController* keyWc = [NSApp keyWindow].windowController;
     if ([keyWc isKindOfClass:[BrowserWindowController class]] &&
         [app_.controllers containsObject:(BrowserWindowController*)keyWc]) {
         current_ = (BrowserWindowController*)keyWc;
-    } else if (![app_.controllers containsObject:current_]) {
+    } else if ([app_.controllers containsObject:current_]) {
+        NSWindowController* selWc = current_.window.tabGroup.selectedWindow.windowController;
+        if ([selWc isKindOfClass:[BrowserWindowController class]] &&
+            [app_.controllers containsObject:(BrowserWindowController*)selWc]) {
+            current_ = (BrowserWindowController*)selWc;
+        }
+    } else {
         current_ = app_.controllers.lastObject;
     }
     while (index_ < lines_.count) {

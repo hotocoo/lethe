@@ -29,8 +29,16 @@ public:
         : ttl_(ttl), maxEntries_(maxEntries) {}
 
     // Resolved answers ------------------------------------------------
+    // true when an entry exists. outIp is the address, or "" for a cached
+    // NEGATIVE answer (the provider answered and had no A record).
     bool lookup(const std::string& provider, const std::string& host, std::string& outIp);
     void store(const std::string& provider, const std::string& host, const std::string& ip);
+    // A provider that answered "no such address" is authoritative for a
+    // short while: repeated connection attempts to the same dead host
+    // (engines retry) must not each cost a provider round trip. Transport
+    // failures are never cached - fail-closed retries stay immediate.
+    void storeNegative(const std::string& provider, const std::string& host);
+    std::chrono::seconds negativeTtl() const { return negativeTtl_; }
 
     // Provider bootstrap addresses (the provider's own IPs, system-resolved
     // once per TTL instead of once per client).
@@ -63,6 +71,7 @@ private:
     std::map<std::string, Entry> entries_;
     std::map<std::string, Bootstrap> bootstrap_;
     std::chrono::seconds ttl_;
+    std::chrono::seconds negativeTtl_{30};
     size_t maxEntries_;
     Stats stats_;
 };

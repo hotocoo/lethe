@@ -35,6 +35,17 @@ void SharedDohCache::store(const std::string& provider, const std::string& host,
     entries_[key(provider, host)] = Entry{ip, now + ttl_};
 }
 
+void SharedDohCache::storeNegative(const std::string& provider, const std::string& host) {
+    if (ttl_.count() <= 0 || negativeTtl_.count() <= 0) return;
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(mu_);
+    if (entries_.size() >= maxEntries_) {
+        evictExpiredLocked(now);
+        if (entries_.size() >= maxEntries_) entries_.clear();
+    }
+    entries_[key(provider, host)] = Entry{"", now + negativeTtl_};
+}
+
 bool SharedDohCache::lookupBootstrap(const std::string& provider,
                                      std::vector<std::string>& outIps) {
     if (ttl_.count() <= 0) return false;

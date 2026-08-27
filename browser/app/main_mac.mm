@@ -96,6 +96,24 @@ int main(int argc, char** argv) {
     if (const char* sc = std::getenv("LETHE_DOH_SHARED_CACHE");
         !(sc && (std::string(sc) == "0" || std::string(sc) == "off")))
         ctx.dohCache = std::make_shared<lethe::SharedDohCache>();
+    // Keep-alive resolver pool: DoH queries ride a few persistent TLS
+    // connections to the provider instead of one handshake per query.
+    // LETHE_DOH_POOL=0 disables the pool (per-query provider handshakes, as
+    // in 0.1.0) so its effect can be measured with tools/bench.
+    const char* poolEnv = std::getenv("LETHE_DOH_POOL");
+    const bool usePool = !(poolEnv && (std::string(poolEnv) == "0" || std::string(poolEnv) == "off"));
+    if (!cfg.dnsProvider.empty() && usePool) {
+        const lethe::TLSConfig rtls = tls;
+        const std::string provider = cfg.dnsProvider;
+        auto cache = ctx.dohCache;
+        ctx.dohResolver = std::make_shared<lethe::SharedDohResolver>([rtls, provider, cache]() {
+            auto c = std::make_unique<lethe::HttpClient>();
+            c->initialize(rtls);
+            c->setDohProvider(provider);
+            if (cache) c->setSharedDohCache(cache);
+            return c;
+        });
+    }
 
     lethe::PolicyProxyServer proxy;
     if (useProxy) {
@@ -103,6 +121,8 @@ int main(int argc, char** argv) {
         po.tls = tls;
         po.dohProvider = cfg.dnsProvider;
         po.dohCache = ctx.dohCache;
+        po.dohResolver = ctx.dohResolver;
+        po.disableDohResolverPool = !usePool;
         po.privateNet.isolatePrivateNetworks = cfg.isolatePrivateNetworks;
         for (const auto& h : cfg.privateNetworkAllowedHosts)
             po.privateNet.allowedHosts.insert(h);

@@ -157,6 +157,18 @@ bool PolicyProxyServer::start(const Options& options) {
     ::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&addr), &len);
     port_ = ntohs(addr.sin_port);
     if (!opts_.dohCache) opts_.dohCache = std::make_shared<SharedDohCache>();
+    if (!opts_.dohResolver && !opts_.dohProvider.empty() && !opts_.disableDohResolverPool) {
+        const TLSConfig tls = opts_.tls;
+        const std::string provider = opts_.dohProvider;
+        auto cache = opts_.dohCache;
+        opts_.dohResolver = std::make_shared<SharedDohResolver>([tls, provider, cache]() {
+            auto c = std::make_unique<HttpClient>();
+            c->initialize(tls);
+            c->setDohProvider(provider);
+            c->setSharedDohCache(cache);
+            return c;
+        });
+    }
     running_ = true;
     acceptThread_ = std::thread([this] { acceptLoop(); });
     return true;
@@ -185,6 +197,7 @@ HttpClient::PolicyDialConfig PolicyProxyServer::dialConfig() const {
     cfg.tls = opts_.tls;
     cfg.dohProvider = opts_.dohProvider;
     cfg.dohCache = opts_.dohCache;
+    cfg.dohResolver = opts_.dohResolver;
     cfg.privateNet = opts_.privateNet;
     cfg.vpnTunnel = opts_.vpnTunnel;
     cfg.vpnUdp = static_cast<UdpTransport*>(opts_.udpTransport);
@@ -320,6 +333,7 @@ void PolicyProxyServer::serveConnection(int clientFd) {
     client->initialize(cfg.tls);
     if (!cfg.dohProvider.empty()) client->setDohProvider(cfg.dohProvider);
     if (cfg.dohCache) client->setSharedDohCache(cfg.dohCache);
+    if (cfg.dohResolver) client->setSharedDohResolver(cfg.dohResolver);
     client->setPrivateNetworkPolicy(cfg.privateNet);
     if (cfg.vpnTunnel)
         client->setVpnTunnel(std::shared_ptr<vpn::VpnTunnel>(

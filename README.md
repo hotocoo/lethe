@@ -368,7 +368,7 @@ the Linux tarball.
 ## Running Tests
 
 ```bash
-# Run the full test suite (230 tests)
+# Run the full test suite (234 tests)
 ./build/lethe_tests
 
 # Or with ctest

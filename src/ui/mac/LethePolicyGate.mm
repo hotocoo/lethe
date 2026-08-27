@@ -27,6 +27,7 @@ static std::unique_ptr<lethe::HttpClient> makeClient(const lethe::ShellContext& 
     c->initialize(ctx.tls);
     if (!ctx.cfg.dnsProvider.empty()) c->setDohProvider(ctx.cfg.dnsProvider);
     if (ctx.dohCache) c->setSharedDohCache(ctx.dohCache);
+    if (ctx.dohResolver) c->setSharedDohResolver(ctx.dohResolver);
     lethe::PrivateNetworkPolicy pn;
     pn.isolatePrivateNetworks = ctx.cfg.isolatePrivateNetworks;
     for (const auto& h : ctx.cfg.privateNetworkAllowedHosts) pn.allowedHosts.insert(h);

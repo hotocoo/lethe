@@ -67,12 +67,15 @@ const METRICS_JS = `(function(){
 })()`;
 const SPEEDOMETER_DONE_JS = `(function(){ var e = document.querySelector('#result-number');
   return e && e.textContent.trim() ? e.textContent.trim() : ''; })()`;
-const JETSTREAM_START_JS = `(function(){ if (typeof JetStream !== 'undefined' && JetStream.start) { JetStream.start(); return 'started'; } return ''; })()`;
+// JetStream preloads its workloads first; the "Start Test" link appears only
+// when that is done and start() before it silently does nothing useful.
+const JETSTREAM_START_JS = `(function(){ var a = document.querySelector('#status a.button');
+  if (a && typeof JetStream !== 'undefined' && JetStream.start) { JetStream.start(); return 'started'; } return ''; })()`;
 const JETSTREAM_DONE_JS = `(function(){ var e = document.querySelector('#result-summary .score');
   return e && e.textContent.trim() ? e.textContent.trim() : ''; })()`;
 const MOTIONMARK_START_JS = `(function(){ if (typeof benchmarkController !== 'undefined') { benchmarkController.startBenchmark(); return 'started'; } return ''; })()`;
 const MOTIONMARK_DONE_JS = `(function(){ var r = document.querySelector('#results'); if (!r) return '';
-  var e = r.querySelector('.score'); var t = e && e.textContent.trim(); return t && /\d/.test(t) ? t : ''; })()`;
+  var e = r.querySelector('.score'); var t = e && e.textContent.trim(); return t && /[0-9]/.test(t) ? t : ''; })()`;
 // YouTube: pick the <video>, mute, play; report decoded/dropped frames.
 const YOUTUBE_START_JS = `(function(){ var v = document.querySelector('video'); if (!v) return '';
   v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function(){}); return v.readyState >= 1 ? 'ready' : ''; })()`;
@@ -106,6 +109,7 @@ function buildSteps() {
     steps.push({ op: 'mark', name: 'youtube:start' });
     steps.push({ op: 'sleep', ms: YOUTUBE_PLAY_MS });
     steps.push({ op: 'mark', name: 'youtube:end' });
+    steps.push({ op: 'sleep', ms: 1500 });   // keep the process alive while the harness samples
     steps.push({ op: 'eval', js: YOUTUBE_STATS_JS, key: 'youtube:stats' });
   }
   if (SUITES.includes('speedometer')) {
@@ -113,6 +117,7 @@ function buildSteps() {
     steps.push({ op: 'mark', name: 'speedometer:start' });
     steps.push({ op: 'waitJs', js: SPEEDOMETER_DONE_JS, timeout: SPEEDOMETER_TIMEOUT });
     steps.push({ op: 'mark', name: 'speedometer:end' });
+    steps.push({ op: 'sleep', ms: 1500 });   // keep the process alive while the harness samples
     steps.push({ op: 'eval', js: SPEEDOMETER_DONE_JS, key: 'speedometer:score' });
   }
   if (SUITES.includes('jetstream')) {
@@ -121,6 +126,7 @@ function buildSteps() {
     steps.push({ op: 'mark', name: 'jetstream:start' });
     steps.push({ op: 'waitJs', js: JETSTREAM_DONE_JS, timeout: JETSTREAM_TIMEOUT });
     steps.push({ op: 'mark', name: 'jetstream:end' });
+    steps.push({ op: 'sleep', ms: 1500 });   // keep the process alive while the harness samples
     steps.push({ op: 'eval', js: JETSTREAM_DONE_JS, key: 'jetstream:score' });
   }
   if (SUITES.includes('motionmark')) {
@@ -129,6 +135,7 @@ function buildSteps() {
     steps.push({ op: 'mark', name: 'motionmark:start' });
     steps.push({ op: 'waitJs', js: MOTIONMARK_DONE_JS, timeout: MOTIONMARK_TIMEOUT });
     steps.push({ op: 'mark', name: 'motionmark:end' });
+    steps.push({ op: 'sleep', ms: 1500 });   // keep the process alive while the harness samples
     steps.push({ op: 'eval', js: MOTIONMARK_DONE_JS, key: 'motionmark:score' });
   }
   steps.push({ op: 'quit' });

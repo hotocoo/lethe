@@ -48,6 +48,14 @@ Lethe and Google Chrome through identical steps on the same machine and
   thread-safe `SharedDohCache` now serves the navigation gate, reader
   fetches and every proxied connection. `LETHE_DOH_SHARED_CACHE=0` restores
   the old behaviour for measurement.
+- **Shared keep-alive DoH resolver pool** (2026-08-28 00:55 KL): measuring
+  the cache showed the real cost was elsewhere - every DoH query opened a
+  fresh TCP + TLS connection to the provider (34 handshakes for two news
+  pages). Four pooled resolver clients now keep their provider connection
+  open and serve every client in the process; a valid "no such address"
+  answer is final (no second provider IP) and cached for 30 s so engine
+  retries of a dead host cost nothing. Same two pages: 3 handshakes.
+  `LETHE_DOH_POOL=0` restores per-query handshakes for measurement.
 - **407 keep-alive**: engines do not remember proxy credentials across
   connections; the authenticated retry now rides the same socket instead of
   reconnecting.
@@ -66,7 +74,10 @@ Lethe and Google Chrome through identical steps on the same machine and
   `assert-oblivion`; `tests/e2e/security.lethe` proves HTTPS-first,
   the fallback link, the tracker blocker and Oblivion isolation on macOS
   and Linux.
-- 230 unit tests (+9).
+- e2e driver (macOS) follows the tab group's selected window when another
+  app holds focus, so scripted runs are deterministic next to a running
+  benchmark browser.
+- 234 unit tests (+13).
 
 ## [0.1.0] — 2026-08-27
 

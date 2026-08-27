@@ -9,6 +9,7 @@
 //   - Redirect following (3xx + Location, up to 5 hops)
 
 #include "network/http_client.h"
+#include "network/doh_resolver.h"
 #include "network/udp_transport.h"
 #include "network/vpn/vpn_relay.h"
 
@@ -574,6 +575,14 @@ bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
     if (sharedDoh_ || !dohCache_.empty() || dohCacheTtl_.count() > 0) {
         std::string cached;
         if (dohCacheLookup(host, cached)) {
+            if (cached.empty()) {
+                // Cached negative answer: the provider recently said this
+                // name has no address. Fail closed without a round trip.
+                if (verboseHttpLog())
+                    std::cout << "[lethe-http][doh] " << host
+                              << " -> no address (cached negative)" << std::endl;
+                return false;
+            }
             outIp = cached;
             if (verboseHttpLog())
                 std::cout << "[lethe-http][doh] " << host << " -> " << cached
@@ -581,6 +590,10 @@ bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
             return true;
         }
     }
+
+    // Cache miss: a client that is not itself a pool member hands the query
+    // to the shared keep-alive pool instead of paying TCP + TLS here.
+    if (sharedResolver_ && !dohKeepAlive_) return sharedResolver_->resolve(host, outIp);
 
     std::string pscheme, phost, ppath;
     int pport = 0;
@@ -601,10 +614,19 @@ bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
     query += "name=" + urlEncode(host) + "&type=1"; // A record
 
     for (const auto& pip : dohProviderIps_) {
-        closeConnection();
-        if (!openTcp(pip, pport)) continue;
-        if (pscheme == "https" && !startTls(phost)) { // SNI/cert = provider name
-            continue;
+      // attempt 1 reuses a live keep-alive connection to this provider IP;
+      // if that turns out stale, attempt 2 dials fresh. Non-keep-alive
+      // clients always dial fresh and close afterwards (old behaviour).
+      for (int attempt = 0; attempt < 2; attempt++) {
+        const bool reuse = dohKeepAlive_ && socketFd_ >= 0 && dohConnIp_ == pip &&
+                           (pscheme != "https" || ssl_ != nullptr);
+        if (!reuse) {
+            closeConnection();
+            if (!openTcp(pip, pport)) break;
+            if (pscheme == "https" && !startTls(phost)) { // SNI/cert = provider name
+                break;
+            }
+            if (dohKeepAlive_) dohConnIp_ = pip;
         }
 
         const std::string reqStr =
@@ -612,12 +634,29 @@ bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
             "Host: " + phost + "\r\n"
             "Accept: application/dns-json\r\n"
             "User-Agent: lethe-doh\r\n"
-            "Connection: close\r\n\r\n";
+            "Connection: " + std::string(dohKeepAlive_ ? "keep-alive" : "close") + "\r\n\r\n";
 
         HttpResponse resp;
-        if (writeAll(reqStr.data(), reqStr.size()) && readFullResponse(resp) &&
-            resp.statusCode == 200) {
+        const bool answered = writeAll(reqStr.data(), reqStr.size()) &&
+                              readFullResponse(resp) && resp.statusCode == 200;
+        if (!answered) {
             closeConnection();
+            if (reuse) {
+                if (verboseHttpLog())
+                    std::cout << "[lethe-http][doh] keep-alive connection to " << pip
+                              << " was stale; redialing" << std::endl;
+                continue;   // stale keep-alive socket: one fresh retry
+            }
+            break;
+        }
+        if (!dohKeepAlive_ || !peerAllowsKeepAlive_ || http10Peer_ || bodyUntilEof_) {
+            if (dohKeepAlive_ && verboseHttpLog())
+                std::cout << "[lethe-http][doh] provider refused keep-alive ("
+                          << (http10Peer_ ? "HTTP/1.0" : bodyUntilEof_ ? "body until EOF" : "Connection: close")
+                          << ")" << std::endl;
+            closeConnection();
+        }
+        {
             // Extract the first IPv4 A record from the JSON Answer list.
             const std::string body(resp.body.data(), resp.body.size());
             size_t pos = 0;
@@ -638,9 +677,13 @@ bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
                     return true;
                 }
             }
-            continue; // valid response but no A record: try next provider IP
         }
-        closeConnection();
+        // A valid provider response with no A record IS the answer: do not
+        // ask the next provider IP (that only costs another handshake and
+        // drops the keep-alive connection), remember it briefly.
+        if (sharedDoh_) sharedDoh_->storeNegative(dohProvider_, host);
+        return false;
+      }
     }
     return false;
 }
@@ -1345,6 +1388,7 @@ void HttpClient::closeConnection() {
         socketFd_ = -1;
     }
     usingTls_ = false;
+    dohConnIp_.clear();
     // Nothing buffered belongs to a dead connection; keep-alive identity is
     // meaningless without a live one too.
     ioBuf_.clear();
@@ -2153,6 +2197,7 @@ PolicyStreamPtr HttpClient::dialPolicyChecked(const PolicyDialConfig& cfg,
     }
     if (!cfg.dohProvider.empty()) cli->setDohProvider(cfg.dohProvider);
     if (cfg.dohCache) cli->setSharedDohCache(cfg.dohCache);
+    if (cfg.dohResolver) cli->setSharedDohResolver(cfg.dohResolver);
     cli->setPrivateNetworkPolicy(cfg.privateNet);
     if (cfg.vpnTunnel) {
         // Non-owning alias: the engine keeps tunnel lifetime.

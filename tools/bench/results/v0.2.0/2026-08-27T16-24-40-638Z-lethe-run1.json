@@ -1,0 +1,358 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.2.0",
+  "run": 1,
+  "startedAt": "2026-08-27T16:24:40.638Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "speedometer",
+    "jetstream",
+    "motionmark"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 220.33199999999997,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 21: wait-js '(function(){ var r = document.querySelector('#results'); if (!r) return ''; var e = r.querySelector('.score'); var t = e && e.textContent.trim(); return t && /d/.test(t) ? t : ''; })()' still falsy after 900000 ms ()",
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": "44.5",
+  "jetstream": "557.877",
+  "motionmark": null,
+  "youtube": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 570.295,
+      "rssMb": 184.703125,
+      "processes": 4,
+      "cpuSec": 0.34,
+      "breakdown": [
+        {
+          "pid": 22384,
+          "rssMb": 109.8,
+          "cpuSec": 0.22,
+          "name": "lethe"
+        },
+        {
+          "pid": 22385,
+          "rssMb": 14,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 22386,
+          "rssMb": 31,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 22387,
+          "rssMb": 29.8,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "speedometer:start",
+      "tMs": 3255.264542,
+      "rssMb": 250.453125,
+      "processes": 5,
+      "cpuSec": 0.67,
+      "breakdown": [
+        {
+          "pid": 22384,
+          "rssMb": 130.8,
+          "cpuSec": 0.4,
+          "name": "lethe"
+        },
+        {
+          "pid": 22385,
+          "rssMb": 19.9,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 22386,
+          "rssMb": 33.9,
+          "cpuSec": 0.08,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 22387,
+          "rssMb": 29.7,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 22412,
+          "rssMb": 36.2,
+          "cpuSec": 0.09,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "speedometer:end",
+      "tMs": 657348.566209,
+      "rssMb": 863.3125,
+      "processes": 6,
+      "cpuSec": 41.3,
+      "breakdown": [
+        {
+          "pid": 22384,
+          "rssMb": 120.3,
+          "cpuSec": 10.91,
+          "name": "lethe"
+        },
+        {
+          "pid": 22385,
+          "rssMb": 27.4,
+          "cpuSec": 1.19,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 22386,
+          "rssMb": 103.8,
+          "cpuSec": 4.14,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 22387,
+          "rssMb": 17.4,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 22412,
+          "rssMb": 554.9,
+          "cpuSec": 24.89,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 28049,
+          "rssMb": 39.5,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "jetstream:start",
+      "tMs": 664640.849375,
+      "rssMb": 853.359375,
+      "processes": 7,
+      "cpuSec": 43.56,
+      "breakdown": [
+        {
+          "pid": 22384,
+          "rssMb": 129.4,
+          "cpuSec": 11.29,
+          "name": "lethe"
+        },
+        {
+          "pid": 22385,
+          "rssMb": 87.5,
+          "cpuSec": 2.11,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 22386,
+          "rssMb": 87.7,
+          "cpuSec": 4.6,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 22387,
+          "rssMb": 17.4,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 22412,
+          "rssMb": 427.6,
+          "cpuSec": 24.92,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 28049,
+          "rssMb": 39.5,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 28612,
+          "rssMb": 64.2,
+          "cpuSec": 0.47,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "jetstream:end",
+      "tMs": 695905.7289999999,
+      "rssMb": 2903.8125,
+      "processes": 7,
+      "cpuSec": 98.26,
+      "breakdown": [
+        {
+          "pid": 22384,
+          "rssMb": 119,
+          "cpuSec": 11.51,
+          "name": "lethe"
+        },
+        {
+          "pid": 22385,
+          "rssMb": 75.3,
+          "cpuSec": 2.3,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 22386,
+          "rssMb": 57.6,
+          "cpuSec": 4.96,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 22387,
+          "rssMb": 17.4,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 22412,
+          "rssMb": 214.2,
+          "cpuSec": 24.95,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 28049,
+          "rssMb": 38.4,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 28612,
+          "rssMb": 2382,
+          "cpuSec": 54.37,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "motionmark:start",
+      "tMs": 700144.250625,
+      "rssMb": 2403.21875,
+      "processes": 8,
+      "cpuSec": 98.64,
+      "breakdown": [
+        {
+          "pid": 22384,
+          "rssMb": 128.9,
+          "cpuSec": 11.66,
+          "name": "lethe"
+        },
+        {
+          "pid": 22385,
+          "rssMb": 69,
+          "cpuSec": 2.33,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 22386,
+          "rssMb": 56,
+          "cpuSec": 5.02,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 22387,
+          "rssMb": 17.4,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 22412,
+          "rssMb": 195.5,
+          "cpuSec": 24.95,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 28049,
+          "rssMb": 38.4,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 28612,
+          "rssMb": 1863.6,
+          "cpuSec": 54.42,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 28851,
+          "rssMb": 34.5,
+          "cpuSec": 0.09,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[e2e] start: 26 lines",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab https://browserbench.org/Speedometer3.1/?startAutomatically=true",
+    "[e2e] > try-wait 45000",
+    "[e2e] > mark speedometer:start",
+    "[e2e] mark speedometer:start",
+    "[e2e] > wait-js 720000 (function(){ var e = document.querySelector('#result-number'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] ok   wait-js -> 44.5",
+    "[e2e] > mark speedometer:end",
+    "[e2e] mark speedometer:end",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var e = document.querySelector('#result-number'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] result 44.5",
+    "[e2e] > newtab https://browserbench.org/JetStream2.2/",
+    "[e2e] > try-wait 45000",
+    "[e2e] > wait-js 60000 (function(){ var a = document.querySelector('#status a.button'); if (a && typeof JetStream !== 'undefined' && JetStream.start) { JetStream.start(); return 'started'; } return ''; })()",
+    "[e2e] ok   wait-js -> started",
+    "[e2e] > mark jetstream:start",
+    "[e2e] mark jetstream:start",
+    "[e2e] > wait-js 1200000 (function(){ var e = document.querySelector('#result-summary .score'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] ok   wait-js -> 557.877",
+    "[e2e] > mark jetstream:end",
+    "[e2e] mark jetstream:end",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var e = document.querySelector('#result-summary .score'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] result 557.877",
+    "[e2e] > newtab https://browserbench.org/MotionMark1.3.1/",
+    "[e2e] > try-wait 45000",
+    "[e2e] > wait-js 60000 (function(){ if (typeof benchmarkController !== 'undefined') { benchmarkController.startBenchmark(); return 'started'; } return ''; })()",
+    "[e2e] ok   wait-js -> started",
+    "[e2e] > mark motionmark:start",
+    "[e2e] mark motionmark:start",
+    "[e2e] > wait-js 900000 (function(){ var r = document.querySelector('#results'); if (!r) return ''; var e = r.querySelector('.score'); var t = e && e.textContent.trim(); return t && /d/.test(t) ? t : ''; })()",
+    "[e2e] FAIL line 21: wait-js '(function(){ var r = document.querySelector('#results'); if (!r) return ''; var e = r.querySelector('.score'); var t = e && e.textContent.trim(); return t && /d/.test(t) ? t : ''; })()' still falsy after 900000 ms ()",
+    "[e2e] failure screenshot: /var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/lethe-e2e-failure.png",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

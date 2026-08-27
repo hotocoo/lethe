@@ -17,6 +17,8 @@
 
 // Declared in network/udp_transport.h (included by the .cc).
 namespace lethe {
+
+class SharedDohResolver;
 class UdpTransport;
 }
 
@@ -142,6 +144,16 @@ public:
     // to the private per-client cache.
     void setSharedDohCache(std::shared_ptr<SharedDohCache> cache) { sharedDoh_ = std::move(cache); }
     const std::shared_ptr<SharedDohCache>& sharedDohCache() const { return sharedDoh_; }
+    // Delegate cache misses to a shared pool of keep-alive resolver clients
+    // (see doh_resolver.h) instead of opening TCP + TLS to the provider from
+    // this client. nullptr = resolve locally.
+    void setSharedDohResolver(std::shared_ptr<SharedDohResolver> r) { sharedResolver_ = std::move(r); }
+    // Keep the provider connection open between queries. Only sensible for a
+    // client dedicated to DoH (the pool members): the connection IS the
+    // client's one socket.
+    void setDohKeepAlive(bool on) { dohKeepAlive_ = on; }
+    // Public entry used by SharedDohResolver; same fail-closed rules.
+    bool resolveDoh(const std::string& host, std::string& outIp) { return dohResolve(host, outIp); }
 
     // --- Cookies (partitioned jar owned by Engine) ---
     // When enabled and the request carries a top-level site (or the URL
@@ -236,6 +248,7 @@ public:
         TLSConfig tls;
         std::string dohProvider;          // empty = system DNS (tests)
         std::shared_ptr<SharedDohCache> dohCache; // shared answers (may be null)
+        std::shared_ptr<SharedDohResolver> dohResolver; // shared keep-alive pool (may be null)
         PrivateNetworkPolicy privateNet;
         UdpTransport* vpnUdp = nullptr;   // enables covered-relay dials
         vpn::VpnTunnel* vpnTunnel = nullptr; // non-owning; engine owns it
@@ -412,6 +425,9 @@ private:
     // DoH answer cache: bounded, success-only, TTL-expired.
     std::map<std::string, DohEntry> dohCache_;
     std::shared_ptr<SharedDohCache> sharedDoh_;            // optional, process-wide
+    std::shared_ptr<SharedDohResolver> sharedResolver_;    // optional, process-wide
+    bool dohKeepAlive_ = false;                            // pool members only
+    std::string dohConnIp_;                                // provider IP the live socket is bound to
     static constexpr size_t kMaxDohCacheEntries = 256;
     std::chrono::seconds dohCacheTtl_{300};
 
