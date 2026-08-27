@@ -5,6 +5,7 @@
 #include <glib.h>
 #include <gdk/gdkkeysyms.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <thread>
@@ -35,6 +36,11 @@ std::unique_ptr<HttpClient> makeClient(Engine* engine, const ShellOptions& o) {
                                                         [](vpn::VpnTunnel*) {}));
     }
     return c;
+}
+
+bool debugLoads() {
+    static const bool on = std::getenv("LETHE_DEBUG") != nullptr;
+    return on;
 }
 
 bool isWebScheme(const std::string& url) {
@@ -78,9 +84,10 @@ struct MainWindowSignals {
         self->loadAddress(tab, gtk_entry_get_text(entry));
         gtk_widget_grab_focus(tab->container);
     }
-    static gboolean onEntryFocusIn(GtkWidget*, GdkEvent*, gpointer data) {
-        static_cast<MainWindow*>(data)->addressEditing_ = true;
-        return FALSE;
+    static void onEntryChanged(GtkEditable*, gpointer data) {
+        auto* self = static_cast<MainWindow*>(data);
+        // Only keystrokes count as editing; programmatic updates do not.
+        if (!self->settingEntryText_ && gtk_widget_has_focus(self->entry_)) self->addressEditing_ = true;
     }
     static gboolean onEntryFocusOut(GtkWidget*, GdkEvent*, gpointer data) {
         auto* self = static_cast<MainWindow*>(data);
@@ -170,6 +177,14 @@ struct MainWindowSignals {
         auto* tab = static_cast<MainWindow::Tab*>(d);
         MainWindow* self = tab->owner;
         const char* uri = webkit_web_view_get_uri(web);
+        if (debugLoads()) {
+            std::cout << "[lethe-debug] load-changed " << static_cast<int>(ev) << " "
+                      << (uri ? uri : "") << " loading=" << webkit_web_view_is_loading(web) << std::endl;
+        }
+        // is-loading can stay TRUE after a history (page-cache) navigation
+        // finishes; the load-changed sequence is the reliable signal.
+        if (ev == WEBKIT_LOAD_STARTED) tab->loading = true;
+        if (ev == WEBKIT_LOAD_FINISHED) tab->loading = false;
         if (ev == WEBKIT_LOAD_STARTED) {
             if (tab->readerLoadPending) {
                 tab->readerLoadPending = false;
@@ -187,6 +202,7 @@ struct MainWindowSignals {
     }
     static gboolean onLoadFailed(WebKitWebView*, WebKitLoadEvent, gchar* failingUri, GError* error, gpointer d) {
         auto* tab = static_cast<MainWindow::Tab*>(d);
+        tab->loading = false;
         if (g_error_matches(error, WEBKIT_NETWORK_ERROR, WEBKIT_NETWORK_ERROR_CANCELLED)) return FALSE;
         if (g_error_matches(error, WEBKIT_POLICY_ERROR, WEBKIT_POLICY_ERROR_FRAME_LOAD_INTERRUPTED_BY_POLICY_CHANGE)) return FALSE;
         std::cerr << "[lethe] load failed " << (failingUri ? failingUri : "") << ": "
@@ -309,7 +325,7 @@ void MainWindow::buildChrome() {
     gtk_widget_set_hexpand(entry_, TRUE);
     gtk_widget_set_size_request(entry_, 420, -1);
     g_signal_connect(entry_, "activate", G_CALLBACK(MainWindowSignals::onEntryActivate), this);
-    g_signal_connect(entry_, "focus-in-event", G_CALLBACK(MainWindowSignals::onEntryFocusIn), this);
+    g_signal_connect(entry_, "changed", G_CALLBACK(MainWindowSignals::onEntryChanged), this);
     g_signal_connect(entry_, "focus-out-event", G_CALLBACK(MainWindowSignals::onEntryFocusOut), this);
     gtk_header_bar_set_custom_title(GTK_HEADER_BAR(headerBar_), entry_);
 
@@ -445,6 +461,10 @@ void MainWindow::decidePolicy(Tab* tab, WebKitPolicyDecision* decision, WebKitPo
     const std::string uri = uriC ? uriC : "";
     const bool isMainFrame = type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION &&
         webkit_navigation_policy_decision_get_frame_name(nav) == nullptr;
+    if (debugLoads()) {
+        std::cout << "[lethe-debug] decide-policy type=" << static_cast<int>(type)
+                  << " main=" << isMainFrame << " " << uri << std::endl;
+    }
     if (type == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) {
         // target=_blank / window.open handled by "create"; refuse here to
         // avoid a duplicate top-level load in this tab.
@@ -476,6 +496,8 @@ void MainWindow::decidePolicy(Tab* tab, WebKitPolicyDecision* decision, WebKitPo
             reason = checker->policyCheckUrl(uri);
         }
         onMainLoop([this, tab, decision, uri, isMainFrame, reason]() {
+            if (debugLoads()) std::cout << "[lethe-debug] decision " << uri << " -> "
+                                        << (reason.empty() ? "use" : reason) << std::endl;
             if (reason.empty()) {
                 webkit_policy_decision_use(decision);
             } else {
@@ -585,7 +607,11 @@ void MainWindow::setTabTitle(Tab* tab, const std::string& title) {
 void MainWindow::updateChrome() {
     Tab* tab = currentTab();
     if (!tab) return;
-    if (!addressEditing_) gtk_entry_set_text(GTK_ENTRY(entry_), tab->url.c_str());
+    if (!addressEditing_) {
+        settingEntryText_ = true;
+        gtk_entry_set_text(GTK_ENTRY(entry_), tab->url.c_str());
+        settingEntryText_ = false;
+    }
     gtk_window_set_title(GTK_WINDOW(window_), tab->title.empty() ? "Lethe" : tab->title.c_str());
     const bool https = tab->url.rfind("https://", 0) == 0;
     const bool http = tab->url.rfind("http://", 0) == 0;
@@ -597,7 +623,7 @@ void MainWindow::updateChrome() {
     if (tab->web) {
         gtk_widget_set_sensitive(backButton_, webkit_web_view_can_go_back(tab->web));
         gtk_widget_set_sensitive(forwardButton_, webkit_web_view_can_go_forward(tab->web));
-        const bool loading = webkit_web_view_is_loading(tab->web);
+        const bool loading = tab->loading;
         gtk_button_set_image(GTK_BUTTON(reloadButton_), gtk_image_new_from_icon_name(
             loading ? "process-stop-symbolic" : "view-refresh-symbolic", GTK_ICON_SIZE_BUTTON));
         const double p = loading ? webkit_web_view_get_estimated_load_progress(tab->web) : 0.0;
@@ -610,10 +636,12 @@ void MainWindow::updateChrome() {
 }
 
 void MainWindow::showInternalPage(Tab* tab, const std::string& html, const std::string& url) {
+    addressEditing_ = false;
     tab->internalPageUrl = url;
     tab->url = url;
 #if defined(HAVE_FULLWEB)
     if (tab->web) {
+        tab->loading = true;
         webkit_web_view_load_alternate_html(tab->web, html.c_str(),
             url.empty() ? "about:blank" : url.c_str(), nullptr);
     }
@@ -648,12 +676,13 @@ void MainWindow::loadAddress(Tab* tab, const std::string& text) {
 
 void MainWindow::loadUrl(Tab* tab, const std::string& url) {
     if (!tab) return;
+    addressEditing_ = false;
     tab->internalPageUrl.clear();
     tab->readerActive = false;
     tab->readerLoadPending = false;
     tab->url = url;
 #if defined(HAVE_FULLWEB)
-    if (tab->web) webkit_web_view_load_uri(tab->web, url.c_str());
+    if (tab->web) { tab->loading = true; webkit_web_view_load_uri(tab->web, url.c_str()); }
 #else
     if (tab->reader) {
         tab->reader->loadURL(url);
@@ -691,6 +720,7 @@ void MainWindow::reload(Tab* tab) {
 }
 
 void MainWindow::stop(Tab* tab) {
+    if (tab) tab->loading = false;
 #if defined(HAVE_FULLWEB)
     if (tab && tab->web) webkit_web_view_stop_loading(tab->web);
 #else
@@ -703,11 +733,7 @@ bool MainWindow::readerActive(Tab* tab) const { return tab && tab->readerActive;
 bool MainWindow::busy(Tab* tab) const {
     if (!tab) return false;
     if (tab->readerFetching) return true;
-#if defined(HAVE_FULLWEB)
-    return tab->web && webkit_web_view_is_loading(tab->web);
-#else
-    return false;
-#endif
+    return tab->loading;
 }
 
 std::string MainWindow::currentUrl(Tab* tab) const { return tab ? tab->url : ""; }
@@ -796,7 +822,7 @@ void MainWindow::toggleReader(Tab* tab) {
             tab->internalPageUrl = finalUrl;
             tab->url = finalUrl;
 #if defined(HAVE_FULLWEB)
-            if (tab->web) webkit_web_view_load_alternate_html(tab->web, html.c_str(), finalUrl.c_str(), finalUrl.c_str());
+            if (tab->web) { tab->loading = true; webkit_web_view_load_alternate_html(tab->web, html.c_str(), finalUrl.c_str(), finalUrl.c_str()); }
 #else
             if (tab->reader) tab->reader->showContent(html, "text/html");
 #endif

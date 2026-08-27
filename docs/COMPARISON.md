@@ -33,7 +33,7 @@ A privacy-hardened **network stack** wrapped in a native browser shell:
 | **Brave** | Blink | V8 | Inherits Chromium | Inherits Chromium | Shields, Farbling, Tor windows |
 | **Tor Browser** | Gecko ESR fork | SpiderMonkey, JIT-restricted | Firefox sandbox + circuit isolation | First-party per circuit | All traffic via circuits; no local DNS leak |
 | **Lethe (reader)** | Own text extractor | **None** | **None: single process** WARN | n/a | DoH-only, HSTS upgrade, pins, SSRF guard, tunnel-or-refuse |
-| **Lethe (full-web)** | Platform engine | JSC / JSC / V8 | **Inherited from platform engine** | Inherited | Nav gate (mac/win) or transport proxy (Linux); CONNECT bypasses pinning/HSTS-inspection WARN |
+| **Lethe (full-web)** | Platform engine | JSC / JSC / V8 | **Inherited from platform engine** | Inherited | Nav gate everywhere + transport proxy (macOS 14+, Linux); Windows nav gate only; CONNECT bypasses pinning/HSTS-inspection WARN |
 
 ## Security: where Lethe genuinely wins
 

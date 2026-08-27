@@ -87,6 +87,7 @@ public:
         std::unique_ptr<Viewport> reader;  // fallback renderer (no WebKit)
         std::string url;                   // shown in the address bar
         std::string title;
+        bool loading = false;              // tracked from load-changed
         bool readerActive = false;
         bool readerFetching = false;
         bool readerLoadPending = false;
@@ -140,7 +141,8 @@ private:
     WebKitWebContext* context_ = nullptr;
 #endif
     std::vector<std::unique_ptr<Tab>> tabs_;
-    bool addressEditing_ = false;
+    bool addressEditing_ = false;      // user typed since the last load
+    bool settingEntryText_ = false;    // programmatic set_text in flight
     bool suppressSwitch_ = false;
 };
 
