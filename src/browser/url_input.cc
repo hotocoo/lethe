@@ -169,4 +169,74 @@ std::string normalizeAddressInput(const std::string& input,
     return prefix + text;
 }
 
+
+std::string urlHost(const std::string& url) {
+    const size_t scheme = url.find("://");
+    if (scheme == std::string::npos) return "";
+    size_t start = scheme + 3;
+    const size_t at = url.find('@', start);
+    const size_t slash = url.find_first_of("/?#", start);
+    if (at != std::string::npos && (slash == std::string::npos || at < slash)) start = at + 1;
+    std::string authority = url.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+    if (!authority.empty() && authority[0] == '[') {
+        const size_t close = authority.find(']');
+        return close == std::string::npos ? "" : lower(authority.substr(0, close + 1));
+    }
+    const size_t colon = authority.rfind(':');
+    if (colon != std::string::npos) authority = authority.substr(0, colon);
+    return lower(authority);
+}
+
+std::string httpsUpgradeCandidate(const std::string& url) {
+    if (url.size() < 8 || lower(url.substr(0, 7)) != "http://") return "";
+    const std::string host = urlHost(url);
+    if (host.empty() || host == "localhost" || host[0] == '[') return "";
+    if (host.size() > 6 && host.compare(host.size() - 6, 6, ".local") == 0) return "";
+    if (host.find_first_not_of("0123456789.") == std::string::npos) return "";  // IPv4 literal
+    // Explicit port: keep plaintext unless it is the http default.
+    const size_t start = 7;
+    size_t authorityEnd = url.find_first_of("/?#", start);
+    if (authorityEnd == std::string::npos) authorityEnd = url.size();
+    std::string authority = url.substr(start, authorityEnd - start);
+    const size_t at = authority.find('@');
+    if (at != std::string::npos) authority = authority.substr(at + 1);
+    const size_t colon = authority.rfind(':');
+    if (colon != std::string::npos) {
+        const std::string port = authority.substr(colon + 1);
+        if (port != "80") return "";
+        authority = authority.substr(0, colon);
+    }
+    return "https://" + authority + url.substr(authorityEnd);
+}
+
+std::string httpFallbackActionUrl(const std::string& httpUrl) {
+    return std::string(kHttpFallbackScheme) + "://allow-http?u=" + percentEncodeQueryComponent(httpUrl);
+}
+
+std::string parseHttpFallbackActionUrl(const std::string& actionUrl) {
+    const std::string prefix = std::string(kHttpFallbackScheme) + "://allow-http?u=";
+    if (actionUrl.rfind(prefix, 0) != 0) return "";
+    const std::string enc = actionUrl.substr(prefix.size());
+    std::string out;
+    for (size_t i = 0; i < enc.size(); i++) {
+        if (enc[i] == '%') {
+            if (i + 2 >= enc.size()) return "";   // truncated escape
+            auto hex = [](char c) -> int {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return -1;
+            };
+            const int hi = hex(enc[i + 1]), lo = hex(enc[i + 2]);
+            if (hi < 0 || lo < 0) return "";
+            out.push_back(static_cast<char>(hi * 16 + lo));
+            i += 2;
+        } else {
+            out.push_back(enc[i]);
+        }
+    }
+    if (out.rfind("http://", 0) != 0) return "";
+    return out;
+}
+
 } // namespace lethe

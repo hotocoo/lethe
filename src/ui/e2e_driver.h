@@ -25,6 +25,8 @@ private:
     void later(unsigned ms);
     void waitForIdle(double timeoutMs, double minMs, gint64 startedUs);
     void evaluate(const std::string& js, std::function<void(std::string, bool ok)> done);
+    void pollJs(const std::string& code, gint64 deadlineUs, double timeoutMs);
+    void softWait(double timeoutMs, gint64 startedUs);
     void pass(const std::string& what);
     void fail(const std::string& what);
     void finish(const char* msg);

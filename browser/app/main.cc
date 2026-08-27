@@ -25,6 +25,7 @@ void printHelp() {
         "                          (default: ephemeral, incognito)\n"
         "  --disable-sandbox       do not apply the seccomp sandbox\n"
         "  --dns-provider <url>    DoH provider (default Cloudflare)\n"
+        "  --no-https-first        do not upgrade top-level http:// to https://\n"
         "  --no-proxy              do not route WebKit traffic through the\n"
         "                          local policy proxy (navigation gate stays)\n"
         "  --e2e-script <file>     run a scripted browsing session and exit\n"
@@ -43,6 +44,7 @@ int main(int argc, char** argv) {
 
     bool persistent = false;
     bool useProxy = true;
+    bool httpsFirst = true;
     std::string e2eScript;
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
@@ -53,6 +55,7 @@ int main(int argc, char** argv) {
         if (a == "--disable-sandbox") { cfg.sandboxEnabled = false; continue; }
         if (a == "--disable-hardware-acceleration") { cfg.useHardwareAcceleration = false; continue; }
         if (a == "--no-proxy") { useProxy = false; continue; }
+        if (a == "--no-https-first") { httpsFirst = false; continue; }
         if (a == "--dns-provider" && i + 1 < argc) { cfg.dnsProvider = argv[++i]; continue; }
         if (a == "--e2e-script" && i + 1 < argc) { e2eScript = argv[++i]; continue; }
         if (!a.empty() && a[0] != '-') cfg.initialUrl = lethe::normalizeAddressInput(a);
@@ -96,6 +99,16 @@ int main(int argc, char** argv) {
     lethe::ShellOptions shell;
     shell.tls = tls;
     shell.persistent = persistent;
+    shell.httpsFirst = httpsFirst;
+    if (const char* hf = std::getenv("LETHE_HTTPS_FIRST"); hf && httpsFirst)
+        shell.httpsFirst = !(std::string(hf) == "0" || std::string(hf) == "off");
+    // One DoH answer cache for the whole browser: gate, reader and every
+    // proxied connection resolve a hostname once per TTL.
+    // LETHE_DOH_SHARED_CACHE=0 disables it (per-connection resolution, as
+    // in 0.1.0) so the effect can be measured with tools/bench.
+    if (const char* sc = std::getenv("LETHE_DOH_SHARED_CACHE");
+        !(sc && (std::string(sc) == "0" || std::string(sc) == "off")))
+        shell.dohCache = std::make_shared<lethe::SharedDohCache>();
 #if defined(HAVE_FULLWEB)
     shell.webkitSandbox = webkitSandbox;
 #endif
@@ -105,6 +118,13 @@ int main(int argc, char** argv) {
         lethe::PolicyProxyServer::Options po;
         po.tls = tls;
         po.dohProvider = cfg.dnsProvider;
+        po.dohCache = shell.dohCache;
+        po.authToken = lethe::PolicyProxyServer::generateAuthToken();
+        if (po.authToken.empty()) {
+            std::cerr << "[lethe] cannot generate proxy auth token (CSPRNG failure)" << std::endl;
+            engine.shutdown();
+            return 1;
+        }
         po.privateNet.isolatePrivateNetworks = cfg.isolatePrivateNetworks;
         for (const auto& h : cfg.privateNetworkAllowedHosts) po.privateNet.allowedHosts.insert(h);
         po.vpnTunnel = engine.vpnTunnel();
@@ -113,10 +133,17 @@ int main(int argc, char** argv) {
         po.relayPort = cfg.vpnConfig.endpointPort;
         if (proxy.start(po)) {
             shell.proxyPort = proxy.port();
-            std::cout << "[lethe] policy proxy listening on 127.0.0.1:" << shell.proxyPort << std::endl;
+            shell.proxyAuthToken = po.authToken;
+            std::cout << "[lethe] policy proxy listening on 127.0.0.1:" << shell.proxyPort
+                      << " (per-launch auth token)" << std::endl;
         } else {
+            // Fail closed: half-protected (navigation gate only) is not a
+            // mode Lethe runs in by accident; --no-proxy is the explicit opt-out.
             std::cerr << "[lethe] policy proxy failed to start: " << proxy.lastError()
-                      << " (navigation gate still active)" << std::endl;
+                      << "\n[lethe] refusing to run without transport enforcement "
+                         "(pass --no-proxy to accept navigation-gate-only mode)" << std::endl;
+            engine.shutdown();
+            return 1;
         }
     }
 

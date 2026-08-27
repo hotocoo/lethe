@@ -2,6 +2,8 @@
 
 #include "renderer/page_templates.h"
 
+#include "browser/url_input.h"
+
 namespace lethe {
 
 namespace {
@@ -61,12 +63,23 @@ std::string renderBlockPage(const std::string& url, const std::string& reason) {
     return page("Blocked", "", body);
 }
 
-std::string renderErrorPage(const std::string& url, const std::string& message) {
+std::string renderErrorPage(const std::string& url, const std::string& message,
+                            const std::string& httpFallback) {
     std::string body = "<h1>This page could not be loaded</h1>";
     body += "<p class=\"url\">" + htmlEscape(url) + "</p>";
     body += "<p class=\"reason\">" + htmlEscape(message) + "</p>";
-    body += "<p class=\"hint\">Check the address, then reload (⌘R).</p>";
-    return page("Page failed to load", "", body);
+    if (!httpFallback.empty()) {
+        body += "<p class=\"hint\">Lethe tried the encrypted (https) version of "
+                "this address first and it did not answer. The plain http "
+                "version is NOT encrypted: anyone on the network can read and "
+                "change it.</p>";
+        body += "<p><a class=\"fallback\" href=\"" +
+                htmlEscape(httpFallbackActionUrl(httpFallback)) +
+                "\">Continue to " + htmlEscape(httpFallback) + " (not encrypted)</a></p>";
+    } else {
+        body += "<p class=\"hint\">Check the address, then reload (⌘R).</p>";
+    }
+    return page("Page failed to load", ".fallback{color:#b3261e}", body);
 }
 
 std::string renderReaderPage(const std::string& url,

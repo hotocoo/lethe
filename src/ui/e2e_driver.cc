@@ -169,6 +169,30 @@ void E2eDriver::evaluate(const std::string& js, std::function<void(std::string, 
 #endif
 }
 
+void E2eDriver::softWait(double timeoutMs, gint64 startedUs) {
+    const double elapsed = (g_get_monotonic_time() - startedUs) / 1000.0;
+    if (elapsed >= 300 && !window_->busy(current_)) { later(250); return; }
+    if (elapsed > timeoutMs) {
+        std::cout << "[e2e] timeout try-wait: still loading after " << (int)timeoutMs << " ms" << std::endl;
+        window_->stop(current_);
+        later(250);
+        return;
+    }
+    timeout(100, [this, timeoutMs, startedUs]() { softWait(timeoutMs, startedUs); });
+}
+
+void E2eDriver::pollJs(const std::string& code, gint64 deadlineUs, double timeoutMs) {
+    evaluate(code, [this, code, deadlineUs, timeoutMs](std::string r, bool ok) {
+        const bool truthy = ok && !r.empty() && r != "false" && r != "0" && r != "null" && r != "undefined";
+        if (truthy) { lastJs_ = r; pass("wait-js -> " + r); next(); return; }
+        if (g_get_monotonic_time() >= deadlineUs) {
+            fail("wait-js '" + code + "' still falsy after " + std::to_string((int)timeoutMs) + " ms (" + r + ")");
+            return;
+        }
+        timeout(250, [this, code, deadlineUs, timeoutMs]() { pollJs(code, deadlineUs, timeoutMs); });
+    });
+}
+
 void E2eDriver::run(const std::string& line) {
     const size_t sp = line.find(' ');
     const std::string cmd = sp == std::string::npos ? line : line.substr(0, sp);
@@ -184,6 +208,10 @@ void E2eDriver::run(const std::string& line) {
     else if (cmd == "wait") {
         const double ms = arg.empty() ? 20000 : std::atof(arg.c_str());
         waitForIdle(ms, 300, g_get_monotonic_time());
+    }
+    else if (cmd == "try-wait") {
+        const double ms = arg.empty() ? 20000 : std::atof(arg.c_str());
+        softWait(ms, g_get_monotonic_time());
     }
     else if (cmd == "sleep") later(static_cast<unsigned>(std::max(0, std::atoi(arg.c_str()))));
     else if (cmd == "newtab") { current_ = window_->newTab(arg); later(100); }
@@ -204,6 +232,25 @@ void E2eDriver::run(const std::string& line) {
             if (!ok) { fail("js: " + r); return; }
             lastJs_ = r; next();
         });
+    }
+    else if (cmd == "wait-js") {
+        const size_t sp2 = arg.find(' ');
+        if (sp2 == std::string::npos) { fail("wait-js needs <timeout-ms> <code>"); return; }
+        const double ms = std::atof(arg.substr(0, sp2).c_str());
+        const std::string code = trim(arg.substr(sp2 + 1));
+        pollJs(code, g_get_monotonic_time() + static_cast<gint64>(ms * 1000), ms);
+    }
+    else if (cmd == "print-js") {
+        evaluate(arg, [this](std::string r, bool ok) {
+            if (!ok) { fail("print-js: " + r); return; }
+            lastJs_ = r;
+            std::cout << "[e2e] result " << r << std::endl;
+            next();
+        });
+    }
+    else if (cmd == "mark") {
+        std::cout << "[e2e] mark " << arg << std::endl;
+        next();
     }
     else if (cmd == "screenshot") {
         std::string path = arg;

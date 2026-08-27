@@ -19,6 +19,7 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,9 @@ class Viewport;
 struct ShellOptions {
     TLSConfig tls;
     int proxyPort = 0;         // local PolicyProxyServer (0 = none)
+    std::shared_ptr<SharedDohCache> dohCache;  // shared by gate, reader, proxy
+    std::string proxyAuthToken; // per-launch secret WebKit presents to the proxy
+    bool httpsFirst = true;     // upgrade top-level http:// to https:// first
     bool persistent = false;   // false = ephemeral (incognito) web context
     bool webkitSandbox = true; // WebKitGTK content-process sandbox (bwrap)
     std::string homeUrl;
@@ -93,6 +97,7 @@ public:
         bool readerLoadPending = false;
         std::string readerSourceUrl;
         std::string internalPageUrl;       // block/error page for this URL
+        std::string httpsUpgradedFrom;     // http URL being tried as https (HTTPS-first)
         MainWindow* owner = nullptr;
     };
 
@@ -104,7 +109,9 @@ private:
     void setTabTitle(Tab* tab, const std::string& title);
     void showInternalPage(Tab* tab, const std::string& html, const std::string& url);
     void showBlockPage(Tab* tab, const std::string& url, const std::string& reason);
-    void showErrorPage(Tab* tab, const std::string& url, const std::string& message);
+    void showErrorPage(Tab* tab, const std::string& url, const std::string& message,
+                       const std::string& httpFallback = "");
+    std::set<std::string> httpAllowedHosts_;   // HTTPS-first user exemptions
     void showNewTabPage(Tab* tab);
     Tab* tabForPage(GtkWidget* page);
     Tab* tabAt(int index);

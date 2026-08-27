@@ -374,4 +374,57 @@ LETHE_TEST_CASE(PolicyProxy_ConnectSplicesVerifiedTls) {
 }
 #endif // HAVE_OPENSSL
 
+
+
+LETHE_TEST_CASE(PolicyProxy_AuthToken_RefusesUnauthenticatedPeers) {
+    // With a per-launch token configured the proxy is no longer an open
+    // loopback relay: a request without the exact Proxy-Authorization gets
+    // 407 and the origin never sees traffic; the right credential passes.
+    TinyOrigin origin;
+    CHECK_TRUE(origin.start("<html>authed</html>"));
+    TLSConfig tls;
+    tls.init_modern_tls_config(LETHE_MIN_TLS_VERSION, LETHE_MAX_TLS_VERSION);
+    PolicyProxyServer::Options o = baseOptions(tls);
+    o.authToken = PolicyProxyServer::generateAuthToken();
+    CHECK_EQ(o.authToken.size(), 64u);
+    PolicyProxyServer proxy;
+    CHECK_TRUE(proxy.start(o));
+    const std::string target = "http://127.0.0.1:" + std::to_string(origin.port()) + "/p";
+
+    // 1. No credential.
+    int fd = dial(proxy.port());
+    CHECK_GE(fd, 0);
+    std::string req = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+    CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
+    std::string resp = readAll(fd);
+    ::close(fd);
+    CHECK_TRUE(resp.find("407 Proxy Authentication Required") != std::string::npos);
+    CHECK_TRUE(resp.find("Proxy-Authenticate: Basic") != std::string::npos);
+    CHECK_EQ(origin.requests.load(), 0);
+
+    // 2. Wrong credential (same length, one byte off) - still refused.
+    std::string wrong = PolicyProxyServer::basicCredentialFor(o.authToken);
+    wrong[wrong.size() - 3] = wrong[wrong.size() - 3] == 'A' ? 'B' : 'A';
+    fd = dial(proxy.port());
+    req = "CONNECT 127.0.0.1:" + std::to_string(origin.port()) + " HTTP/1.1\r\nHost: x\r\n"
+          "Proxy-Authorization: " + wrong + "\r\n\r\n";
+    CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
+    resp = readAll(fd);
+    ::close(fd);
+    CHECK_TRUE(resp.find("407") != std::string::npos);
+    CHECK_EQ(origin.requests.load(), 0);
+
+    // 3. Correct credential (header name case-insensitive) - forwarded.
+    fd = dial(proxy.port());
+    req = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nproxy-authorization: " +
+          PolicyProxyServer::basicCredentialFor(o.authToken) + "\r\n\r\n";
+    CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
+    resp = readAll(fd);
+    ::close(fd);
+    proxy.stop();
+    CHECK_TRUE(resp.find("200 OK") != std::string::npos);
+    CHECK_TRUE(resp.find("authed") != std::string::npos);
+    CHECK_EQ(origin.requests.load(), 1);
+}
+
 } // namespace lethe

@@ -25,6 +25,7 @@ void printHelp() {
         "  --dns-provider <url>    DoH provider (default Cloudflare)\n"
         "  --no-proxy              do not route WebKit traffic through the\n"
         "                          local policy proxy (macOS 14+ only)\n"
+        "  --no-https-first        do not upgrade top-level http:// to https://\n"
         "  --e2e-script <file>     run a scripted browsing session and exit\n"
         "  --version, --help\n"
         "Environment: LETHE_SANDBOX, LETHE_DNS_PROVIDER, LETHE_USER_AGENT_MODE,\n"
@@ -41,6 +42,7 @@ int main(int argc, char** argv) {
 
     bool persistent = false;
     bool useProxy = true;
+    bool httpsFirst = true;
     std::string e2eScript;
     if (const char* e = std::getenv("LETHE_MAC_PROXY")) {
         const std::string v(e);
@@ -55,6 +57,7 @@ int main(int argc, char** argv) {
         if (a == "--disable-sandbox") { cfg.sandboxEnabled = false; continue; }
         if (a == "--disable-hardware-acceleration") { cfg.useHardwareAcceleration = false; continue; }
         if (a == "--no-proxy") { useProxy = false; continue; }
+        if (a == "--no-https-first") { httpsFirst = false; continue; }
         if (a == "--dns-provider" && i + 1 < argc) { cfg.dnsProvider = argv[++i]; continue; }
         if (a == "--e2e-script" && i + 1 < argc) { e2eScript = argv[++i]; continue; }
         if (a.rfind("-psn_", 0) == 0) continue;  // Finder/LaunchServices token
@@ -79,12 +82,21 @@ int main(int argc, char** argv) {
     ctx.tls = tls;
     ctx.persistent = persistent;
     ctx.e2eScript = e2eScript;
+    ctx.httpsFirst = httpsFirst;
+    // One DoH answer cache for the whole browser: gate, reader and every
+    // proxied connection resolve a hostname once per TTL.
+    // LETHE_DOH_SHARED_CACHE=0 disables it (per-connection resolution, as
+    // in 0.1.0) so the effect can be measured with tools/bench.
+    if (const char* sc = std::getenv("LETHE_DOH_SHARED_CACHE");
+        !(sc && (std::string(sc) == "0" || std::string(sc) == "off")))
+        ctx.dohCache = std::make_shared<lethe::SharedDohCache>();
 
     lethe::PolicyProxyServer proxy;
     if (useProxy) {
         lethe::PolicyProxyServer::Options po;
         po.tls = tls;
         po.dohProvider = cfg.dnsProvider;
+        po.dohCache = ctx.dohCache;
         po.privateNet.isolatePrivateNetworks = cfg.isolatePrivateNetworks;
         for (const auto& h : cfg.privateNetworkAllowedHosts)
             po.privateNet.allowedHosts.insert(h);
@@ -92,16 +104,30 @@ int main(int argc, char** argv) {
         po.udpTransport = engine.vpnTransport();
         po.relayHost = cfg.vpnConfig.endpointHost;
         po.relayPort = cfg.vpnConfig.endpointPort;
+        po.authToken = lethe::PolicyProxyServer::generateAuthToken();
+        if (po.authToken.empty()) {
+            std::cerr << "[lethe] cannot generate proxy auth token (CSPRNG failure)" << std::endl;
+            engine.shutdown();
+            return 1;
+        }
         if (proxy.start(po)) {
             ctx.proxyPort = proxy.port();
+            ctx.proxyAuthToken = po.authToken;
             std::cout << "[lethe] policy proxy listening on 127.0.0.1:"
-                      << ctx.proxyPort << std::endl;
+                      << ctx.proxyPort << " (per-launch auth token)" << std::endl;
         } else {
-            std::cerr << "[lethe] policy proxy failed to start: "
-                      << proxy.lastError() << " (navigation gate still active)"
-                      << std::endl;
+            // Fail closed: without the proxy only top-level navigations are
+            // gated and every subresource would bypass policy. Refuse to run
+            // half-protected; --no-proxy is the explicit opt-out.
+            std::cerr << "[lethe] policy proxy failed to start: " << proxy.lastError()
+                      << "\n[lethe] refusing to run without transport enforcement "
+                         "(pass --no-proxy to accept navigation-gate-only mode)" << std::endl;
+            engine.shutdown();
+            return 1;
         }
     }
+    if (const char* hf = std::getenv("LETHE_HTTPS_FIRST"); hf && httpsFirst)
+        ctx.httpsFirst = !(std::string(hf) == "0" || std::string(hf) == "off");
 
     // [NSApp terminate:] never returns from -run; shut down from the
     // delegate's applicationWillTerminate instead.

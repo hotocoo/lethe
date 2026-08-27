@@ -31,6 +31,10 @@ public:
         // DoH provider URL applied to forwarding clients ("" inherits
         // none, i.e. resolution stays system-level - avoid in prod).
         std::string dohProvider;
+        // Shared DoH answer cache. When null the proxy creates its own so
+        // every proxied connection still shares one; pass the browser's
+        // cache to share with the navigation gate and reader as well.
+        std::shared_ptr<SharedDohCache> dohCache;
         // Private-network policy applied verbatim.
         PrivateNetworkPolicy privateNet;
         // Shared VPN tunnel for routing decisions + covered relaying.
@@ -43,7 +47,19 @@ public:
         // TCP peers because it enforces policy FOR them.
         std::string bindHost = "127.0.0.1";
         int bindPort = 0;               // 0 = ephemeral
+        // Per-launch secret. When set, every request must carry
+        // "Proxy-Authorization: Basic base64(lethe:<token>)" or it is
+        // refused with 407 before any policy work or upstream I/O. This
+        // closes the open-loopback-proxy hole: without it any local process
+        // could ride Lethe's VPN tunnel and policy identity. Empty = off
+        // (tests / engines that cannot send proxy credentials).
+        std::string authToken;
     };
+
+    // 32 random bytes as hex (OpenSSL RAND_bytes); "" if the CSPRNG fails.
+    static std::string generateAuthToken();
+    // The exact Proxy-Authorization header value the engine must send.
+    static std::string basicCredentialFor(const std::string& token);
 
     PolicyProxyServer() = default;
     ~PolicyProxyServer();

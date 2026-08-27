@@ -7,6 +7,7 @@
 //
 //   load <text>               address-bar semantics (URL or search)
 //   wait [ms]                 until the tab finished loading (default 20000)
+//   try-wait [ms]             same, but a timeout is logged and NOT fatal
 //   sleep <ms>
 //   newtab [text]             new tab beside the current one; becomes current
 //   closetab                  close current tab
@@ -14,6 +15,9 @@
 //   click <css-selector>      DOM click via JavaScript
 //   type-address <text>       type into the address bar and press Enter
 //   js <code>                 evaluate; result kept for assert-last
+//   wait-js <ms> <code>       poll until <code> is truthy (or fail after ms)
+//   print-js <code>           evaluate and echo "[e2e] result <text>"
+//   mark <text>               echo "[e2e] mark <text>" (harness sync point)
 //   screenshot <path.png>
 //   assert-url-contains <s>   | assert-title-contains <s>
 //   assert-body-contains <s>  | assert-tabs <n> | assert-reader <on|off>
@@ -138,6 +142,21 @@
     });
 }
 
+- (void)softWaitWithTimeout:(double)ms started:(NSDate*)started {
+    const double elapsed = -[started timeIntervalSinceNow] * 1000.0;
+    if (elapsed >= 300 && !current_.busy) { [self later:250]; return; }
+    if (elapsed > ms) {
+        std::cout << "[e2e] timeout try-wait: still loading after " << (int)ms << " ms" << std::endl;
+        std::cout.flush();
+        [current_ stopLoading:nil];
+        [self later:250];
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        [self softWaitWithTimeout:ms started:started];
+    });
+}
+
 - (void)evaluate:(NSString*)code completion:(void (^)(id result, NSError* err))completion {
     [current_.webView evaluateJavaScript:code completionHandler:^(id result, NSError* err) {
         completion(result, err);
@@ -169,6 +188,11 @@
     } else if ([cmd isEqualToString:@"wait"]) {
         const double ms = arg.length ? arg.doubleValue : 20000;
         [self waitForLoadWithTimeout:ms started:[NSDate date] minimum:300];
+    } else if ([cmd isEqualToString:@"try-wait"]) {
+        // Like wait, but a timeout is reported ("[e2e] timeout ...") and the
+        // script continues: benchmarks record it as a data point.
+        const double ms = arg.length ? arg.doubleValue : 20000;
+        [self softWaitWithTimeout:ms started:[NSDate date]];
     } else if ([cmd isEqualToString:@"sleep"]) {
         [self later:MAX(0, arg.doubleValue)];
     } else if ([cmd isEqualToString:@"newtab"]) {
@@ -206,6 +230,30 @@
             self->lastJs_ = [NSString stringWithFormat:@"%@", result];
             [self next];
         }];
+    } else if ([cmd isEqualToString:@"wait-js"]) {
+        // wait-js <timeout-ms> <code>: poll until the expression is truthy.
+        NSRange sp2 = [arg rangeOfString:@" "];
+        if (sp2.location == NSNotFound) { [self fail:@"wait-js needs <timeout-ms> <code>"]; return; }
+        const double ms = [arg substringToIndex:sp2.location].doubleValue;
+        NSString* code = [[arg substringFromIndex:sp2.location + 1]
+            stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        [self pollJs:code deadline:[NSDate dateWithTimeIntervalSinceNow:ms / 1000.0] timeoutMs:ms];
+    } else if ([cmd isEqualToString:@"print-js"]) {
+        // print-js <code>: evaluate and echo the result on stdout as
+        // "[e2e] result <text>" for external harnesses (tools/bench).
+        [self evaluate:arg completion:^(id result, NSError* err) {
+            if (err) { [self fail:[NSString stringWithFormat:@"print-js: %@", err.localizedDescription]]; return; }
+            NSString* text = [self stringify:result];
+            self->lastJs_ = text;
+            std::cout << "[e2e] result " << text.UTF8String << std::endl;
+            std::cout.flush();
+            [self next];
+        }];
+    } else if ([cmd isEqualToString:@"mark"]) {
+        // mark <text>: synchronisation point for external harnesses.
+        std::cout << "[e2e] mark " << arg.UTF8String << std::endl;
+        std::cout.flush();
+        [self next];
     } else if ([cmd isEqualToString:@"screenshot"]) {
         [self screenshotTo:arg];
     } else if ([cmd isEqualToString:@"assert-url-contains"]) {
@@ -258,6 +306,38 @@
     } else {
         [self fail:[NSString stringWithFormat:@"unknown command '%@'", cmd]];
     }
+}
+
+- (NSString*)stringify:(id)result {
+    if (!result || [result isKindOfClass:[NSNull class]]) return @"null";
+    if ([result isKindOfClass:[NSString class]]) return result;
+    if ([result isKindOfClass:[NSNumber class]]) return [result stringValue];
+    if ([NSJSONSerialization isValidJSONObject:result]) {
+        NSData* d = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+        if (d) return [[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding] ?: @"";
+    }
+    return [NSString stringWithFormat:@"%@", result];
+}
+
+- (void)pollJs:(NSString*)code deadline:(NSDate*)deadline timeoutMs:(double)ms {
+    [self evaluate:code completion:^(id result, NSError* err) {
+        const BOOL truthy = !err && result && ![result isEqual:@NO] && ![result isEqual:@0] &&
+                            ![result isEqual:@""] && ![result isKindOfClass:[NSNull class]];
+        if (truthy) {
+            self->lastJs_ = [self stringify:result];
+            [self pass:[NSString stringWithFormat:@"wait-js -> %@", self->lastJs_]];
+            [self next];
+            return;
+        }
+        if ([deadline timeIntervalSinceNow] <= 0) {
+            [self fail:[NSString stringWithFormat:@"wait-js '%@' still falsy after %.0f ms (%@)", code, ms,
+                        err ? err.localizedDescription : [self stringify:result]]];
+            return;
+        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            [self pollJs:code deadline:deadline timeoutMs:ms];
+        });
+    }];
 }
 
 - (NSString*)jsString:(NSString*)s {

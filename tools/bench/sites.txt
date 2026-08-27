@@ -1,0 +1,11 @@
+# One URL per line. Cold load, fresh profile, per run. Mixed weight on
+# purpose: two light reference pages, two encyclopaedia/dev pages, four
+# news pages whose weight is mostly third-party ad/analytics traffic.
+https://example.com/
+https://www.iana.org/domains/reserved
+https://en.wikipedia.org/wiki/Web_browser
+https://github.com/
+https://www.bbc.com/news
+https://www.theguardian.com/international
+https://edition.cnn.com/
+https://www.nytimes.com/

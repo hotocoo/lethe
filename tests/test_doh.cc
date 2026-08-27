@@ -12,6 +12,7 @@
 #include "network/tls_config.h"
 
 #include <arpa/inet.h>
+#include <atomic>
 #include <cstring>
 #include <functional>
 #include <netinet/in.h>
@@ -188,4 +189,69 @@ LETHE_TEST_CASE(Doh_DisabledByDefault_UsesSystemResolution) {
     req.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
     HttpResponse resp = client.sendRequest(req);
     CHECK_TRUE(resp.success);
+}
+
+// --- Shared answer cache ----------------------------------------------------
+
+LETHE_TEST_CASE(Doh_SharedCache_ResolvesOncePerHostAcrossClients) {
+    // Two independent clients (the way the proxy and the navigation gate
+    // mint them) share one SharedDohCache: the provider is asked about a
+    // hostname exactly once, every later client hits the cache.
+    std::atomic<int> dohQueries{0};
+    MockHttpServer server;
+    server.handler_ = [&](const std::string& req) {
+        if (req.find("/dns-query?name=") != std::string::npos) {
+            dohQueries++;
+            return httpResponse(200, "OK",
+                "{\"Status\":0,\"Answer\":[{\"name\":\"shared.internal\",\"type\":1,"
+                "\"data\":\"127.0.0.1\"}]}");
+        }
+        return httpResponse(200, "OK", "<html>shared-ok</html>");
+    };
+    CHECK_TRUE(server.start());
+    const std::string doh = "http://127.0.0.1:" + std::to_string(server.port()) + "/dns-query";
+    auto cache = std::make_shared<SharedDohCache>();
+
+    HttpClient a = makeClient(doh);
+    a.setSharedDohCache(cache);
+    HttpClient b = makeClient(doh);
+    b.setSharedDohCache(cache);
+
+    HttpRequest req;
+    req.url = "http://shared.internal:" + std::to_string(server.port()) + "/one";
+    HttpResponse r1 = a.sendRequest(req);
+    CHECK_TRUE(r1.success);
+    CHECK_EQ(dohQueries.load(), 1);
+
+    req.url = "http://shared.internal:" + std::to_string(server.port()) + "/two";
+    HttpResponse r2 = b.sendRequest(req);
+    CHECK_TRUE(r2.success);
+    CHECK_EQ(dohQueries.load(), 1);              // served from the shared cache
+    CHECK_EQ(cache->stats().hits, 1u);
+    CHECK_EQ(cache->size(), 1u);
+
+    // policyCheckUrl (navigation gate) rides the same cache: still one query.
+    HttpClient gate = makeClient(doh);
+    gate.setSharedDohCache(cache);
+    CHECK_EQ(gate.policyCheckUrl("http://shared.internal:" + std::to_string(server.port()) + "/"), "");
+    CHECK_EQ(dohQueries.load(), 1);
+}
+
+LETHE_TEST_CASE(Doh_SharedCache_KeyedByProvider_AndExpires) {
+    // Answers from provider A never serve a client configured for provider
+    // B, and an expired entry is re-fetched instead of returned.
+    auto cache = std::make_shared<SharedDohCache>(std::chrono::seconds(300));
+    cache->store("https://a.example/dns-query", "host.test", "10.1.1.1");
+    std::string ip;
+    CHECK_TRUE(cache->lookup("https://a.example/dns-query", "host.test", ip));
+    CHECK_EQ(ip, "10.1.1.1");
+    CHECK_TRUE(!cache->lookup("https://b.example/dns-query", "host.test", ip));
+
+    auto shortLived = std::make_shared<SharedDohCache>(std::chrono::seconds(0));
+    shortLived->store("p", "h", "10.2.2.2");
+    CHECK_TRUE(!shortLived->lookup("p", "h", ip));   // TTL 0 = cache disabled
+
+    // Only successful answers are stored: an empty IP is dropped.
+    cache->store("p", "empty", "");
+    CHECK_TRUE(!cache->lookup("p", "empty", ip));
 }

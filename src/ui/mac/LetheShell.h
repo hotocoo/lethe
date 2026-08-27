@@ -34,6 +34,9 @@ struct ShellContext {
     Config cfg;
     TLSConfig tls;
     int proxyPort = 0;        // local PolicyProxyServer port (0 = none)
+    std::string proxyAuthToken;  // per-launch secret WebKit presents to the proxy
+    bool httpsFirst = true;   // upgrade top-level http:// to https:// first
+    std::shared_ptr<SharedDohCache> dohCache;  // shared by gate, reader, proxy
     bool persistent = false;  // false = ephemeral (incognito) data store
     std::string homeUrl;      // "" = built-in new-tab page
     std::function<void()> onTerminate;  // engine/proxy shutdown
@@ -70,6 +73,7 @@ struct ShellContext {
 - (void)goBack:(id)sender;
 - (void)goForward:(id)sender;
 - (void)reloadPage:(id)sender;
+- (void)stopLoading:(id)sender;
 @property (nonatomic, readonly) WKWebView* webView;
 @property (nonatomic, readonly) NSTextField* addressField;
 @property (nonatomic, readonly) BOOL readerActive;
@@ -96,6 +100,9 @@ struct ShellContext {
 - (void)controllerDidClose:(BrowserWindowController*)controller;
 - (NSString*)securityStatusText;
 - (NSArray<BrowserWindowController*>*)controllers;
+// HTTPS-first: hosts the user explicitly allowed to load over plain http.
+- (BOOL)isHttpAllowedForHost:(NSString*)host;
+- (void)allowHttpForHost:(NSString*)host;
 @property (nonatomic, readonly) LethePolicyGate* gate;
 @property (nonatomic, readonly) lethe::ShellContext* context;
 @end

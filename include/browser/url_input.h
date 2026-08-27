@@ -20,6 +20,22 @@ constexpr const char kDefaultSearchTemplate[] = "https://duckduckgo.com/?q={}";
 // RFC 3986 percent-encoding of a query component (unreserved chars kept).
 std::string percentEncodeQueryComponent(const std::string& in);
 
+// HTTPS-first (Chrome "HTTPS-First Mode" semantics, on by default): for a
+// top-level http:// navigation return the https:// URL to try instead, or
+// "" when no upgrade applies (already https, IP literal, localhost/.local,
+// explicit non-80 port, or the host was allow-listed for plaintext).
+std::string httpsUpgradeCandidate(const std::string& url);
+
+// Internal action link placed on the error page after an upgrade failed:
+// clicking it allow-lists the host for plaintext and loads the http URL.
+constexpr const char kHttpFallbackScheme[] = "lethe-action";
+std::string httpFallbackActionUrl(const std::string& httpUrl);
+// Parse an action URL back into the http URL ("" when it is not one).
+std::string parseHttpFallbackActionUrl(const std::string& actionUrl);
+
+// Host part of a URL (lowercased, without port); "" when unparsable.
+std::string urlHost(const std::string& url);
+
 // "" for blank input.
 std::string normalizeAddressInput(
     const std::string& input,

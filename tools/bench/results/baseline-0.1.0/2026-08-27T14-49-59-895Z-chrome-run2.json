@@ -1,0 +1,190 @@
+{
+  "browser": "chrome",
+  "version": "Google Chrome 151.0.7922.175",
+  "run": 2,
+  "startedAt": "2026-08-27T14:49:59.895Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup",
+    "pageload",
+    "memory"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 889.6611249999987,
+  "exitCode": 1,
+  "failure": "timeout waiting Page.loadEventFired",
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 293.8000000715256,
+      "dcl": 297.8000000715256,
+      "load": 298.10000002384186,
+      "fcp": 344,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 618,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": 63.699999928474426,
+      "dcl": 157,
+      "load": 297.59999990463257,
+      "fcp": 156,
+      "resources": 9,
+      "opaqueResources": 0,
+      "bytes": 1296461,
+      "domNodes": 242
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "ttfb": 89.29999995231628,
+      "dcl": 184.79999995231628,
+      "load": 189.19999992847443,
+      "fcp": 228,
+      "resources": 36,
+      "opaqueResources": 1,
+      "bytes": 476710,
+      "domNodes": 4171
+    },
+    {
+      "url": "https://github.com/",
+      "ttfb": 69.5,
+      "dcl": 914.3999999761581,
+      "load": 974.2000000476837,
+      "fcp": 836,
+      "resources": 142,
+      "opaqueResources": 2,
+      "bytes": 3760179,
+      "domNodes": 1783
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 88.29999995231628,
+      "dcl": 541.2999999523163,
+      "load": 2518.2000000476837,
+      "fcp": 136,
+      "resources": 154,
+      "opaqueResources": 63,
+      "bytes": 2128370,
+      "domNodes": 1499
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "ttfb": 146,
+      "dcl": 794.4000000953674,
+      "load": 1922.8000000715256,
+      "fcp": 360,
+      "resources": 98,
+      "opaqueResources": 74,
+      "bytes": 448509,
+      "domNodes": 5196
+    }
+  ],
+  "speedometer": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 889.666292000009,
+      "rssMb": 988.53125,
+      "processes": 8,
+      "breakdown": [
+        {
+          "pid": 55272,
+          "rssMb": 214.3,
+          "name": "Google"
+        },
+        {
+          "pid": 55278,
+          "rssMb": 135.3,
+          "name": "Google"
+        },
+        {
+          "pid": 55279,
+          "rssMb": 93.7,
+          "name": "Google"
+        },
+        {
+          "pid": 55280,
+          "rssMb": 78.9,
+          "name": "Google"
+        },
+        {
+          "pid": 55282,
+          "rssMb": 129.9,
+          "name": "Google"
+        },
+        {
+          "pid": 55284,
+          "rssMb": 118.7,
+          "name": "Google"
+        },
+        {
+          "pid": 55285,
+          "rssMb": 98.9,
+          "name": "Google"
+        },
+        {
+          "pid": 55286,
+          "rssMb": 118.9,
+          "name": "Google"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[55474:29324679:0827/225019.519316:VERBOSE1:chrome/updater/updater.cc:105] Crash reporting initialized.",
+    "[55474:29324693:0827/225019.519602:VERBOSE1:chrome/updater/app/app_wakeall.cc:58] Launching `/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake`",
+    "[55477:29324697:0827/225019.526626:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[55477:29324697:0827/225019.527032:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 656511, parent pid: 55474",
+    "[55477:29324697:0827/225019.528335:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 54322053120B (50.591GiB) / 994662584320B (926.352GiB)\n[55477:29324697:0827/225019.528347:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 54322053120B (50.591GiB) / 994662584320B (926.352GiB)",
+    "[55477:29324697:0827/225019.528411:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[55479:29324701:0827/225019.536664:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --crash-handler --database=/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/Crashpad --url=https://clients2.google.com/cr/report --annotation=prod=Update4 --annotation=ver=152.0.7933.0 --handshake-fd=6 --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[55479:29324701:0827/225019.537168:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 656511, parent pid: 1",
+    "[55479:29324701:0827/225019.538609:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 54321819648B (50.591GiB) / 994662584320B (926.352GiB)\n[55479:29324701:0827/225019.538621:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 54321819648B (50.591GiB) / 994662584320B (926.352GiB)",
+    "[55479:29324701:0827/225019.538702:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[55477:29324697:0827/225019.539094:VERBOSE1:chrome/updater/crash_reporter.cc:124] Crash handler launched and ready.",
+    "[55477:29324697:0827/225019.539597:VERBOSE1:chrome/updater/crash_client.cc:108] Found 0 completed crash reports",
+    "[55477:29324697:0827/225019.539663:VERBOSE1:chrome/updater/crash_client.cc:132] Found 0 pending crash reports",
+    "[55477:29324697:0827/225019.539723:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/RLZ/Crashpad/settings.dat: No such file or directory (2)",
+    "[55477:29324697:0827/225019.539768:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/Chrome-headless/Crashpad/settings.dat: No such file or directory (2)",
+    "[55477:29324697:0827/225019.539781:VERBOSE1:chrome/updater/updater.cc:105] Crash reporting initialized.",
+    "[55477:29324697:0827/225019.539904:VERBOSE1:chrome/updater/ipc/update_service_internal_proxy_mojo.cc:61] Run",
+    "[55278:29322829:0827/225020.956909:ERROR:media/mojo/services/mojo_cdm_service_context.cc:91] CdmContextRef cannot be obtained for CDM ID: (917721DBFB617E945A7E2F1B0B2509BC)",
+    "[55272:29322620:0827/225027.085554:ERROR:net/cert/internal/cert_issuer_source_aia.cc:36] Error parsing cert retrieved from AIA (as DER):\nERROR: Couldn't read tbsCertificate as SEQUENCE\nERROR: Failed parsing Certificate",
+    "[55272:29322620:0827/225027.109609:ERROR:net/cert/internal/cert_issuer_source_aia.cc:36] Error parsing cert retrieved from AIA (as DER):\nERROR: Couldn't read tbsCertificate as SEQUENCE\nERROR: Failed parsing Certificate",
+    "[55279:29322673:0827/225027.110631:ERROR:net/socket/ssl_client_socket_impl.cc:964] handshake failed; returned -1, SSL error code 1, net_error -201",
+    "[55279:29322673:0827/225027.123637:ERROR:net/socket/ssl_client_socket_impl.cc:964] handshake failed; returned -1, SSL error code 1, net_error -201",
+    "[55279:29322673:0827/225027.242644:ERROR:net/socket/ssl_client_socket_impl.cc:964] handshake failed; returned -1, SSL error code 1, net_error -201",
+    "[55272:29322637:0827/225027.759899:ERROR:base/process/process_mac.cc:53] task_policy_set TASK_CATEGORY_POLICY: (os/kern) invalid argument (4)\n[55272:29322637:0827/225027.759938:ERROR:base/process/process_mac.cc:98] task_policy_set TASK_SUPPRESSION_POLICY: (os/kern) invalid argument (4)",
+    "[55279:29322673:0827/225028.353941:ERROR:net/socket/ssl_client_socket_impl.cc:964] handshake failed; returned -1, SSL error code 1, net_error -201",
+    "[55279:29322673:0827/225029.685961:ERROR:net/socket/ssl_client_socket_impl.cc:964] handshake failed; returned -1, SSL error code 1, net_error -201",
+    "[55272:29322625:0827/225030.309288:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT",
+    "[55279:29322673:0827/225034.521273:ERROR:net/socket/ssl_client_socket_impl.cc:964] handshake failed; returned -1, SSL error code 1, net_error -101",
+    "[55477:29324697:0827/225036.708957:VERBOSE1:chrome/updater/app/app.cc:52] Shutdown: 0",
+    "[55477:29324697:0827/225036.709279:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS END event to the history log",
+    "[55477:29324697:0827/225036.709298:VERBOSE1:chrome/updater/updater.cc:419] UpdaterMain (--wake) returned 0.",
+    "[55474:29324693:0827/225036.812692:VERBOSE1:chrome/updater/app/app_wakeall.cc:68] `/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake` exited 0",
+    "[55474:29324679:0827/225036.812946:VERBOSE1:chrome/updater/app/app.cc:52] Shutdown: 0",
+    "[55474:29324679:0827/225036.813343:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS END event to the history log",
+    "[55474:29324679:0827/225036.813366:VERBOSE1:chrome/updater/updater.cc:419] UpdaterMain (--wake-all) returned 0.",
+    "[55479:29324701:0827/225046.721444:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS END event to the history log",
+    "[55479:29324701:0827/225046.721501:VERBOSE1:chrome/updater/updater.cc:419] UpdaterMain (--crash-handler) returned 0.",
+    "[55476:29324685:0827/225046.723853:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS END event to the history log",
+    "[55476:29324685:0827/225046.723911:VERBOSE1:chrome/updater/updater.cc:419] UpdaterMain (--crash-handler) returned 0.",
+    "[55278:29322639:0827/225051.378447:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:370] SharedImageManager::ProduceOverlay: Trying to Produce a Overlay representation from a non-existent mailbox.\n[55278:29322639:0827/225051.378468:ERROR:components/viz/service/display_embedder/skia_output_device_buffer_queue.cc:258] Invalid mailbox."
+  ]
+}

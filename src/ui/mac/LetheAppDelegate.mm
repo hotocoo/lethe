@@ -12,6 +12,7 @@
     LethePolicyGate* gate_;
     NSMutableArray<BrowserWindowController*>* controllers_;
     WKWebsiteDataStore* dataStore_;
+    NSMutableSet<NSString*>* httpAllowedHosts_;
     BOOL proxyApplied_;
     LetheAutomation* automation_;
 }
@@ -100,6 +101,13 @@
             const std::string port = std::to_string(ctx_->proxyPort);
             nw_endpoint_t ep = nw_endpoint_create_host("127.0.0.1", port.c_str());
             nw_proxy_config_t pc = nw_proxy_config_create_http_connect(ep, nil);
+            if (!ctx_->proxyAuthToken.empty()) {
+                // The proxy refuses (407) anything without this per-launch
+                // secret, so other local processes cannot ride Lethe's
+                // policy identity or VPN tunnel.
+                nw_proxy_config_set_username_and_password(
+                    pc, "lethe", ctx_->proxyAuthToken.c_str());
+            }
             dataStore_.proxyConfigurations = @[pc];
             std::cout << "[lethe] WebKit traffic routed through policy proxy "
                          "127.0.0.1:" << port << " (subresource enforcement on)"
@@ -183,10 +191,23 @@
 
 #pragma mark - Status / privacy actions
 
+- (BOOL)isHttpAllowedForHost:(NSString*)host {
+    return host.length && [httpAllowedHosts_ containsObject:host.lowercaseString];
+}
+
+- (void)allowHttpForHost:(NSString*)host {
+    if (!httpAllowedHosts_) httpAllowedHosts_ = [NSMutableSet set];
+    if (host.length) [httpAllowedHosts_ addObject:host.lowercaseString];
+}
+
 - (NSString*)securityStatusText {
     const lethe::Config& cfg = ctx_->cfg;
     NSMutableString* s = [NSMutableString string];
     [s appendFormat:@"Lethe v%s\n\n", LETHE_VERSION];
+    [s appendFormat:@"HTTPS-first: %@\n", ctx_->httpsFirst
+        ? [NSString stringWithFormat:@"on (%lu host%@ allowed plain http this session)",
+           (unsigned long)httpAllowedHosts_.count, httpAllowedHosts_.count == 1 ? @"" : @"s"]
+        : @"OFF"];
     [s appendFormat:@"Secure DNS (DoH): %@\n",
         cfg.dnsProvider.empty() ? @"OFF" : @(cfg.dnsProvider.c_str())];
     [s appendFormat:@"Private-network isolation: %@\n",
@@ -194,7 +215,8 @@
     if (ctx_->proxyPort > 0) {
         if (@available(macOS 14.0, *)) {
             [s appendFormat:@"Transport enforcement: policy proxy 127.0.0.1:%d "
-                             "(every WebKit request)\n", ctx_->proxyPort];
+                             "(every WebKit request%@)\n", ctx_->proxyPort,
+                             ctx_->proxyAuthToken.empty() ? @"" : @", per-launch auth token"];
         } else {
             [s appendString:@"Transport enforcement: navigation gate only "
                              "(macOS 14+ needed for the per-request proxy)\n"];

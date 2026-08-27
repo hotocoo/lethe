@@ -19,8 +19,11 @@ std::string htmlEscape(const std::string& in);
 // Navigation refused by policy (DoH failure, private network, VPN rule...).
 std::string renderBlockPage(const std::string& url, const std::string& reason);
 
-// Load failed (network error, TLS failure, DNS...).
-std::string renderErrorPage(const std::string& url, const std::string& message);
+// Load failed (network error, TLS failure, DNS...). When \p httpFallback is
+// non-empty the page offers ONE explicit link that allow-lists the host for
+// plaintext and loads it (HTTPS-first upgrade failed).
+std::string renderErrorPage(const std::string& url, const std::string& message,
+                            const std::string& httpFallback = "");
 
 // Reader view of extracted blocks; \p url is shown as the source line.
 std::string renderReaderPage(const std::string& url,

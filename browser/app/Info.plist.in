@@ -57,6 +57,10 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Files this app writes (downloads) get the quarantine attribute so
+	     Gatekeeper checks them on first open, exactly like Safari/Chrome. -->
+	<key>LSFileQuarantineEnabled</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<!-- A browser must be able to show plain-http sites the user asks

@@ -27,6 +27,7 @@ std::unique_ptr<HttpClient> makeClient(Engine* engine, const ShellOptions& o) {
     c->initialize(o.tls);
     const Config& cfg = engine->config();
     if (!cfg.dnsProvider.empty()) c->setDohProvider(cfg.dnsProvider);
+    if (o.dohCache) c->setSharedDohCache(o.dohCache);
     PrivateNetworkPolicy pn;
     pn.isolatePrivateNetworks = cfg.isolatePrivateNetworks;
     for (const auto& h : cfg.privateNetworkAllowedHosts) pn.allowedHosts.insert(h);
@@ -207,7 +208,13 @@ struct MainWindowSignals {
         if (g_error_matches(error, WEBKIT_POLICY_ERROR, WEBKIT_POLICY_ERROR_FRAME_LOAD_INTERRUPTED_BY_POLICY_CHANGE)) return FALSE;
         std::cerr << "[lethe] load failed " << (failingUri ? failingUri : "") << ": "
                   << (error ? error->message : "") << std::endl;
-        tab->owner->showErrorPage(tab, failingUri ? failingUri : "", error ? error->message : "load failed");
+        const std::string failing = failingUri ? failingUri : "";
+        std::string fallback;
+        if (!tab->httpsUpgradedFrom.empty() &&
+            urlHost(failing) == urlHost(httpsUpgradeCandidate(tab->httpsUpgradedFrom)))
+            fallback = tab->httpsUpgradedFrom;
+        tab->httpsUpgradedFrom.clear();
+        tab->owner->showErrorPage(tab, failing, error ? error->message : "load failed", fallback);
         return TRUE;
     }
     static void onNotifyTitle(GObject* obj, GParamSpec*, gpointer d) {
@@ -399,11 +406,16 @@ WebKitWebContext* MainWindow::webContext() {
     std::cout << "[lethe] web context: "
               << (options_.persistent ? "persistent" : "ephemeral (incognito)") << std::endl;
     if (options_.proxyPort > 0) {
-        const std::string proxyUri = "http://127.0.0.1:" + std::to_string(options_.proxyPort);
+        // Credentials in the proxy URI: libsoup answers the proxy's 407 with
+        // them, so only this WebKit context can use Lethe's proxy.
+        const std::string proxyUri = "http://" +
+            (options_.proxyAuthToken.empty() ? std::string() : "lethe:" + options_.proxyAuthToken + "@") +
+            "127.0.0.1:" + std::to_string(options_.proxyPort);
         WebKitNetworkProxySettings* s = webkit_network_proxy_settings_new(proxyUri.c_str(), nullptr);
         webkit_web_context_set_network_proxy_settings(context_, WEBKIT_NETWORK_PROXY_MODE_CUSTOM, s);
         webkit_network_proxy_settings_free(s);
-        std::cout << "[lethe] WebKit traffic routed through policy proxy " << proxyUri
+        std::cout << "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:" << options_.proxyPort
+                  << (options_.proxyAuthToken.empty() ? "" : " (per-launch auth token)")
                   << " (subresource enforcement on)" << std::endl;
     }
     webkit_web_context_set_sandbox_enabled(context_, options_.webkitSandbox ? TRUE : FALSE);
@@ -477,6 +489,18 @@ void MainWindow::decidePolicy(Tab* tab, WebKitPolicyDecision* decision, WebKitPo
         if (isMainFrame) webkit_policy_decision_ignore(decision); else webkit_policy_decision_use(decision);
         return;
     }
+    if (uri.rfind(std::string(kHttpFallbackScheme) + "://", 0) == 0) {
+        // Link on our own error page: user chose plain http for this host.
+        webkit_policy_decision_ignore(decision);
+        const std::string target = parseHttpFallbackActionUrl(uri);
+        if (!target.empty()) {
+            httpAllowedHosts_.insert(urlHost(target));
+            std::cout << "[lethe] https-first: user allowed plain http for " << urlHost(target) << std::endl;
+            tab->httpsUpgradedFrom.clear();
+            loadUrl(tab, target);
+        }
+        return;
+    }
     if (!isWebScheme(uri)) {
         std::cerr << "[lethe] refused non-web scheme: " << uri << std::endl;
         webkit_policy_decision_ignore(decision);
@@ -484,6 +508,16 @@ void MainWindow::decidePolicy(Tab* tab, WebKitPolicyDecision* decision, WebKitPo
             showBlockPage(tab, uri, "scheme is not allowed");
         }
         return;
+    }
+    if (isMainFrame && options_.httpsFirst && uri.rfind("http://", 0) == 0) {
+        const std::string upgraded = httpsUpgradeCandidate(uri);
+        if (!upgraded.empty() && !httpAllowedHosts_.count(urlHost(uri))) {
+            webkit_policy_decision_ignore(decision);
+            tab->httpsUpgradedFrom = uri;
+            std::cout << "[lethe] https-first: " << uri << " -> " << upgraded << std::endl;
+            loadUrl(tab, upgraded);
+            return;
+        }
     }
     // Off the main loop: DoH resolution + policy. Decision stays alive via ref.
     g_object_ref(decision);
@@ -656,8 +690,9 @@ void MainWindow::showBlockPage(Tab* tab, const std::string& url, const std::stri
     setTabTitle(tab, "Blocked");
 }
 
-void MainWindow::showErrorPage(Tab* tab, const std::string& url, const std::string& message) {
-    showInternalPage(tab, renderErrorPage(url, message), url);
+void MainWindow::showErrorPage(Tab* tab, const std::string& url, const std::string& message,
+                               const std::string& httpFallback) {
+    showInternalPage(tab, renderErrorPage(url, message, httpFallback), url);
     setTabTitle(tab, "Page failed to load");
 }
 

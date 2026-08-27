@@ -41,6 +41,19 @@
 
 namespace lethe {
 
+// Per-connection chatter (client init/shutdown, DoH provider handshakes,
+// individual answers) is useful when debugging one request but the proxy
+// mints a client per engine connection, so on a busy page it became
+// thousands of synchronous stdout writes. LETHE_DEBUG=1 turns it back on;
+// refusals, failures and policy decisions always print.
+static bool verboseHttpLog() {
+    static const bool on = []() {
+        const char* d = std::getenv("LETHE_DEBUG");
+        return d && *d && std::string(d) != "0";
+    }();
+    return on;
+}
+
 namespace {
 
 constexpr size_t kReadChunkSize = 16384;
@@ -128,7 +141,7 @@ bool HttpClient::initialize(const TLSConfig& tlsConfig) {
     OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
 #endif
 
-    std::cout << "[lethe] HTTP client initialized (TLS "
+    if (verboseHttpLog()) std::cout << "[lethe] HTTP client initialized (TLS "
               << tlsConfig_.getMinVersion() << "+)" << std::endl;
 
     initialized_ = true;
@@ -347,7 +360,7 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
 void HttpClient::setVpnTunnel(std::shared_ptr<vpn::VpnTunnel> tunnel) {
     vpnTunnel_ = std::move(tunnel);
     if (vpnTunnel_) {
-        std::cout << "[lethe] VPN tunnel attached to HTTP client" << std::endl;
+        if (verboseHttpLog()) std::cout << "[lethe] VPN tunnel attached to HTTP client" << std::endl;
     }
 }
 
@@ -389,7 +402,7 @@ void HttpClient::setDohProvider(const std::string& url) {
     dohBootstrapValid_ = false;
     dohCache_.clear(); // answers pinned to the old provider must not survive
     if (!url.empty()) {
-        std::cout << "[lethe-http][doh] provider configured: " << url << std::endl;
+        if (verboseHttpLog()) std::cout << "[lethe-http][doh] provider configured: " << url << std::endl;
     }
 }
 
@@ -480,6 +493,11 @@ bool HttpClient::refreshDohBootstrap() {
         now - dohBootstrapTime_ < std::chrono::seconds(300)) {
         return !dohProviderIps_.empty();
     }
+    if (sharedDoh_ && sharedDoh_->lookupBootstrap(dohProvider_, dohProviderIps_)) {
+        dohBootstrapValid_ = true;
+        dohBootstrapTime_ = now;
+        return true;
+    }
 
     std::string scheme, phost, path;
     int port = 0;
@@ -514,12 +532,14 @@ bool HttpClient::refreshDohBootstrap() {
 
     dohBootstrapValid_ = true;
     dohBootstrapTime_ = now;
+    if (sharedDoh_) sharedDoh_->storeBootstrap(dohProvider_, dohProviderIps_);
     return !dohProviderIps_.empty();
 }
 
 // --- DoH answer cache -------------------------------------------------------
 
 void HttpClient::dohCacheStore(const std::string& host, const std::string& ip) {
+    if (sharedDoh_) { sharedDoh_->store(dohProvider_, host, ip); return; }
     if (dohCacheTtl_.count() <= 0) return;
     // Bound the cache: drop expired entries first; if a pathological burst
     // still exceeds the cap, start over rather than grow without limit.
@@ -535,6 +555,7 @@ void HttpClient::dohCacheStore(const std::string& host, const std::string& ip) {
 }
 
 bool HttpClient::dohCacheLookup(const std::string& host, std::string& outIp) {
+    if (sharedDoh_) return sharedDoh_->lookup(dohProvider_, host, outIp);
     const auto now = std::chrono::steady_clock::now();
     auto it = dohCache_.find(host);
     if (it == dohCache_.end()) return false;
@@ -550,12 +571,13 @@ bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
     // Repeat visits to a host are the common case for both browsing and LLM
     // page reads: serve them from the TTL cache instead of paying a fresh
     // DoH round trip (which itself opens TCP+TLS to the provider).
-    if (!dohCache_.empty() || dohCacheTtl_.count() > 0) {
+    if (sharedDoh_ || !dohCache_.empty() || dohCacheTtl_.count() > 0) {
         std::string cached;
         if (dohCacheLookup(host, cached)) {
             outIp = cached;
-            std::cout << "[lethe-http][doh] " << host << " -> " << cached
-                      << " (cached)" << std::endl;
+            if (verboseHttpLog())
+                std::cout << "[lethe-http][doh] " << host << " -> " << cached
+                          << " (cached)" << std::endl;
             return true;
         }
     }
@@ -610,8 +632,9 @@ bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
                 if (looksLikeIpv4(candidate)) {
                     outIp = candidate;
                     dohCacheStore(host, candidate);
-                    std::cout << "[lethe-http][doh] " << host << " -> "
-                              << candidate << std::endl;
+                    if (verboseHttpLog())
+                        std::cout << "[lethe-http][doh] " << host << " -> "
+                                  << candidate << std::endl;
                     return true;
                 }
             }
@@ -626,7 +649,7 @@ void HttpClient::shutdown() {
     closeConnection();
     if (initialized_) {
         initialized_ = false;
-        std::cout << "[lethe] HTTP client shut down" << std::endl;
+        if (verboseHttpLog()) std::cout << "[lethe] HTTP client shut down" << std::endl;
     }
 }
 
@@ -1016,7 +1039,7 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
     }
 
     const SSL* sslConst = ssl_;
-    std::cout << "[lethe-http] TLS established with " << tlsHostname << " ("
+    if (verboseHttpLog()) std::cout << "[lethe-http] TLS established with " << tlsHostname << " ("
               << SSL_get_version(sslConst) << ")" << std::endl;
     return true;
 #else
@@ -2129,6 +2152,7 @@ PolicyStreamPtr HttpClient::dialPolicyChecked(const PolicyDialConfig& cfg,
         return nullptr;
     }
     if (!cfg.dohProvider.empty()) cli->setDohProvider(cfg.dohProvider);
+    if (cfg.dohCache) cli->setSharedDohCache(cfg.dohCache);
     cli->setPrivateNetworkPolicy(cfg.privateNet);
     if (cfg.vpnTunnel) {
         // Non-owning alias: the engine keeps tunnel lifetime.

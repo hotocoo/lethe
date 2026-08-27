@@ -18,6 +18,7 @@ static const CGFloat kChromeHeight = 44.0;
 @interface BrowserWindowController () <WKNavigationDelegate, WKUIDelegate,
                                        WKDownloadDelegate, NSWindowDelegate,
                                        NSTextFieldDelegate> {
+    NSString* httpsUpgradedFrom_;   // http URL being tried as https (HTTPS-first)
     lethe::ShellContext* ctx_;
     LethePolicyGate* gate_;
     WKWebView* webView_;
@@ -390,8 +391,13 @@ static const CGFloat kChromeHeight = 44.0;
 }
 
 - (void)showErrorPageForURL:(NSString*)url message:(NSString*)message {
+    [self showErrorPageForURL:url message:message httpFallback:nil];
+}
+
+- (void)showErrorPageForURL:(NSString*)url message:(NSString*)message httpFallback:(NSString*)fallback {
     const std::string html = lethe::renderErrorPage(
-        url.UTF8String ? url.UTF8String : "", message.UTF8String ? message.UTF8String : "");
+        url.UTF8String ? url.UTF8String : "", message.UTF8String ? message.UTF8String : "",
+        fallback.UTF8String ? fallback.UTF8String : "");
     internalPageUrl_ = url;
     [webView_ loadHTMLString:@(html.c_str()) baseURL:nil];
     [self updateAddress];
@@ -626,6 +632,20 @@ static const CGFloat kChromeHeight = 44.0;
         handler(isMainFrame ? WKNavigationActionPolicyCancel : WKNavigationActionPolicyAllow);
         return;
     }
+    if ([scheme isEqualToString:@(lethe::kHttpFallbackScheme)]) {
+        // Link on our own error page: the user chose plain http for this
+        // host after the https upgrade failed. Allow-list, then load.
+        handler(WKNavigationActionPolicyCancel);
+        const std::string target = lethe::parseHttpFallbackActionUrl(url.absoluteString.UTF8String ?: "");
+        if (!target.empty()) {
+            LetheAppDelegate* app = (LetheAppDelegate*)NSApp.delegate;
+            [app allowHttpForHost:@(lethe::urlHost(target).c_str())];
+            NSLog(@"[lethe] https-first: user allowed plain http for %s", lethe::urlHost(target).c_str());
+            httpsUpgradedFrom_ = nil;
+            [webView_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@(target.c_str())]]];
+        }
+        return;
+    }
     if (!([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"])) {
         NSLog(@"[lethe] refused non-web scheme: %@", url.absoluteString);
         handler(WKNavigationActionPolicyCancel);
@@ -641,6 +661,20 @@ static const CGFloat kChromeHeight = 44.0;
         [app openTabWithURL:url.absoluteString fromWindow:self.window webView:nil];
         handler(WKNavigationActionPolicyCancel);
         return;
+    }
+    if (isMainFrame && ctx_->httpsFirst && [scheme isEqualToString:@"http"]) {
+        // HTTPS-first: try the encrypted version before ever sending
+        // plaintext. IP literals, localhost, .local and custom ports are
+        // exempt; a host the user explicitly allowed stays plain.
+        const std::string upgraded = lethe::httpsUpgradeCandidate(url.absoluteString.UTF8String ?: "");
+        LetheAppDelegate* app = (LetheAppDelegate*)NSApp.delegate;
+        if (!upgraded.empty() && ![app isHttpAllowedForHost:url.host]) {
+            handler(WKNavigationActionPolicyCancel);
+            httpsUpgradedFrom_ = url.absoluteString;
+            NSLog(@"[lethe] https-first: %@ -> %s", url.absoluteString, upgraded.c_str());
+            [webView_ loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@(upgraded.c_str())]]];
+            return;
+        }
     }
     NSString* target = url.absoluteString;
     __weak BrowserWindowController* weakSelf = self;
@@ -690,6 +724,7 @@ static const CGFloat kChromeHeight = 44.0;
 
 - (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)nav {
     (void)webView; (void)nav;
+    httpsUpgradedFrom_ = nil;
     [self updateTitle];
     [self updateAddress];
 }
@@ -698,9 +733,27 @@ static const CGFloat kChromeHeight = 44.0;
     if ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled) return;
     // 102 = WebKitErrorFrameLoadInterruptedByPolicyChange (download / policy cancel)
     if ([error.domain isEqualToString:@"WebKitErrorDomain"] && error.code == 102) return;
-    NSString* failing = error.userInfo[NSURLErrorFailingURLStringErrorKey] ?: webView_.URL.absoluteString ?: @"";
+    // The failing URL: the error's own key when present; otherwise, for a
+    // provisional failure of an HTTPS-first upgrade, the upgraded URL (the
+    // view's URL still points at the previous page then).
+    NSString* upgraded = nil;
+    if (httpsUpgradedFrom_.length) {
+        const std::string expected = lethe::httpsUpgradeCandidate(httpsUpgradedFrom_.UTF8String ?: "");
+        if (!expected.empty()) upgraded = @(expected.c_str());
+    }
+    NSString* failing = error.userInfo[NSURLErrorFailingURLStringErrorKey]
+        ?: upgraded ?: webView_.URL.absoluteString ?: @"";
     NSLog(@"[lethe] load failed %@: %@ (%ld)", failing, error.localizedDescription, (long)error.code);
-    [self showErrorPageForURL:failing message:error.localizedDescription];
+    // HTTPS-first upgrade that did not answer: offer the plain URL once,
+    // explicitly, on the error page. Never silently.
+    NSString* fallback = nil;
+    if (upgraded) {
+        NSString* failingHost = [NSURL URLWithString:failing].host ?: @"";
+        NSString* upgradedHost = [NSURL URLWithString:upgraded].host ?: @"";
+        if (failingHost.length && [failingHost isEqualToString:upgradedHost]) fallback = httpsUpgradedFrom_;
+    }
+    httpsUpgradedFrom_ = nil;
+    [self showErrorPageForURL:failing message:error.localizedDescription httpFallback:fallback];
 }
 
 - (void)webView:(WKWebView*)webView didFailProvisionalNavigation:(WKNavigation*)nav

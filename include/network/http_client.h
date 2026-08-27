@@ -7,6 +7,7 @@
 #include <chrono>
 #include <memory>
 #include <cstdint>
+#include "network/doh_cache.h"
 #include "network/tls_config.h"
 #include "network/vpn/vpn_tunnel.h"
 #include "security/cert_pinner.h"
@@ -135,6 +136,12 @@ public:
     // Only successful resolutions are ever cached - failures always retry
     // the provider, so fail-closed semantics are unchanged.
     void setDohCacheTtl(std::chrono::seconds ttl) { dohCacheTtl_ = ttl; }
+    // Share one answer cache across many clients (proxy connections, the
+    // navigation gate, reader fetches): a hostname is then resolved once
+    // per TTL process-wide instead of once per connection. nullptr reverts
+    // to the private per-client cache.
+    void setSharedDohCache(std::shared_ptr<SharedDohCache> cache) { sharedDoh_ = std::move(cache); }
+    const std::shared_ptr<SharedDohCache>& sharedDohCache() const { return sharedDoh_; }
 
     // --- Cookies (partitioned jar owned by Engine) ---
     // When enabled and the request carries a top-level site (or the URL
@@ -228,6 +235,7 @@ public:
     struct PolicyDialConfig {
         TLSConfig tls;
         std::string dohProvider;          // empty = system DNS (tests)
+        std::shared_ptr<SharedDohCache> dohCache; // shared answers (may be null)
         PrivateNetworkPolicy privateNet;
         UdpTransport* vpnUdp = nullptr;   // enables covered-relay dials
         vpn::VpnTunnel* vpnTunnel = nullptr; // non-owning; engine owns it
@@ -403,6 +411,7 @@ private:
 
     // DoH answer cache: bounded, success-only, TTL-expired.
     std::map<std::string, DohEntry> dohCache_;
+    std::shared_ptr<SharedDohCache> sharedDoh_;            // optional, process-wide
     static constexpr size_t kMaxDohCacheEntries = 256;
     std::chrono::seconds dohCacheTtl_{300};
 

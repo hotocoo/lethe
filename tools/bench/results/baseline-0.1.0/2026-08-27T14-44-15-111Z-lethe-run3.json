@@ -1,0 +1,170 @@
+{
+  "browser": "lethe",
+  "version": "Lethe Browser v0.1.0",
+  "run": 3,
+  "startedAt": "2026-08-27T14:44:15.111Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup",
+    "pageload",
+    "memory"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 274.5464579999971,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 27: wait: still loading after 45000 ms",
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 141,
+      "dcl": 154,
+      "load": 154,
+      "fcp": 155,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 636,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": null,
+      "dcl": 79,
+      "load": 260,
+      "fcp": 272,
+      "resources": 8,
+      "opaqueResources": 0,
+      "bytes": 1293073,
+      "domNodes": 242
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "ttfb": 418,
+      "dcl": 706,
+      "load": 3747,
+      "fcp": 731,
+      "resources": 35,
+      "opaqueResources": 6,
+      "bytes": 443677,
+      "domNodes": 4173
+    },
+    {
+      "url": "https://github.com/",
+      "ttfb": 25,
+      "dcl": 1399,
+      "load": 1985,
+      "fcp": 1094,
+      "resources": 140,
+      "opaqueResources": 139,
+      "bytes": 118726,
+      "domNodes": 1783
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 357,
+      "dcl": 924,
+      "load": 2919,
+      "fcp": 404,
+      "resources": 136,
+      "opaqueResources": 136,
+      "bytes": 65831,
+      "domNodes": 1483
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "ttfb": 824.0000000000001,
+      "dcl": 1673,
+      "load": 2830,
+      "fcp": 965,
+      "resources": 98,
+      "opaqueResources": 98,
+      "bytes": 147557,
+      "domNodes": 5196
+    }
+  ],
+  "speedometer": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 619.7437499999942,
+      "rssMb": 190.921875,
+      "processes": 4,
+      "breakdown": [
+        {
+          "pid": 48545,
+          "rssMb": 115.5,
+          "name": "lethe"
+        },
+        {
+          "pid": 48588,
+          "rssMb": 14.8,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 48589,
+          "rssMb": 29.9,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 48590,
+          "rssMb": 30.7,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[lethe] VPN tunnel attached to HTTP client",
+    "[lethe] HTTP client shut down",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe-http][doh] ads.yieldmo.com -> 47.129.221.89",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[lethe] HTTP client shut down",
+    "[e2e] FAIL line 27: wait: still loading after 45000 ms",
+    "[e2e] failure screenshot: /var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/lethe-e2e-failure.png",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] HTTP client shut down",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

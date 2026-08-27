@@ -61,3 +61,31 @@ LETHE_TEST_CASE(UrlInput_PercentEncode) {
     CHECK_EQ(percentEncodeQueryComponent("a b&c=d/é"), "a%20b%26c%3Dd%2F%C3%A9");
     CHECK_EQ(percentEncodeQueryComponent("safe-_.~AZaz09"), "safe-_.~AZaz09");
 }
+
+LETHE_TEST_CASE(UrlInput_HttpsFirst_UpgradeCandidates) {
+    CHECK_EQ(httpsUpgradeCandidate("http://example.com/a?b=1"), "https://example.com/a?b=1");
+    CHECK_EQ(httpsUpgradeCandidate("HTTP://Example.com"), "https://Example.com");
+    CHECK_EQ(httpsUpgradeCandidate("http://example.com:80/x"), "https://example.com/x");
+    // No upgrade: already https, loopback/literal, .local, custom port.
+    CHECK_EQ(httpsUpgradeCandidate("https://example.com/"), "");
+    CHECK_EQ(httpsUpgradeCandidate("http://127.0.0.1:8080/"), "");
+    CHECK_EQ(httpsUpgradeCandidate("http://192.168.1.1/"), "");
+    CHECK_EQ(httpsUpgradeCandidate("http://localhost/"), "");
+    CHECK_EQ(httpsUpgradeCandidate("http://printer.local/"), "");
+    CHECK_EQ(httpsUpgradeCandidate("http://[::1]/"), "");
+    CHECK_EQ(httpsUpgradeCandidate("http://dev.example.com:8080/"), "");
+    CHECK_EQ(httpsUpgradeCandidate("about:blank"), "");
+}
+
+LETHE_TEST_CASE(UrlInput_HttpFallbackAction_RoundTrip) {
+    const std::string http = "http://neverssl.com/path?x=1&y=2";
+    const std::string action = httpFallbackActionUrl(http);
+    CHECK_TRUE(action.rfind("lethe-action://allow-http?u=", 0) == 0);
+    CHECK_EQ(parseHttpFallbackActionUrl(action), http);
+    // Only http:// targets are accepted back; anything else is rejected.
+    CHECK_EQ(parseHttpFallbackActionUrl("lethe-action://allow-http?u=javascript%3Aalert(1)"), "");
+    CHECK_EQ(parseHttpFallbackActionUrl("https://example.com/"), "");
+    CHECK_EQ(parseHttpFallbackActionUrl("lethe-action://allow-http?u=http%3A%2F%2Fa%2"), "");
+    CHECK_EQ(urlHost("https://user@Example.COM:8443/p"), "example.com");
+    CHECK_EQ(urlHost("http://[::1]:80/"), "[::1]");
+}

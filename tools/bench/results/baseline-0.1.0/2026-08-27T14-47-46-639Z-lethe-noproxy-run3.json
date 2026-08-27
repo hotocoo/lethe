@@ -1,0 +1,170 @@
+{
+  "browser": "lethe-noproxy",
+  "version": "Lethe Browser v0.1.0",
+  "run": 3,
+  "startedAt": "2026-08-27T14:47:46.639Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup",
+    "pageload",
+    "memory"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 272.74575000000186,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 27: wait: still loading after 45000 ms",
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 69,
+      "dcl": 75,
+      "load": 76,
+      "fcp": 76,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 636,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": null,
+      "dcl": 75,
+      "load": 190,
+      "fcp": 203,
+      "resources": 8,
+      "opaqueResources": 0,
+      "bytes": 1293172,
+      "domNodes": 242
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "ttfb": 18.000000000000004,
+      "dcl": 127,
+      "load": 3241,
+      "fcp": 123,
+      "resources": 35,
+      "opaqueResources": 6,
+      "bytes": 443677,
+      "domNodes": 4172
+    },
+    {
+      "url": "https://github.com/",
+      "ttfb": 21,
+      "dcl": 1157,
+      "load": 1170,
+      "fcp": 860,
+      "resources": 141,
+      "opaqueResources": 140,
+      "bytes": 118729,
+      "domNodes": 1783
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 104.00000000000001,
+      "dcl": 544,
+      "load": 1724,
+      "fcp": 123,
+      "resources": 147,
+      "opaqueResources": 147,
+      "bytes": 65822,
+      "domNodes": 1496
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "ttfb": 174.00000000000003,
+      "dcl": 518,
+      "load": 1535.0000000000002,
+      "fcp": 303,
+      "resources": 98,
+      "opaqueResources": 98,
+      "bytes": 147769,
+      "domNodes": 5199
+    }
+  ],
+  "speedometer": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 607.8424580000283,
+      "rssMb": 190.546875,
+      "processes": 4,
+      "breakdown": [
+        {
+          "pid": 52101,
+          "rssMb": 115.2,
+          "name": "lethe"
+        },
+        {
+          "pid": 52149,
+          "rssMb": 30,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 52150,
+          "rssMb": 14.8,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 52151,
+          "rssMb": 30.5,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[lethe-http][doh] usersync.gumgum.com -> 13.229.5.242 (cached)",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe-http][doh] ssp-sync.criteo.com -> 74.119.117.39",
+    "[lethe-http][doh] eus.rubiconproject.com -> 23.50.93.199 (cached)",
+    "[lethe-http][doh] creativecdn.com -> 185.184.8.90 (cached)",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe-http][doh] acdn.adnxs.com -> 151.101.129.108",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe-http][doh] prebid.a-mo.net -> 131.153.206.101",
+    "[lethe-http][doh] elb.the-ozone-project.com -> 172.64.153.66 (cached)",
+    "[lethe-http][doh] ads.pubmatic.com -> 23.56.25.41 (cached)",
+    "[lethe-http][doh] js-sec.indexww.com -> 104.18.25.18 (cached)",
+    "[lethe-http][doh] gum.criteo.com -> 182.161.73.131 (cached)",
+    "[lethe-http][doh] eus.rubiconproject.com -> 23.50.93.199 (cached)",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe-http][doh] ssum-sec.casalemedia.com -> 104.18.26.193",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe-http][doh] ssp.wknd.ai -> 34.111.170.203",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe-http][doh] js.stripe.com -> 3.171.198.77",
+    "[lethe-http][doh] ssum-sec.casalemedia.com -> 104.18.26.193 (cached)",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe-http][doh] cdn.flashtalking.com -> 13.33.183.104",
+    "[lethe-http][doh] s.amazon-adsystem.com -> 98.82.154.76 (cached)",
+    "[lethe-http][doh] ssum-sec.casalemedia.com -> 104.18.26.193 (cached)",
+    "[lethe-http][doh] ssum-sec.casalemedia.com -> 104.18.26.193 (cached)",
+    "[lethe-http] TLS established with cloudflare-dns.com (TLSv1.3)",
+    "[lethe-http][doh] m.stripe.network -> 151.101.192.176",
+    "[lethe-http][doh] ssum-sec.casalemedia.com -> 104.18.26.193 (cached)",
+    "[lethe-http][doh] ssum-sec.casalemedia.com -> 104.18.26.193 (cached)",
+    "[lethe-http][doh] s.amazon-adsystem.com -> 98.82.154.76 (cached)",
+    "[lethe-http][doh] ads.pubmatic.com -> 23.56.25.41 (cached)",
+    "[lethe-http][doh] ad.360yield.com -> 111.91.0.119 (cached)",
+    "[e2e] FAIL line 27: wait: still loading after 45000 ms",
+    "[e2e] failure screenshot: /var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/lethe-e2e-failure.png",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] HTTP client shut down",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

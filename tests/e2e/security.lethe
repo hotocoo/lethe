@@ -1,0 +1,22 @@
+# Security checklist: HTTPS-first upgrade + explicit plaintext fallback.
+# (Private-network and secure-DNS refusals are covered in basic.lethe.)
+load http://example.com/
+wait
+assert-url-contains https://example.com
+# https://httpforever.com does not answer TLS: the error page must offer
+# exactly one explicit, labelled way to continue over plain http.
+load http://httpforever.com/
+wait 30000
+assert-body-contains Continue to http://httpforever.com/ (not encrypted)
+screenshot $TMPDIR/lethe-e2e-sec-01-https-first-error.png
+click a.fallback
+sleep 1500
+wait 30000
+assert-url-contains http://httpforever.com
+assert-body-contains HTTP Forever
+screenshot $TMPDIR/lethe-e2e-sec-02-http-fallback.png
+# The allow-list is per host and per session: a different host still upgrades.
+load http://www.iana.org/
+wait
+assert-url-contains https://www.iana.org
+quit

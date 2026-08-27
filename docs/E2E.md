@@ -24,6 +24,7 @@ One per line, `#` starts a comment. `<text>` runs to end of line.
 | `load <text>` | Address-bar semantics: URL, bare host, or search query |
 | `type-address <text>` | Type into the address bar and press Enter |
 | `wait [ms]` | Until the current tab finished loading (page load or reader fetch); default 20000 |
+| `try-wait [ms]` | Like `wait`, but a timeout logs `[e2e] timeout ...`, stops the load and continues (benchmark data point, not a failure) |
 | `sleep <ms>` | Fixed pause |
 | `newtab [text]` | Open a tab beside the current one; it becomes current |
 | `closetab` | Close the current tab |
@@ -31,6 +32,9 @@ One per line, `#` starts a comment. `<text>` runs to end of line.
 | `reader` | Toggle reader view |
 | `click <css>` | `document.querySelector(css).click()` |
 | `js <code>` | Evaluate JavaScript (result kept) |
+| `wait-js <ms> <code>` | Poll every 250 ms until `code` is truthy; fail after `ms` |
+| `print-js <code>` | Evaluate and echo `[e2e] result <text>` on stdout (harness output) |
+| `mark <text>` | Echo `[e2e] mark <text>` on stdout (harness synchronisation point) |
 | `screenshot <path.png>` | Capture the window (`$TMPDIR/` prefix expands) |
 | `assert-url-contains <s>` | Current URL or shown address contains `s` |
 | `assert-title-contains <s>` | Window/tab title contains `s` (case-insensitive) |

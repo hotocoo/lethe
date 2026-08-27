@@ -2,8 +2,10 @@
 
 #include <arpa/inet.h>
 #include <atomic>
+#include <openssl/rand.h>
 #include <cctype>
 #include <cstring>
+#include <iostream>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <thread>
@@ -21,6 +23,63 @@ std::string forbiddenResponse(const std::string& reason) {
            "Content-Type: text/plain\r\n"
            "Connection: close\r\nContent-Length: " +
            std::to_string(body.size()) + "\r\n\r\n" + body;
+}
+
+std::string proxyAuthRequiredResponse() {
+    const std::string body = "Proxy authentication required (Lethe per-launch token)\n";
+    return "HTTP/1.1 407 Proxy Authentication Required\r\n"
+           "Proxy-Authenticate: Basic realm=\"Lethe\"\r\n"
+           "Content-Type: text/plain\r\n"
+           "Connection: close\r\nContent-Length: " +
+           std::to_string(body.size()) + "\r\n\r\n" + body;
+}
+
+std::string base64Encode(const std::string& in) {
+    static const char* tbl =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    size_t i = 0;
+    while (i + 2 < in.size()) {
+        const unsigned v = (static_cast<unsigned char>(in[i]) << 16) |
+                           (static_cast<unsigned char>(in[i + 1]) << 8) |
+                           static_cast<unsigned char>(in[i + 2]);
+        out += tbl[(v >> 18) & 63]; out += tbl[(v >> 12) & 63];
+        out += tbl[(v >> 6) & 63]; out += tbl[v & 63];
+        i += 3;
+    }
+    if (i + 1 == in.size()) {
+        const unsigned v = static_cast<unsigned char>(in[i]) << 16;
+        out += tbl[(v >> 18) & 63]; out += tbl[(v >> 12) & 63]; out += "==";
+    } else if (i + 2 == in.size()) {
+        const unsigned v = (static_cast<unsigned char>(in[i]) << 16) |
+                           (static_cast<unsigned char>(in[i + 1]) << 8);
+        out += tbl[(v >> 18) & 63]; out += tbl[(v >> 12) & 63];
+        out += tbl[(v >> 6) & 63]; out += '=';
+    }
+    return out;
+}
+
+// Case-insensitive header lookup in a request head; "" when absent.
+std::string headerValue(const std::string& head, const std::string& name) {
+    size_t pos = head.find("\r\n");
+    while (pos != std::string::npos && pos + 2 < head.size()) {
+        const size_t end = head.find("\r\n", pos + 2);
+        const std::string line = head.substr(pos + 2, end == std::string::npos ? std::string::npos : end - pos - 2);
+        if (line.size() > name.size() + 1 && line[name.size()] == ':') {
+            bool match = true;
+            for (size_t i = 0; i < name.size(); i++) {
+                if (::tolower(static_cast<unsigned char>(line[i])) !=
+                    ::tolower(static_cast<unsigned char>(name[i]))) { match = false; break; }
+            }
+            if (match) {
+                size_t v = name.size() + 1;
+                while (v < line.size() && (line[v] == ' ' || line[v] == '\t')) v++;
+                return line.substr(v);
+            }
+        }
+        pos = end;
+    }
+    return "";
 }
 
 bool sendAll(int fd, const char* p, size_t n) {
@@ -52,6 +111,20 @@ bool readHead(int fd, std::string& out) {
 
 PolicyProxyServer::~PolicyProxyServer() { stop(); }
 
+std::string PolicyProxyServer::generateAuthToken() {
+    unsigned char raw[32];
+    if (RAND_bytes(raw, sizeof(raw)) != 1) return "";
+    static const char* hex = "0123456789abcdef";
+    std::string out;
+    out.reserve(64);
+    for (unsigned char b : raw) { out += hex[b >> 4]; out += hex[b & 15]; }
+    return out;
+}
+
+std::string PolicyProxyServer::basicCredentialFor(const std::string& token) {
+    return "Basic " + base64Encode("lethe:" + token);
+}
+
 bool PolicyProxyServer::start(const Options& options) {
     opts_ = options;
     listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -81,6 +154,7 @@ bool PolicyProxyServer::start(const Options& options) {
     socklen_t len = sizeof(addr);
     ::getsockname(listenFd_, reinterpret_cast<sockaddr*>(&addr), &len);
     port_ = ntohs(addr.sin_port);
+    if (!opts_.dohCache) opts_.dohCache = std::make_shared<SharedDohCache>();
     running_ = true;
     acceptThread_ = std::thread([this] { acceptLoop(); });
     return true;
@@ -108,6 +182,7 @@ HttpClient::PolicyDialConfig PolicyProxyServer::dialConfig() const {
     HttpClient::PolicyDialConfig cfg;
     cfg.tls = opts_.tls;
     cfg.dohProvider = opts_.dohProvider;
+    cfg.dohCache = opts_.dohCache;
     cfg.privateNet = opts_.privateNet;
     cfg.vpnTunnel = opts_.vpnTunnel;
     cfg.vpnUdp = static_cast<UdpTransport*>(opts_.udpTransport);
@@ -134,6 +209,30 @@ void PolicyProxyServer::serveConnection(int clientFd) {
     const std::string target = sp2 == std::string::npos
                                    ? ""
                                    : line.substr(sp1 + 1, sp2 - sp1 - 1);
+
+    // Authenticate FIRST: an unauthenticated peer gets no policy work, no
+    // DoH traffic and no upstream socket - nothing it can measure or use.
+    if (!opts_.authToken.empty()) {
+        const std::string presented = headerValue(head, "Proxy-Authorization");
+        const std::string expected = basicCredentialFor(opts_.authToken);
+        bool ok = presented.size() == expected.size();
+        // Constant-time compare: a local attacker could otherwise time the
+        // prefix match byte by byte.
+        unsigned diff = ok ? 0 : 1;
+        for (size_t i = 0; ok && i < expected.size(); i++)
+            diff |= static_cast<unsigned>(presented[i] ^ expected[i]);
+        if (diff != 0) {
+            // Security event, always logged: either the engine's first
+            // challenge round trip or a foreign local process probing.
+            std::cout << "[lethe-proxy] 407 " << method << " " << target
+                      << (presented.empty() ? " (no credential)" : " (bad credential)")
+                      << std::endl;
+            const std::string resp = proxyAuthRequiredResponse();
+            sendAll(clientFd, resp.data(), resp.size());
+            ::close(clientFd);
+            return;
+        }
+    }
     const HttpClient::PolicyDialConfig cfg = dialConfig();
 
     if (method == "CONNECT") {
@@ -208,6 +307,7 @@ void PolicyProxyServer::serveConnection(int clientFd) {
     auto client = std::make_unique<HttpClient>();
     client->initialize(cfg.tls);
     if (!cfg.dohProvider.empty()) client->setDohProvider(cfg.dohProvider);
+    if (cfg.dohCache) client->setSharedDohCache(cfg.dohCache);
     client->setPrivateNetworkPolicy(cfg.privateNet);
     if (cfg.vpnTunnel)
         client->setVpnTunnel(std::shared_ptr<vpn::VpnTunnel>(
