@@ -8,7 +8,9 @@
 //   - Linux: seccomp-bpf default-DENY filter with an explicit syscall
 //     allowlist sized for a networked browser engine.
 
+#include <cstdlib>
 #include <iostream>
+#include <string>
 #include "security/sandbox.h"
 
 #ifdef __linux__
@@ -26,15 +28,36 @@ namespace {
 #if defined(__APPLE__)
 // Deny-by-default for the highest-risk dimension (filesystem writes) while
 // keeping everything else working in a single-process engine.
-constexpr char kSeatbeltProfile[] =
-    "(version 1)\n"
-    "(allow default)\n"
-    "(deny file-write*)\n"
-    "(allow file-write*\n"
-    "  (subpath \"/private/tmp\")\n"
-    "  (subpath \"/var/tmp\")\n"
-    "  (regex #\"^/private/var/folders/\")\n"
-    "  (regex #\"^/var/folders/\"))\n";
+// Beyond temp locations, the browser shell may write ONLY to the user's
+// Downloads folder (saved files) and its own per-bundle Library subtrees
+// (WebKit caches/storage for the persistent profile, window-state
+// restore). Documents, dotfiles and every other app's data stay closed.
+std::string seatbeltProfile() {
+    std::string profile =
+        "(version 1)\n"
+        "(allow default)\n"
+        "(deny file-write*)\n"
+        "(allow file-write*\n"
+        "  (subpath \"/private/tmp\")\n"
+        "  (subpath \"/var/tmp\")\n"
+        "  (regex #\"^/private/var/folders/\")\n"
+        "  (regex #\"^/var/folders/\")\n";
+    const char* home = std::getenv("HOME");
+    if (home && *home && std::string(home).find('"') == std::string::npos) {
+        const std::string h(home);
+        const char* const kBundle = "org.aletheia.lethe";
+        const std::string paths[] = {
+            h + "/Downloads",
+            h + "/Library/Caches/" + kBundle,
+            h + "/Library/WebKit/" + kBundle,
+            h + "/Library/HTTPStorages/" + kBundle,
+            h + "/Library/Saved Application State/" + kBundle + ".savedState",
+        };
+        for (const auto& p : paths) profile += "  (subpath \"" + p + "\")\n";
+    }
+    profile += ")\n";
+    return profile;
+}
 #endif
 
 #if defined(__linux__) && defined(LETHE_SANDBOXING)
@@ -145,7 +168,8 @@ bool Sandbox::apply() {
     char* errorbuf = nullptr;
     // flags = 0: compile the profile TEXT (SANDBOX_NAMED would treat the
     // string as the name of a system-installed profile instead).
-    if (::sandbox_init(kSeatbeltProfile, 0, &errorbuf) != 0) {
+    const std::string profile = seatbeltProfile();
+    if (::sandbox_init(profile.c_str(), 0, &errorbuf) != 0) {
         std::cerr << "[lethe] sandbox_init failed: "
                   << (errorbuf ? errorbuf : "unknown error") << std::endl;
         if (errorbuf) ::sandbox_free_error(errorbuf);
@@ -153,7 +177,8 @@ bool Sandbox::apply() {
     }
 #pragma clang diagnostic pop
     alreadyApplied = true;
-    std::cout << "[lethe] Seatbelt profile active (file writes limited to temp)"
+    std::cout << "[lethe] Seatbelt profile active (file writes limited to temp, "
+                 "~/Downloads and Lethe's own Library subtrees)"
               << std::endl;
     return true;
 

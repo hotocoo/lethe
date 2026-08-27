@@ -1,4 +1,5 @@
 #include <gtk/gtk.h>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -101,6 +102,8 @@ int main(int argc, char** argv) {
         if (!win.open(url, err))
             std::cerr << "[lethe-fullweb] " << err << std::endl;
     });
+    // Smoke hook: LETHE_FULLWEB_TEST=<url> opens full-web mode at launch.
+    const char* fwTest = std::getenv("LETHE_FULLWEB_TEST");
 #endif
     
     // Create address bar
@@ -120,6 +123,14 @@ int main(int argc, char** argv) {
     
     // Show window
     window.show();
+#if defined(HAVE_FULLWEB)
+    if (fwTest && *fwTest) {
+        std::string err;
+        static lethe::FullWebWindow smoke(fw);
+        if (!smoke.open(fwTest, err))
+            std::cerr << "[lethe-fullweb] " << err << std::endl;
+    }
+#endif
     
     // Load initial URL if specified
     if (!cfg.initialUrl.empty()) {

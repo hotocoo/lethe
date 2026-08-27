@@ -26,6 +26,11 @@ LETHE_TEST_CASE(HtmlView_EntityDecoding) {
     CHECK_EQ(HtmlView::decodeEntities("&quot;q&quot; &apos;a&apos;"), "\"q\" 'a'");
     CHECK_EQ(HtmlView::decodeEntities("a&nbsp;b"), "a b");
     CHECK_EQ(HtmlView::decodeEntities("&#65;&#x42;"), "AB");
+    // Non-ASCII numeric references become UTF-8, never raw Latin-1 bytes.
+    CHECK_EQ(HtmlView::decodeEntities("&#233;"), "\xC3\xA9");        // e-acute
+    CHECK_EQ(HtmlView::decodeEntities("&#x2014;"), "\xE2\x80\x94");  // em dash
+    CHECK_EQ(HtmlView::decodeEntities("&#128512;"), "\xF0\x9F\x98\x80"); // emoji
+    CHECK_EQ(HtmlView::decodeEntities("&#xD800;&#1;"), "");           // invalid dropped
     // Unknown and malformed entities stay readable.
     CHECK_EQ(HtmlView::decodeEntities("&unknown; x"), "&unknown; x");
     CHECK_EQ(HtmlView::decodeEntities("100 & 200"), "100 & 200");
@@ -93,4 +98,21 @@ LETHE_TEST_CASE(HtmlView_CommentsAndEmptyBlocksDropped) {
     CHECK_EQ(blocks.size(), 2u);
     CHECK_EQ(blocks[0].text, "keep");
     CHECK_EQ(blocks[1].text, "also keep");
+}
+
+LETHE_TEST_CASE(HtmlView_BoilerplateRegionsDropped) {
+    const std::string html =
+        "<html><body><nav><a>Home</a><a>Menu</a></nav>"
+        "<header><span>Site banner</span></header>"
+        "<h1>Article</h1><p>Body text.</p>"
+        "<aside>Related links</aside><footer>Copyright</footer></body></html>";
+    const auto blocks = HtmlView::extractBlocks(html);
+    std::string joined;
+    for (const auto& b : blocks) joined += b.text + "|";
+    CHECK(joined.find("Article") != std::string::npos);
+    CHECK(joined.find("Body text.") != std::string::npos);
+    CHECK(joined.find("Home") == std::string::npos);
+    CHECK(joined.find("Site banner") == std::string::npos);
+    CHECK(joined.find("Related links") == std::string::npos);
+    CHECK(joined.find("Copyright") == std::string::npos);
 }

@@ -9,7 +9,12 @@
 
 namespace lethe {
 
-const std::string VERSION = "1.0.0";
+#ifndef LETHE_VERSION
+#define LETHE_VERSION "0.1.0"
+#endif
+// Single source of truth is project(lethe VERSION ...) in CMakeLists.txt,
+// injected as LETHE_VERSION; the fallback above only covers ad-hoc builds.
+const std::string VERSION = LETHE_VERSION;
 const std::string NAME = "Lethe";
 
 // Standard mode: full browser identity with a platform-honest OS token.

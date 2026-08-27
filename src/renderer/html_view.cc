@@ -89,6 +89,30 @@ bool blockBoundary(const std::string& tagLower, HtmlBlock::Kind& kind,
 
 } // namespace
 
+namespace {
+// Append code point \p cp as UTF-8; control chars and invalid code points
+// (surrogates, > U+10FFFF, negatives) are dropped.
+void appendUtf8(std::string& out, long cp) {
+    if (cp < 32 && cp != 9 && cp != 10 && cp != 13) return;
+    if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return;
+    if (cp < 0x80) {
+        out.push_back(static_cast<char>(cp));
+    } else if (cp < 0x800) {
+        out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp < 0x10000) {
+        out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+}
+} // namespace
+
 std::string HtmlView::decodeEntities(const std::string& in) {
     std::string out;
     out.reserve(in.size());
@@ -122,9 +146,9 @@ std::string HtmlView::decodeEntities(const std::string& in) {
             } catch (...) {
                 code = -1;
             }
-            // Latin-1 range maps directly; anything else becomes '?'.
-            if (code >= 32 && code <= 255) out.push_back(static_cast<char>(code));
-            else if (code > 255) out.push_back('?');
+            // Encode as UTF-8 so the output is always a valid UTF-8 string
+            // (a raw 0x80-0xFF byte would corrupt the document).
+            appendUtf8(out, code);
         } else {
             out += "&" + ent + ";"; // unknown entity: keep literally
         }
@@ -219,6 +243,12 @@ std::vector<HtmlBlock> HtmlView::extractBlocks(const std::string& html) {
     }
     removeRegions(doc, "script");
     removeRegions(doc, "style");
+    // Boilerplate regions (menus, banners, sidebars) are not article text.
+    // Note: <header> is dropped here, but <h1>..<h3> (different tags) stay.
+    for (const char* region : {"noscript", "template", "svg", "nav",
+                               "header", "footer", "aside", "iframe"}) {
+        removeRegions(doc, region);
+    }
 
     std::vector<HtmlBlock> blocks;
     std::string current;

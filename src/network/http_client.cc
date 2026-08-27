@@ -34,6 +34,7 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 #endif
 
 #include "config.h"
@@ -816,6 +817,44 @@ bool HttpClient::openTcp(const std::string& target, int port) {
     return true;
 }
 
+#ifdef HAVE_OPENSSL
+namespace {
+
+// True for IPv4/IPv6 literals (with or without brackets); such hosts are
+// matched against certificate IP SANs rather than DNS names.
+bool isIpLiteralHost(const std::string& host) {
+    if (host.empty()) return false;
+    if (host.front() == '[') return true;
+    if (host.find(':') != std::string::npos) return true;
+    for (char c : host) {
+        if (!(c >= '0' && c <= '9') && c != '.') return false;
+    }
+    return true;
+}
+
+// Human-readable reason for a failed handshake: the certificate verify
+// result when that is what failed, otherwise the top OpenSSL error.
+std::string describeTlsFailure(SSL* ssl) {
+    std::string out;
+    if (ssl) {
+        const long vr = SSL_get_verify_result(ssl);
+        if (vr != X509_V_OK) {
+            out = "certificate verification failed: ";
+            out += X509_verify_cert_error_string(vr);
+        }
+    }
+    char buf[256];
+    while (unsigned long e = ERR_get_error()) {
+        ERR_error_string_n(e, buf, sizeof(buf));
+        if (!out.empty()) out += "; ";
+        out += buf;
+    }
+    return out.empty() ? "unknown TLS error" : out;
+}
+
+} // namespace
+#endif
+
 bool HttpClient::startTls(const std::string& tlsHostname) {
 #ifdef HAVE_OPENSSL
     usingTls_ = true;
@@ -848,7 +887,17 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
                     return false;
                 }
             }
-            // Empty caPath => OpenSSL uses the system default store.
+            // Empty caPath => load the system default trust store. Without
+            // this call the context has NO trust anchors at all and every
+            // verified handshake fails closed (previously "SSL error 1").
+            if (caPath.empty() && !SSL_CTX_set_default_verify_paths(sslCtx_)) {
+                std::cerr << "[lethe-http] Failed to load system trust store"
+                          << std::endl;
+                SSL_CTX_free(sslCtx_);
+                sslCtx_ = nullptr;
+                closeConnection();
+                return false;
+            }
         } else {
             SSL_CTX_set_verify(sslCtx_, SSL_VERIFY_NONE, nullptr);
         }
@@ -859,6 +908,23 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
         sslCtx_ = nullptr;
         closeConnection();
         return false;
+    }
+    // Hostname verification (RFC 6125): the verified chain must also be
+    // issued FOR this host. Applies to the direct socket and the relay
+    // (tunnel) path alike; without it any valid certificate would pass.
+    if (tlsConfig_.isVerifyCertificates()) {
+        X509_VERIFY_PARAM* vp = SSL_get0_param(ssl_);
+        X509_VERIFY_PARAM_set_hostflags(
+            vp, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+        if (!isIpLiteralHost(tlsHostname)) {
+            if (!SSL_set1_host(ssl_, tlsHostname.c_str())) {
+                closeConnection();
+                return false;
+            }
+        } else if (!X509_VERIFY_PARAM_set1_ip_asc(vp, tlsHostname.c_str())) {
+            closeConnection();
+            return false;
+        }
     }
 #ifdef HAVE_OPENSSL
     if (relayMode_) {
@@ -896,8 +962,8 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
                 }
             } else {
                 std::cerr << "[lethe-http] Relay TLS handshake failed with "
-                          << tlsHostname << " (SSL error " << err << ")"
-                          << std::endl;
+                          << tlsHostname << " (SSL error " << err << "): "
+                          << describeTlsFailure(ssl_) << std::endl;
                 closeConnection();
                 return false;
             }
@@ -938,7 +1004,8 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
     if (ok != 1) {
         int err = SSL_get_error(ssl_, ok);
         std::cerr << "[lethe-http] TLS handshake failed with " << tlsHostname
-                  << " (SSL error " << err << ")" << std::endl;
+                  << " (SSL error " << err << "): "
+                  << describeTlsFailure(ssl_) << std::endl;
         closeConnection();
         return false;
     }

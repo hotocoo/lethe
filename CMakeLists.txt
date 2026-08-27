@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(lethe VERSION 1.1.0 LANGUAGES CXX)
+project(lethe VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -66,7 +66,7 @@ if(BUILD_HARDENED)
     endif()
 endif()
 
-add_compile_definitions(-DLETHE_VERSION="1.1.0")
+add_compile_definitions(-DLETHE_VERSION="${PROJECT_VERSION}")
 add_compile_definitions(-DLETHE_MIN_TLS_VERSION=0x0304)
 add_compile_definitions(-DLETHE_MAX_TLS_VERSION=0x0305)
 
@@ -173,7 +173,33 @@ target_link_libraries(lethe-vpn-e2e-client PRIVATE lethe_core)
 install(TARGETS lethe-vpn-server lethe-vpn-e2e-client DESTINATION bin)
 
 # --- GUI application (optional) ---
-if(BUILD_UI)
+if(BUILD_UI AND APPLE)
+    # macOS: native AppKit shell around WKWebView. No GTK on this platform.
+    message(STATUS "[lethe] Building GUI application (AppKit + WKWebView)")
+    enable_language(OBJCXX)
+    find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
+    find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
+    find_library(NETWORK_FRAMEWORK Network REQUIRED)
+    file(GLOB SRC_UI_MAC src/ui/mac/*.mm)
+    add_executable(lethe MACOSX_BUNDLE browser/app/main_mac.mm ${SRC_UI_MAC})
+    set_source_files_properties(browser/app/main_mac.mm ${SRC_UI_MAC}
+        PROPERTIES LANGUAGE OBJCXX)
+    target_compile_options(lethe PRIVATE -fobjc-arc)
+    set_target_properties(lethe PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/browser/app/Info.plist.in"
+        MACOSX_BUNDLE_BUNDLE_NAME "Lethe"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.aletheia.lethe"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        OUTPUT_NAME "lethe"
+    )
+    target_include_directories(lethe PRIVATE
+        ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/browser)
+    target_link_libraries(lethe PRIVATE lethe_core
+        ${COCOA_FRAMEWORK} ${WEBKIT_FRAMEWORK} ${NETWORK_FRAMEWORK})
+    install(TARGETS lethe BUNDLE DESTINATION .)
+elseif(BUILD_UI)
     if(USE_QT)
         find_package(Qt6 COMPONENTS Widgets Quick Controls2 QUIET)
         if(Qt6_FOUND)
@@ -229,16 +255,7 @@ list(FILTER SRC_UI EXCLUDE REGEX "fullweb_mac\.mm$")
 
         # --- Full-web mode: embed the platform web engine ---
         if(USE_FULLWEB)
-            if(APPLE)
-                message(STATUS "[lethe] full-web: APPLE branch (WKWebView)")
-                enable_language(OBJCXX)
-                find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
-                target_sources(lethe PRIVATE src/ui/fullweb_mac.mm)
-                set_source_files_properties(src/ui/fullweb_mac.mm
-                    PROPERTIES LANGUAGE OBJCXX)
-                target_compile_definitions(lethe PRIVATE HAVE_FULLWEB)
-                target_link_libraries(lethe PRIVATE ${WEBKIT_FRAMEWORK})
-            elseif(UNIX)
+            if(UNIX)
                 find_package(PkgConfig QUIET)
                 if(PkgConfig_FOUND)
                     pkg_check_modules(WEBKITGTK QUIET IMPORTED_TARGET webkit2gtk-4.1)
