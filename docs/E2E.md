@@ -28,6 +28,8 @@ One per line, `#` starts a comment. `<text>` runs to end of line.
 | `sleep <ms>` | Fixed pause |
 | `newtab [text]` | Open a tab beside the current one; it becomes current |
 | `closetab` | Close the current tab |
+| `oblivion [text]` | Open an Oblivion window (isolated in-memory store, https-only, tracker protection forced, stealth UA); it becomes current |
+| `assert-oblivion on\|off` | Current tab is (not) in an Oblivion window |
 | `back` / `forward` / `reload` | Session history / reload |
 | `reader` | Toggle reader view |
 | `click <css>` | `document.querySelector(css).click()` |

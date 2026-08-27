@@ -53,7 +53,12 @@ void timeout(unsigned ms, F fn) {
 
 } // namespace
 
-E2eDriver::E2eDriver(MainWindow* window, std::string scriptPath) : window_(window) {
+E2eDriver::E2eDriver(MainWindow* window, std::string scriptPath) : window_(window), primary_(window) {
+    // When the active (Oblivion) window closes, the script continues in the
+    // primary window - like a user's attention would.
+    MainWindow::setWindowClosedCallback([this](MainWindow* closed) {
+        if (closed == window_) { window_ = primary_; current_ = nullptr; }
+    });
     std::ifstream in(scriptPath);
     if (!in) {
         std::cerr << "[e2e] cannot read script " << scriptPath << std::endl;
@@ -215,6 +220,16 @@ void E2eDriver::run(const std::string& line) {
     }
     else if (cmd == "sleep") later(static_cast<unsigned>(std::max(0, std::atoi(arg.c_str()))));
     else if (cmd == "newtab") { current_ = window_->newTab(arg); later(100); }
+    else if (cmd == "oblivion") {
+        window_ = window_->openOblivionWindow(arg);
+        current_ = window_->currentTab();
+        later(150);
+    }
+    else if (cmd == "assert-oblivion") {
+        const bool want = arg == "on";
+        if (window_->isOblivion() == want) { pass("oblivion state"); next(); }
+        else fail(std::string("oblivion ") + (window_->isOblivion() ? "on" : "off"));
+    }
     else if (cmd == "closetab") { window_->closeTab(current_); current_ = nullptr; later(200); }
     else if (cmd == "back") { window_->goBack(current_); later(50); }
     else if (cmd == "forward") { window_->goForward(current_); later(50); }

@@ -32,7 +32,8 @@ private:
     void finish(const char* msg);
     bool screenshot(const std::string& path);
 
-    MainWindow* window_;
+    MainWindow* window_;           // active window (primary or an Oblivion window)
+    MainWindow* primary_;
     std::vector<std::string> lines_;
     size_t index_ = 0;
     int failures_ = 0;

@@ -4,10 +4,29 @@
 
 Minimalist, high-performance browser with maximum security and a built-in VPN, built as the native browser for the Aletheia OS. Lethe's secure network stack is also used by the OS's LLM agent for private, encrypted web searching.
 
-## Status: v0.1.0 (early, usable, not finished)
+## Status: v0.2.0 (usable, measured, not finished)
 
-Lethe is now a working browser you can actually use day to day, but it is
-young. What exists and works end to end:
+Lethe is a working browser you can use day to day, and since 0.2.0 every
+performance claim about it is backed by `tools/bench` runs against Google
+Chrome on the same machine (see `docs/BENCHMARKS.md`). What exists and works
+end to end:
+
+- **Oblivion windows** (⌘⇧N / Ctrl+Shift+N): Lethe's private mode, named for
+  the river of forgetting. Own in-memory site-data store wiped when the
+  last tab closes, https-only (plaintext refused outright), tracker
+  protection forced on, fixed low-entropy user agent, tabs never merge with
+  normal windows, dark chrome. A strict superset of the default ephemeral
+  session.
+- **Built-in tracker protection**: 227 curated advertising / analytics /
+  identity hosts blocked as third-party requests inside the engine
+  (WebKit content-blocker rules on macOS/Linux, `WebResourceRequested` on
+  Windows). First-party never touched. `--no-tracker-block` to compare.
+- **HTTPS-first**: top-level `http://` is tried as `https://` first; a
+  failed upgrade shows one explicit, labelled plaintext link.
+- **Authenticated policy proxy**: the local proxy that carries all engine
+  traffic demands a per-launch token, so no other local process can ride
+  Lethe's VPN tunnel or policy identity. The browser refuses to start if the
+  proxy cannot bind (`--no-proxy` is the explicit opt-out).
 
 - **Native shells**: AppKit + WKWebView on macOS, GTK3 + WebKitGTK on Linux,
   a WebView2 host on Windows. Tabs, address bar with search fallback,
@@ -39,13 +58,15 @@ Honest limits (see `docs/COMPARISON.md` for the full audit):
   default-deny seccomp filter (children would inherit it and die); web
   content is sandboxed by WebKitGTK's own bubblewrap + seccomp instead. The
   seccomp filter still guards the reader-only build and the test suite.
+- Tracker protection is a curated list of a few hundred hosts, not
+  EasyList; `docs/BENCHMARKS.md` shows exactly what it removes.
 - No extensions, no sync, no password manager, no bookmarks yet.
 - Windows host is a single-view WebView2 window with the navigation gate;
   tabs and the rest of the shell are macOS/Linux only for now.
 
-Prebuilt binaries for 0.1.0 are produced by `.github/workflows/release.yml`
-on a `v0.1.0` tag (macOS DMG, Linux tarballs, Windows exe). Until then,
-build from source (below).
+Prebuilt binaries (macOS DMG, Linux tarballs, Windows exe) are attached to
+each GitHub release by `.github/workflows/release.yml`:
+https://github.com/hotocoo/lethe/releases
 
 ## Features
 
@@ -347,11 +368,25 @@ the Linux tarball.
 ## Running Tests
 
 ```bash
-# Run the full test suite (221 tests)
+# Run the full test suite (230 tests)
 ./build/lethe_tests
 
 # Or with ctest
 cd build && ctest
+```
+
+### Benchmarks
+
+```bash
+# Lethe vs Chrome on this machine: startup, page loads, RSS/CPU, YouTube playback
+node tools/bench/bench.mjs --browser lethe  --suite startup,pageload,memory,youtube --runs 3
+node tools/bench/bench.mjs --browser chrome --suite startup,pageload,memory,youtube --runs 3
+# Ablations: same binary, one feature off
+node tools/bench/bench.mjs --browser lethe --label lethe-noblock --env LETHE_TRACKER_BLOCK=0
+node tools/bench/bench.mjs --browser lethe --label lethe-nocache --env LETHE_DOH_SHARED_CACHE=0
+# JS / graphics suites (long)
+node tools/bench/bench.mjs --browser lethe --suite speedometer,jetstream,motionmark --runs 1
+node tools/bench/report.mjs tools/bench/results        # Markdown tables
 ```
 
 ### End-to-End Verification

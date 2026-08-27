@@ -8,6 +8,9 @@
 //     is classified before the load is allowed (loopback permitted,
 //     RFC1918/CGNAT/link-local incl. cloud-metadata/multicast refused)
 //   * session data confined to the app-local \\LetheWebView2 folder
+//   * built-in tracker protection: third-party requests to the curated
+//     list (browser/blocklist/trackers.txt) get a synthetic 403 via
+//     WebResourceRequested before any bytes leave (LETHE_TRACKER_BLOCK=0 off)
 //
 // Resolution scaling uses WebView2's native RasterizationScale
 // (ICoreWebView2Controller3):
@@ -33,7 +36,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cwctype>
+#include <set>
 #include <string>
+#include <vector>
+
+// Built-in tracker protection list (generated from browser/blocklist/trackers.txt).
+#include "security/tracker_blocklist_data.inc"
 
 #include "WebView2.h"
 #include <wrl.h>
@@ -52,6 +60,10 @@ static ComPtr<ICoreWebView2Environment> g_env;
 static ComPtr<ICoreWebView2Controller> g_controller;
 static ComPtr<ICoreWebView2> g_web;
 static double g_rasterScale = 1.0;
+static std::wstring g_topHost;                 // registrable domain of the current page
+static std::set<std::wstring> g_trackerDomains; // lowercase registrable domains
+static bool g_trackerBlock = true;
+static unsigned g_trackerBlocked = 0;
 static const double kScales[] = {0.66, 0.75, 0.85, 1.0, 1.25, 1.5, 2.0};
 
 // ---- Scope classifier (compact port of private_network_guard rules) ----
@@ -92,6 +104,87 @@ static Scope classifyV6(const unsigned char* b) {  // network byte order
 static std::wstring lower(std::wstring s) {
     for (auto& c : s) c = (wchar_t)towlower(c);
     return s;
+}
+
+// ---- Tracker protection (third-party requests to listed domains) ----
+static std::wstring hostOfUrl(const std::wstring& url) {
+    const size_t colon = url.find(L"://");
+    if (colon == std::wstring::npos) return L"";
+    std::wstring rest = url.substr(colon + 3);
+    const size_t slash = rest.find_first_of(L"/?#");
+    std::wstring authority = slash == std::wstring::npos ? rest : rest.substr(0, slash);
+    const size_t at = authority.rfind(L'@');
+    if (at != std::wstring::npos) authority = authority.substr(at + 1);
+    if (!authority.empty() && authority[0] == L'[') {
+        const size_t close = authority.find(L']');
+        return close == std::wstring::npos ? L"" : lower(authority.substr(0, close + 1));
+    }
+    const size_t c2 = authority.rfind(L':');
+    if (c2 != std::wstring::npos) authority = authority.substr(0, c2);
+    return lower(authority);
+}
+
+// Registrable domain approximation: last two labels, or three when the
+// second-level label is a short generic one (co.uk, com.au, ...). Good
+// enough for a third-party decision; documented as an approximation.
+static std::wstring registrableDomain(const std::wstring& host) {
+    if (host.empty() || host[0] == L'[') return host;
+    std::vector<std::wstring> labels;
+    size_t start = 0;
+    for (;;) {
+        const size_t dot = host.find(L'.', start);
+        labels.push_back(host.substr(start, dot == std::wstring::npos ? std::wstring::npos : dot - start));
+        if (dot == std::wstring::npos) break;
+        start = dot + 1;
+    }
+    if (labels.size() <= 2) return host;
+    const std::wstring& sld = labels[labels.size() - 2];
+    const bool shortSld = sld == L"co" || sld == L"com" || sld == L"net" || sld == L"org" ||
+                          sld == L"gov" || sld == L"edu" || sld == L"ac";
+    const size_t take = shortSld && labels.size() >= 3 ? 3 : 2;
+    std::wstring out;
+    for (size_t i = labels.size() - take; i < labels.size(); i++) {
+        if (!out.empty()) out += L'.';
+        out += labels[i];
+    }
+    return out;
+}
+
+static void loadTrackerList() {
+    const char* p = kBuiltinTrackerBlocklistText;
+    std::string line;
+    auto flush = [&]() {
+        const size_t hash = line.find('#');
+        if (hash != std::string::npos) line = line.substr(0, hash);
+        size_t b = 0, e = line.size();
+        while (b < e && isspace((unsigned char)line[b])) b++;
+        while (e > b && isspace((unsigned char)line[e - 1])) e--;
+        line = line.substr(b, e - b);
+        // Path-scoped entries need the URL, not just the host: skipped here.
+        if (!line.empty() && line.find('/') == std::string::npos && line.find('.') != std::string::npos) {
+            std::wstring w(line.begin(), line.end());
+            g_trackerDomains.insert(lower(w));
+        }
+        line.clear();
+    };
+    for (; *p; ++p) { if (*p == '\n') flush(); else line += *p; }
+    flush();
+}
+
+// True when \p url is a third-party request to a listed domain (or subdomain).
+static bool isBlockedTracker(const std::wstring& url) {
+    if (!g_trackerBlock || g_trackerDomains.empty()) return false;
+    const std::wstring host = hostOfUrl(url);
+    if (host.empty()) return false;
+    if (!g_topHost.empty() && registrableDomain(host) == g_topHost) return false;  // first-party
+    // Walk suffixes: a.b.doubleclick.net -> b.doubleclick.net -> doubleclick.net
+    size_t pos = 0;
+    for (;;) {
+        if (g_trackerDomains.count(host.substr(pos))) return true;
+        const size_t dot = host.find(L'.', pos);
+        if (dot == std::wstring::npos) return false;
+        pos = dot + 1;
+    }
 }
 
 // Returns empty when allowed, else a named block reason.
@@ -267,6 +360,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
             g_rasterScale = wcstod(buf, nullptr);
     }
 
+    if (const wchar_t* tb = _wgetenv(L"LETHE_TRACKER_BLOCK"))
+        g_trackerBlock = !(std::wstring(tb) == L"0" || std::wstring(tb) == L"off");
+    loadTrackerList();
+
     WNDCLASSW wc{};
     wc.lpfnWndProc = WndProc;
     wc.hInstance = inst;
@@ -311,17 +408,50 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                                         std::wstring reason =
                                             raw ? policyCheckUrl(raw)
                                                 : L"blocked";
+                                        std::wstring navUrl = raw ? raw : L"";
                                         CoTaskMemFree(raw);
                                         if (!reason.empty()) {
                                             args->put_Cancel(TRUE);
                                             MessageBoxW(g_hwnd, reason.c_str(),
                                                         L"Lethe",
                                                         MB_ICONWARNING);
+                                        } else {
+                                            g_topHost = registrableDomain(hostOfUrl(navUrl));
                                         }
                                         return S_OK;
                                     })
                                     .Get(),
                                 &navToken);
+                            // Tracker protection: every request passes through
+                            // here; listed third-party hosts get a synthetic
+                            // 403 and never reach the network.
+                            if (g_trackerBlock) {
+                                g_web->AddWebResourceRequestedFilter(
+                                    L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                                EventRegistrationToken resToken{};
+                                g_web->add_WebResourceRequested(
+                                    Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+                                        [](ICoreWebView2* sender,
+                                           ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+                                            ComPtr<ICoreWebView2WebResourceRequest> req;
+                                            if (FAILED(args->get_Request(&req)) || !req) return S_OK;
+                                            LPWSTR raw = nullptr;
+                                            req->get_Uri(&raw);
+                                            const std::wstring url = raw ? raw : L"";
+                                            CoTaskMemFree(raw);
+                                            if (!isBlockedTracker(url)) return S_OK;
+                                            ComPtr<ICoreWebView2WebResourceResponse> resp;
+                                            if (g_env && SUCCEEDED(g_env->CreateWebResourceResponse(
+                                                    nullptr, 403, L"Blocked by Lethe tracker protection",
+                                                    L"Content-Type: text/plain", &resp))) {
+                                                args->put_Response(resp.Get());
+                                                g_trackerBlocked++;
+                                            }
+                                            return S_OK;
+                                        })
+                                        .Get(),
+                                    &resToken);
+                            }
                             applyRasterScale();
                             RECT r;
                             GetClientRect(g_hwnd, &r);

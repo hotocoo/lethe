@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <iostream>
 #include <thread>
 
@@ -76,7 +77,7 @@ void onMainLoop(F fn) {
 
 // All GTK callbacks live here; declared friend so they reach private state.
 struct MainWindowSignals {
-    static void onDestroy(GtkWidget*, gpointer) { gtk_main_quit(); }
+    static void onDestroy(GtkWidget*, gpointer d) { MainWindow::windowDestroyed(static_cast<MainWindow*>(d)); }
 
     static void onEntryActivate(GtkEntry* entry, gpointer data) {
         auto* self = static_cast<MainWindow*>(data);
@@ -277,6 +278,18 @@ struct MainWindowSignals {
 #endif
 };
 
+namespace {
+// Oblivion windows are owned here; the primary window is owned by main().
+std::vector<std::unique_ptr<MainWindow>>& oblivionWindows() {
+    static std::vector<std::unique_ptr<MainWindow>> v;
+    return v;
+}
+std::function<void(MainWindow*)>& closedCallback() {
+    static std::function<void(MainWindow*)> cb;
+    return cb;
+}
+} // namespace
+
 MainWindow::MainWindow(Engine* engine, ShellOptions options)
     : engine_(engine), options_(std::move(options)) {
     policyChecker_ = makeClient(engine_, options_);
@@ -285,11 +298,55 @@ MainWindow::MainWindow(Engine* engine, ShellOptions options)
 
 MainWindow::~MainWindow() = default;
 
+void MainWindow::setWindowClosedCallback(std::function<void(MainWindow*)> cb) { closedCallback() = std::move(cb); }
+
+void MainWindow::windowDestroyed(MainWindow* w) {
+    if (!w) { gtk_main_quit(); return; }
+    auto& reg = oblivionWindows();
+    const bool wasOblivion = std::any_of(reg.begin(), reg.end(),
+                                         [w](const std::unique_ptr<MainWindow>& p) { return p.get() == w; });
+    if (closedCallback()) closedCallback()(w);
+    if (wasOblivion) {
+        std::cout << "[lethe] oblivion window closed; its web context is gone" << std::endl;
+        // Defer the delete: we are inside the window's own destroy signal.
+        g_idle_add([](gpointer d) -> gboolean {
+            auto& r = oblivionWindows();
+            r.erase(std::remove_if(r.begin(), r.end(),
+                                   [d](const std::unique_ptr<MainWindow>& p) { return p.get() == d; }),
+                    r.end());
+            return G_SOURCE_REMOVE;
+        }, w);
+        return;
+    }
+    gtk_main_quit();   // primary window closed = quit (takes Oblivion windows with it)
+}
+
+MainWindow* MainWindow::openOblivionWindow(const std::string& addressText) {
+    ShellOptions o = options_;
+    o.oblivion = true;
+    o.persistent = false;
+    o.trackerBlocking = true;
+    auto w = std::make_unique<MainWindow>(engine_, o);
+    MainWindow* raw = w.get();
+    oblivionWindows().push_back(std::move(w));
+    raw->create();
+    raw->show();
+    if (!addressText.empty()) raw->loadAddress(raw->currentTab(), addressText);
+    std::cout << "[lethe] oblivion window opened (isolated ephemeral context, https-only, "
+                 "tracker protection forced, stealth UA)" << std::endl;
+    return raw;
+}
+
 void MainWindow::create() {
     window_ = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window_), "Lethe");
     gtk_window_set_default_size(GTK_WINDOW(window_), 1280, 860);
-    g_signal_connect(window_, "destroy", G_CALLBACK(MainWindowSignals::onDestroy), nullptr);
+    g_signal_connect(window_, "destroy", G_CALLBACK(MainWindowSignals::onDestroy), this);
+    if (options_.oblivion) {
+        gtk_window_set_title(GTK_WINDOW(window_), "Oblivion");
+        // Unmistakable: dark chrome regardless of the desktop theme.
+        g_object_set(gtk_widget_get_settings(window_), "gtk-application-prefer-dark-theme", TRUE, nullptr);
+    }
     g_signal_connect(window_, "key-press-event", G_CALLBACK(MainWindowSignals::onKeyPress), this);
     buildChrome();
 #if defined(HAVE_FULLWEB)
@@ -486,7 +543,8 @@ WebKitWebView* MainWindow::makeWebView(WebKitWebView* related) {
     webkit_settings_set_enable_developer_extras(s, TRUE);
     webkit_settings_set_enable_fullscreen(s, TRUE);
     webkit_settings_set_enable_smooth_scrolling(s, TRUE);
-    if (engine_->config().userAgentMode == "stealth") {
+    if (options_.oblivion || engine_->config().userAgentMode == "stealth") {
+        // Oblivion always presents the fixed low-entropy profile.
         webkit_settings_set_user_agent(s, stealthUserAgentString());
     }
     return web;
@@ -548,7 +606,7 @@ void MainWindow::decidePolicy(Tab* tab, WebKitPolicyDecision* decision, WebKitPo
         // Link on our own error page: user chose plain http for this host.
         webkit_policy_decision_ignore(decision);
         const std::string target = parseHttpFallbackActionUrl(uri);
-        if (!target.empty()) {
+        if (!target.empty() && !options_.oblivion) {
             httpAllowedHosts_.insert(urlHost(target));
             std::cout << "[lethe] https-first: user allowed plain http for " << urlHost(target) << std::endl;
             tab->httpsUpgradedFrom.clear();
@@ -562,6 +620,14 @@ void MainWindow::decidePolicy(Tab* tab, WebKitPolicyDecision* decision, WebKitPo
         if (isMainFrame && webkit_navigation_action_get_navigation_type(action) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED) {
             showBlockPage(tab, uri, "scheme is not allowed");
         }
+        return;
+    }
+    if (options_.oblivion && uri.rfind("http://", 0) == 0) {
+        // Oblivion is https-only: no upgrade dance, no fallback, every frame.
+        webkit_policy_decision_ignore(decision);
+        std::cout << "[lethe] oblivion refused plaintext " << uri << std::endl;
+        if (isMainFrame)
+            showBlockPage(tab, uri, "Oblivion windows are https-only: unencrypted (http://) pages are never loaded");
         return;
     }
     if (isMainFrame && options_.httpsFirst && uri.rfind("http://", 0) == 0) {
@@ -688,6 +754,11 @@ MainWindow::Tab* MainWindow::currentTab() {
 }
 
 void MainWindow::setTabTitle(Tab* tab, const std::string& title) {
+    if (options_.oblivion) { setTabTitleRaw(tab, title + " — Oblivion"); return; }
+    setTabTitleRaw(tab, title);
+}
+
+void MainWindow::setTabTitleRaw(Tab* tab, const std::string& title) {
     tab->title = title.empty() ? "New Tab" : title;
     gtk_label_set_text(GTK_LABEL(tab->label), tab->title.c_str());
     if (tab == currentTab()) gtk_window_set_title(GTK_WINDOW(window_), tab->title.c_str());
@@ -928,6 +999,9 @@ std::string MainWindow::securityStatusText() const {
         ? "on (" + std::to_string(trackerRuleCount_) + " third-party rules)"
         : std::string(options_.trackerBlocking ? "unavailable" : "OFF")) + "\n";
     s += "HTTPS-first: " + std::string(options_.httpsFirst ? "on" : "OFF") + "\n";
+    s += std::string("Window: ") + (options_.oblivion
+        ? "OBLIVION (isolated ephemeral context wiped on close, https-only, tracker protection forced, stealth UA)"
+        : "normal (Ctrl+Shift+N opens an Oblivion window)") + "\n";
     s += "Secure DNS (DoH): " + (cfg.dnsProvider.empty() ? std::string("OFF") : cfg.dnsProvider) + "\n";
     s += std::string("Private-network isolation: ") + (cfg.isolatePrivateNetworks ? "on (SSRF guard)" : "OFF") + "\n";
     s += options_.proxyPort > 0
@@ -952,6 +1026,7 @@ bool MainWindow::handleKey(GdkEventKey* e) {
     const bool alt = e->state & GDK_MOD1_MASK;
     const guint key = gdk_keyval_to_lower(e->keyval);
     Tab* tab = currentTab();
+    if (ctrl && shift && key == GDK_KEY_n) { openOblivionWindow(); return true; }
     if (ctrl && !shift) {
         switch (key) {
             case GDK_KEY_t: newTab(); return true;

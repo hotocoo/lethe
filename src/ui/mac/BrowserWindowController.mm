@@ -13,12 +13,15 @@
 
 static void* const kObserverContext = (void*)&kObserverContext;
 static NSString* const kTabbingIdentifier = @"org.aletheia.lethe.browser";
+static NSString* const kOblivionTabbingIdentifier = @"org.aletheia.lethe.oblivion";
 static const CGFloat kChromeHeight = 44.0;
 
 @interface BrowserWindowController () <WKNavigationDelegate, WKUIDelegate,
                                        WKDownloadDelegate, NSWindowDelegate,
                                        NSTextFieldDelegate> {
     NSString* httpsUpgradedFrom_;   // http URL being tried as https (HTTPS-first)
+    BOOL oblivion_;
+    WKWebsiteDataStore* dataStore_;
     lethe::ShellContext* ctx_;
     LethePolicyGate* gate_;
     WKWebView* webView_;
@@ -51,12 +54,22 @@ static const CGFloat kChromeHeight = 44.0;
 @synthesize readerActive = readerActive_;
 
 - (BOOL)busy { return webView_.loading || readerFetching_; }
+- (BOOL)oblivion { return oblivion_; }
+- (WKWebsiteDataStore*)dataStore { return dataStore_; }
 
 #pragma mark - Construction
 
 - (instancetype)initWithContext:(lethe::ShellContext*)ctx
                            gate:(LethePolicyGate*)gate
                         webView:(WKWebView*)existingWebView {
+    return [self initWithContext:ctx gate:gate webView:existingWebView dataStore:nil oblivion:NO];
+}
+
+- (instancetype)initWithContext:(lethe::ShellContext*)ctx
+                           gate:(LethePolicyGate*)gate
+                        webView:(WKWebView*)existingWebView
+                      dataStore:(WKWebsiteDataStore*)store
+                       oblivion:(BOOL)oblivion {
     NSWindow* window = [[NSWindow alloc]
         initWithContentRect:NSMakeRect(0, 0, 1280, 860)
                   styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -66,11 +79,17 @@ static const CGFloat kChromeHeight = 44.0;
     if ((self = [super initWithWindow:window])) {
         ctx_ = ctx;
         gate_ = gate;
+        oblivion_ = oblivion;
+        dataStore_ = store;
         downloads_ = [NSMutableArray array];
-        window.title = @"New Tab";
+        window.title = oblivion ? @"Oblivion" : @"New Tab";
         window.releasedWhenClosed = NO;
         window.tabbingMode = NSWindowTabbingModePreferred;
-        window.tabbingIdentifier = kTabbingIdentifier;
+        window.tabbingIdentifier = oblivion ? kOblivionTabbingIdentifier : kTabbingIdentifier;
+        if (oblivion) {
+            // Unmistakable: dark chrome regardless of the system appearance.
+            window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        }
         window.minSize = NSMakeSize(480, 320);
         window.delegate = self;
         [window center];
@@ -81,13 +100,15 @@ static const CGFloat kChromeHeight = 44.0;
         } else {
             LetheAppDelegate* app = (LetheAppDelegate*)NSApp.delegate;
             webView_ = [[WKWebView alloc] initWithFrame:NSZeroRect
-                                          configuration:[app webViewConfiguration]];
+                                          configuration:[app webViewConfigurationWithStore:store]];
         }
+        if (!dataStore_) dataStore_ = webView_.configuration.websiteDataStore;
         webView_.navigationDelegate = self;
         webView_.UIDelegate = self;
         webView_.allowsBackForwardNavigationGestures = YES;
         webView_.allowsMagnification = YES;
-        if (ctx_->cfg.userAgentMode == "stealth") {
+        if (oblivion_ || ctx_->cfg.userAgentMode == "stealth") {
+            // Oblivion always presents the fixed low-entropy profile.
             webView_.customUserAgent = @(lethe::stealthUserAgentString());
         }
         [self buildChrome];
@@ -296,6 +317,7 @@ static const CGFloat kChromeHeight = 44.0;
     NSString* title = webView_.title;
     if (!title.length) title = webView_.URL.host;
     if (!title.length) title = internalPageUrl_.length ? internalPageUrl_ : @"New Tab";
+    if (oblivion_) title = [NSString stringWithFormat:@"%@ — Oblivion", title];
     self.window.title = title;
 }
 
@@ -637,7 +659,7 @@ static const CGFloat kChromeHeight = 44.0;
         // host after the https upgrade failed. Allow-list, then load.
         handler(WKNavigationActionPolicyCancel);
         const std::string target = lethe::parseHttpFallbackActionUrl(url.absoluteString.UTF8String ?: "");
-        if (!target.empty()) {
+        if (!target.empty() && !oblivion_) {
             LetheAppDelegate* app = (LetheAppDelegate*)NSApp.delegate;
             [app allowHttpForHost:@(lethe::urlHost(target).c_str())];
             NSLog(@"[lethe] https-first: user allowed plain http for %s", lethe::urlHost(target).c_str());
@@ -660,6 +682,16 @@ static const CGFloat kChromeHeight = 44.0;
         LetheAppDelegate* app = (LetheAppDelegate*)NSApp.delegate;
         [app openTabWithURL:url.absoluteString fromWindow:self.window webView:nil];
         handler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    if (oblivion_ && [scheme isEqualToString:@"http"]) {
+        // Oblivion is https-only: no upgrade dance, no fallback, for every
+        // frame. Plaintext never leaves an Oblivion window.
+        handler(WKNavigationActionPolicyCancel);
+        NSLog(@"[lethe] oblivion refused plaintext %@", url.absoluteString);
+        if (isMainFrame)
+            [self showBlockPageForURL:url.absoluteString
+                               reason:@"Oblivion windows are https-only: unencrypted (http://) pages are never loaded"];
         return;
     }
     if (isMainFrame && ctx_->httpsFirst && [scheme isEqualToString:@"http"]) {
@@ -966,6 +998,22 @@ static const CGFloat kChromeHeight = 44.0;
     webView_.UIDelegate = nil;
     LetheAppDelegate* app = (LetheAppDelegate*)NSApp.delegate;
     [app controllerDidClose:self];
+    if (oblivion_ && dataStore_) {
+        // Last tab sharing this store gone -> wipe it explicitly. The store
+        // is in-memory already; this closes the window of time between
+        // "window closed" and "object released" and makes the guarantee
+        // independent of WebKit's internal lifetime.
+        BOOL othersAlive = NO;
+        for (BrowserWindowController* c in app.controllers)
+            if (c != self && c.oblivion && c.dataStore == dataStore_) othersAlive = YES;
+        if (!othersAlive) {
+            WKWebsiteDataStore* store = dataStore_;
+            [store removeDataOfTypes:[WKWebsiteDataStore allWebsiteDataTypes]
+                       modifiedSince:[NSDate distantPast]
+                   completionHandler:^{ NSLog(@"[lethe] oblivion store wiped"); }];
+        }
+        dataStore_ = nil;
+    }
 }
 
 - (void)dealloc {

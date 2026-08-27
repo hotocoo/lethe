@@ -28,4 +28,21 @@ js window.__lethe={};fetch('https://www.google-analytics.com/collect?v=1',{mode:
 wait-js 15000 window.__lethe.ga && window.__lethe.ok
 assert-js window.__lethe.ga === 'blocked'
 assert-js window.__lethe.ok === 'loaded'
+# Oblivion window: isolated store (a cookie set in the normal window is not
+# visible), https-only (plaintext refused outright, no fallback link), and
+# closing it returns to the normal session with its state intact.
+js document.cookie='lethe_e2e=normal; path=/; SameSite=Lax'; document.cookie
+assert-js document.cookie.indexOf('lethe_e2e=normal') >= 0
+oblivion https://example.com/
+wait
+assert-oblivion on
+assert-js document.cookie.indexOf('lethe_e2e') < 0
+load http://httpforever.com/
+wait
+assert-body-contains Oblivion windows are https-only
+screenshot $TMPDIR/lethe-e2e-sec-03-oblivion-plaintext-refused.png
+closetab
+sleep 500
+assert-oblivion off
+assert-js document.cookie.indexOf('lethe_e2e=normal') >= 0
 quit

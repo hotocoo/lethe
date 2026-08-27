@@ -38,6 +38,9 @@ struct ShellOptions {
     std::string proxyAuthToken; // per-launch secret WebKit presents to the proxy
     bool httpsFirst = true;     // upgrade top-level http:// to https:// first
     bool trackerBlocking = true; // built-in third-party tracker rules (content filter)
+    // Oblivion window: own ephemeral WebKit context wiped on close, tracker
+    // protection forced on, plaintext http refused outright, stealth UA.
+    bool oblivion = false;
     bool persistent = false;   // false = ephemeral (incognito) web context
     bool webkitSandbox = true; // WebKitGTK content-process sandbox (bwrap)
     std::string homeUrl;
@@ -59,6 +62,12 @@ public:
     struct Tab;
     Tab* currentTab();
     Tab* newTab(const std::string& addressText = "");
+    bool isOblivion() const { return options_.oblivion; }
+    // Opens a new Oblivion window sharing this window's engine and options
+    // (Ctrl+Shift+N). Owned by a process-wide registry; deleted on destroy.
+    MainWindow* openOblivionWindow(const std::string& addressText = "");
+    // Called when any window is destroyed; nullptr when no window remains.
+    static void setWindowClosedCallback(std::function<void(MainWindow*)> cb);
     void closeTab(Tab* tab);
     size_t tabCount() const { return tabs_.size(); }
     void loadAddress(Tab* tab, const std::string& text);   // URL or search
@@ -109,6 +118,8 @@ private:
     void updateChrome();
     void setTabTitle(Tab* tab, const std::string& title);
     void showInternalPage(Tab* tab, const std::string& html, const std::string& url);
+    static void windowDestroyed(MainWindow* w);
+    void setTabTitleRaw(Tab* tab, const std::string& title);
     void showBlockPage(Tab* tab, const std::string& url, const std::string& reason);
     void showErrorPage(Tab* tab, const std::string& url, const std::string& message,
                        const std::string& httpFallback = "");

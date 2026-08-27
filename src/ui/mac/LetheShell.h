@@ -65,6 +65,17 @@ struct ShellContext {
 - (instancetype)initWithContext:(lethe::ShellContext*)ctx
                            gate:(LethePolicyGate*)gate
                         webView:(WKWebView*)existingWebView;
+// Oblivion window: its tabs share \p store (in-memory, wiped when the last
+// tab closes), tracker protection is forced on, plaintext http is refused
+// outright (no fallback link), the stealth low-entropy UA is used, and the
+// tab group never merges with normal windows.
+- (instancetype)initWithContext:(lethe::ShellContext*)ctx
+                           gate:(LethePolicyGate*)gate
+                        webView:(WKWebView*)existingWebView
+                      dataStore:(WKWebsiteDataStore*)store
+                       oblivion:(BOOL)oblivion;
+@property (nonatomic, readonly) BOOL oblivion;
+@property (nonatomic, readonly) WKWebsiteDataStore* dataStore;
 - (void)loadAddress:(NSString*)text;   // address-bar semantics (search, etc.)
 - (void)loadURL:(NSURL*)url;
 - (void)showNewTabPage;
@@ -97,7 +108,13 @@ struct ShellContext {
                                 fromWindow:(NSWindow*)parent
                                    webView:(WKWebView*)existingWebView;
 - (BrowserWindowController*)openWindowWithURL:(NSString*)url;
+// New Oblivion window with a fresh isolated store (File > New Oblivion Window).
+- (BrowserWindowController*)openOblivionWindowWithURL:(NSString*)url;
 - (WKWebViewConfiguration*)webViewConfiguration;
+// Configuration bound to a specific (Oblivion) store; nil = the app store.
+- (WKWebViewConfiguration*)webViewConfigurationWithStore:(WKWebsiteDataStore*)store;
+// Fresh in-memory store carrying the same proxy binding as the app store.
+- (WKWebsiteDataStore*)makeOblivionStore;
 // Number of built-in tracker rules active in every web view (0 = off/failed).
 @property (nonatomic, readonly) NSUInteger trackerRuleCount;
 - (void)controllerDidClose:(BrowserWindowController*)controller;

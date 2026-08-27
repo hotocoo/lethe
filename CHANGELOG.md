@@ -2,6 +2,72 @@
 
 All notable changes to Lethe are documented in this file.
 
+## [0.2.0] — 2026-08-27 22:30–23:59 KL
+
+Security and performance wave, driven by measurement: `tools/bench` runs
+Lethe and Google Chrome through identical steps on the same machine and
+`docs/BENCHMARKS.md` publishes the numbers (medians, ablations, method).
+
+### Security
+- **Proxy authentication** (2026-08-27 22:58 KL): the local PolicyProxyServer
+  was an open loopback proxy - any process on the machine could ride Lethe's
+  VPN tunnel and policy identity. It now requires a per-launch random token
+  (`Proxy-Authorization: Basic`, constant-time compare) and answers 407
+  before any policy work, DoH traffic or upstream socket. WebKit presents
+  the credential via `nw_proxy_config_set_username_and_password` (macOS) /
+  proxy-URI credentials (WebKitGTK). Wrong credentials are always logged.
+- **Fail closed at startup**: if the proxy cannot bind, the browser refuses
+  to run half-protected (navigation gate only). `--no-proxy` is the
+  explicit opt-out.
+- **HTTPS-first** (2026-08-27 23:02 KL): top-level `http://` navigations are
+  tried as `https://` first (IP literals, localhost, `.local`, custom ports
+  exempt). When the upgrade does not answer, the error page offers ONE
+  explicit, labelled link that allow-lists the host for this session and
+  loads the plain URL. Never silent. `--no-https-first` disables.
+- **Download quarantine**: `LSFileQuarantineEnabled`; verified that files
+  saved by Lethe carry `com.apple.quarantine` so Gatekeeper checks them.
+- **Built-in tracker protection** (2026-08-27 23:12 KL): 227 curated
+  advertising / analytics / identity hosts (`browser/blocklist/trackers.txt`)
+  compiled into WebKit content-blocker rules on macOS and Linux and enforced
+  via `WebResourceRequested` on Windows. Third-party only; first-party never
+  touched; compiled before the first web view exists (6 ms, then cached by
+  content hash). `--no-tracker-block` / `LETHE_TRACKER_BLOCK=0` disables.
+- **Oblivion windows** (2026-08-27 23:40 KL, ⌘⇧N / Ctrl+Shift+N): Lethe's
+  private mode, named for the river of forgetting. Each Oblivion window
+  group has its own in-memory site-data store that is wiped when the last
+  tab closes, is https-only (plaintext refused outright, no fallback link),
+  forces tracker protection on, presents the fixed low-entropy stealth UA,
+  never merges tabs with normal windows, and wears dark chrome. This is a
+  strict superset of the default ephemeral session, not a substitute for it.
+
+### Performance
+- **Shared DoH answer cache** (2026-08-27 22:45 KL): the proxy minted a fresh
+  HttpClient per engine connection, each with its own DoH cache and provider
+  bootstrap, so every CONNECT paid TCP + TLS to the DoH provider plus a
+  query - dozens of times per page for the same names. One process-wide,
+  thread-safe `SharedDohCache` now serves the navigation gate, reader
+  fetches and every proxied connection. `LETHE_DOH_SHARED_CACHE=0` restores
+  the old behaviour for measurement.
+- **407 keep-alive**: engines do not remember proxy credentials across
+  connections; the authenticated retry now rides the same socket instead of
+  reconnecting.
+- Per-connection HttpClient log chatter (thousands of synchronous stdout
+  writes on a busy page) is behind `LETHE_DEBUG`.
+
+### Measurement
+- `tools/bench/bench.mjs`: Lethe (via `--e2e-script`) vs Chrome (via the
+  DevTools protocol) through the same declarative steps; identical metrics
+  JavaScript; startup to ready, TTFB / first paint / load / requests / bytes
+  per site, RSS + CPU seconds of the attributed process tree, YouTube 20 s
+  playback quality (dropped/total frames), Speedometer 3.1, JetStream 2.2,
+  MotionMark 1.3.1. `--label`/`--env` for ablations. `report.mjs` renders
+  Markdown medians. Results in `tools/bench/results/`.
+- e2e driver: `wait-js`, `try-wait`, `print-js`, `mark`, `oblivion`,
+  `assert-oblivion`; `tests/e2e/security.lethe` proves HTTPS-first,
+  the fallback link, the tracker blocker and Oblivion isolation on macOS
+  and Linux.
+- 230 unit tests (+9).
+
 ## [0.1.0] — 2026-08-27
 
 First version that is a usable browser. Earlier tags "1.0.0"/"1.1.0" were
@@ -224,4 +290,5 @@ could succeed. Their content is folded in below under the honest number.
   target compiles and links cleanly (pkg-config imported target, so
   non-system GTK installs work too)
 
+[0.2.0]: https://github.com/hotocoo/lethe/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hotocoo/lethe

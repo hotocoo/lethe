@@ -155,20 +155,9 @@
     }
     if (!proxyApplied_ && ctx_->proxyPort > 0) {
         proxyApplied_ = YES;
-        if (@available(macOS 14.0, *)) {
-            const std::string port = std::to_string(ctx_->proxyPort);
-            nw_endpoint_t ep = nw_endpoint_create_host("127.0.0.1", port.c_str());
-            nw_proxy_config_t pc = nw_proxy_config_create_http_connect(ep, nil);
-            if (!ctx_->proxyAuthToken.empty()) {
-                // The proxy refuses (407) anything without this per-launch
-                // secret, so other local processes cannot ride Lethe's
-                // policy identity or VPN tunnel.
-                nw_proxy_config_set_username_and_password(
-                    pc, "lethe", ctx_->proxyAuthToken.c_str());
-            }
-            dataStore_.proxyConfigurations = @[pc];
+        if ([self bindStoreToProxy:dataStore_]) {
             std::cout << "[lethe] WebKit traffic routed through policy proxy "
-                         "127.0.0.1:" << port << " (subresource enforcement on)"
+                         "127.0.0.1:" << ctx_->proxyPort << " (subresource enforcement on)"
                       << std::endl;
         } else {
             std::cout << "[lethe] macOS < 14: no per-datastore proxy API; "
@@ -178,9 +167,38 @@
     return dataStore_;
 }
 
+- (BOOL)bindStoreToProxy:(WKWebsiteDataStore*)store {
+    if (ctx_->proxyPort <= 0) return NO;
+    if (@available(macOS 14.0, *)) {
+        const std::string port = std::to_string(ctx_->proxyPort);
+        nw_endpoint_t ep = nw_endpoint_create_host("127.0.0.1", port.c_str());
+        nw_proxy_config_t pc = nw_proxy_config_create_http_connect(ep, nil);
+        if (!ctx_->proxyAuthToken.empty()) {
+            // The proxy refuses (407) anything without this per-launch
+            // secret, so other local processes cannot ride Lethe's
+            // policy identity or VPN tunnel.
+            nw_proxy_config_set_username_and_password(
+                pc, "lethe", ctx_->proxyAuthToken.c_str());
+        }
+        store.proxyConfigurations = @[pc];
+        return YES;
+    }
+    return NO;
+}
+
+- (WKWebsiteDataStore*)makeOblivionStore {
+    WKWebsiteDataStore* store = [WKWebsiteDataStore nonPersistentDataStore];
+    [self bindStoreToProxy:store];
+    return store;
+}
+
 - (WKWebViewConfiguration*)webViewConfiguration {
+    return [self webViewConfigurationWithStore:nil];
+}
+
+- (WKWebViewConfiguration*)webViewConfigurationWithStore:(WKWebsiteDataStore*)store {
     WKWebViewConfiguration* c = [[WKWebViewConfiguration alloc] init];
-    c.websiteDataStore = [self dataStore];
+    c.websiteDataStore = store ?: [self dataStore];
     c.userContentController = [self userContentController];
     c.defaultWebpagePreferences.allowsContentJavaScript = YES;
     // Popup blocking like Chrome: window.open needs a user gesture.
@@ -197,8 +215,15 @@
 #pragma mark - Windows and tabs
 
 - (BrowserWindowController*)makeController:(WKWebView*)existing {
+    return [self makeController:existing store:nil oblivion:NO];
+}
+
+- (BrowserWindowController*)makeController:(WKWebView*)existing
+                                      store:(WKWebsiteDataStore*)store
+                                   oblivion:(BOOL)oblivion {
     BrowserWindowController* c =
-        [[BrowserWindowController alloc] initWithContext:ctx_ gate:gate_ webView:existing];
+        [[BrowserWindowController alloc] initWithContext:ctx_ gate:gate_ webView:existing
+                                               dataStore:store oblivion:oblivion];
     [controllers_ addObject:c];
     return c;
 }
@@ -214,9 +239,28 @@
     return c;
 }
 
+- (BrowserWindowController*)openOblivionWindowWithURL:(NSString*)url {
+    BrowserWindowController* c = [self makeController:nil store:[self makeOblivionStore] oblivion:YES];
+    c.window.tabbingMode = NSWindowTabbingModeDisallowed;
+    [c showWindow:nil];
+    [c.window makeKeyAndOrderFront:nil];
+    c.window.tabbingMode = NSWindowTabbingModePreferred;
+    if (url.length) [c loadAddress:url]; else [c showNewTabPage];
+    std::cout << "[lethe] oblivion window opened (isolated in-memory store, https-only, "
+                 "tracker protection forced, stealth UA)" << std::endl;
+    return c;
+}
+
 - (BrowserWindowController*)openTabWithURL:(NSString*)url
                                 fromWindow:(NSWindow*)parent
                                    webView:(WKWebView*)existing {
+    // A tab born from an Oblivion window stays in Oblivion: same isolated
+    // store, same rules. window.open already inherits the configuration.
+    BrowserWindowController* parentCtl = nil;
+    if ([parent.windowController isKindOfClass:[BrowserWindowController class]])
+        parentCtl = (BrowserWindowController*)parent.windowController;
+    const BOOL oblivion = parentCtl.oblivion;
+    WKWebsiteDataStore* store = oblivion ? parentCtl.dataStore : nil;
     if (!parent) {
         BrowserWindowController* c = [self makeController:existing];
         [c showWindow:nil];
@@ -224,7 +268,7 @@
         if (!existing) { if (url.length) [c loadAddress:url]; else [c showNewTabPage]; }
         return c;
     }
-    BrowserWindowController* c = [self makeController:existing];
+    BrowserWindowController* c = [self makeController:existing store:store oblivion:oblivion];
     [parent addTabbedWindow:c.window ordered:NSWindowAbove];
     [c.window makeKeyAndOrderFront:nil];
     if (!existing) {
@@ -248,6 +292,11 @@
     [self openWindowWithURL:nil];
 }
 
+- (void)newOblivionWindow:(id)sender {
+    (void)sender;
+    [self openOblivionWindowWithURL:nil];
+}
+
 #pragma mark - Status / privacy actions
 
 - (BOOL)isHttpAllowedForHost:(NSString*)host {
@@ -266,6 +315,11 @@
     [s appendFormat:@"Tracker protection: %@\n", trackerRuleCount_
         ? [NSString stringWithFormat:@"on (%lu third-party rules)", (unsigned long)trackerRuleCount_]
         : (ctx_->trackerBlocking ? @"unavailable (rule compile failed)" : @"OFF")];
+    NSUInteger oblivionWindows = 0;
+    for (BrowserWindowController* c in controllers_) if (c.oblivion) oblivionWindows++;
+    [s appendFormat:@"Oblivion windows open: %lu (isolated in-memory store wiped on close, "
+                     "https-only, tracker protection forced, stealth UA; ⌘⇧N)\n",
+        (unsigned long)oblivionWindows];
     [s appendFormat:@"HTTPS-first: %@\n", ctx_->httpsFirst
         ? [NSString stringWithFormat:@"on (%lu host%@ allowed plain http this session)",
            (unsigned long)httpAllowedHosts_.count, httpAllowedHosts_.count == 1 ? @"" : @"s"]
@@ -403,6 +457,7 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     NSMenu* file = addSubmenu(bar, @"File");
     addItem(file, @"New Tab", @selector(newWindowForTab:), @"t", cmd);
     addItem(file, @"New Window", @selector(newWindow:), @"n", cmd);
+    addItem(file, @"New Oblivion Window", @selector(newOblivionWindow:), @"n", cmdShift);
     addItem(file, @"Open Location…", @selector(focusAddressBar:), @"l", cmd);
     [file addItem:[NSMenuItem separatorItem]];
     addItem(file, @"Close Tab", @selector(performClose:), @"w", cmd);

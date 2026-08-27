@@ -10,6 +10,8 @@
 //   try-wait [ms]             same, but a timeout is logged and NOT fatal
 //   sleep <ms>
 //   newtab [text]             new tab beside the current one; becomes current
+//   oblivion [text]           new Oblivion window (isolated, https-only); current
+//   assert-oblivion on|off    current tab is (not) an Oblivion tab
 //   closetab                  close current tab
 //   back | forward | reload | reader
 //   click <css-selector>      DOM click via JavaScript
@@ -200,6 +202,15 @@
             [app_ openTabWithURL:arg.length ? arg : nil fromWindow:current_.window webView:nil];
         current_ = c;
         [self later:100];
+    } else if ([cmd isEqualToString:@"oblivion"]) {
+        // oblivion [url]: open an Oblivion window; it becomes current.
+        BrowserWindowController* c = [app_ openOblivionWindowWithURL:arg.length ? arg : nil];
+        current_ = c;
+        [self later:150];
+    } else if ([cmd isEqualToString:@"assert-oblivion"]) {
+        const BOOL want = [arg isEqualToString:@"on"];
+        if (current_.oblivion == want) { [self pass:@"oblivion state"]; [self next]; }
+        else [self fail:[NSString stringWithFormat:@"oblivion %@", current_.oblivion ? @"on" : @"off"]];
     } else if ([cmd isEqualToString:@"closetab"]) {
         [current_.window performClose:nil];
         current_ = nil;
