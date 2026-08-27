@@ -7,8 +7,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(BUILD_WITH_SANDBOX "Enable renderer sandboxing" ON)
 option(BUILD_HARDENED "Apply strict compiler hardening" ON)
 option(USE_PREBUILT_CHROMIUM "Use prebuilt Chromium SDK" OFF)
-option(USE_QT "Use Qt for UI (recommended)" OFF)
-option(USE_GTK "Use GTK for UI (fallback)" ON)
 option(BUILD_TESTS "Build test suite" ON)
 if(WIN32)
     set(BUILD_TESTS OFF)
@@ -200,110 +198,43 @@ if(BUILD_UI AND APPLE)
         ${COCOA_FRAMEWORK} ${WEBKIT_FRAMEWORK} ${NETWORK_FRAMEWORK})
     install(TARGETS lethe BUNDLE DESTINATION .)
 elseif(BUILD_UI)
-    if(USE_QT)
-        find_package(Qt6 COMPONENTS Widgets Quick Controls2 QUIET)
-        if(Qt6_FOUND)
-            set(USE_QT6 TRUE)
-            set(CMAKE_AUTOMOC ON)
-            set(CMAKE_AUTORCC ON)
-            set(CMAKE_AUTOUIC ON)
-        endif()
+    # Linux: GTK3 shell; WebKitGTK engine when its dev package is present,
+    # otherwise the Cairo reader viewport renders extracted text only.
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(GTK3 QUIET IMPORTED_TARGET gtk+-3.0>=3.20)
     endif()
-
-    if(NOT USE_QT6 AND USE_GTK)
-        find_package(PkgConfig QUIET)
-        if(PkgConfig_FOUND)
-            # IMPORTED_TARGET carries include dirs, library dirs, and libs,
-            # so non-system installs (e.g. Homebrew) link correctly.
-            pkg_check_modules(GTK3 QUIET IMPORTED_TARGET gtk+-3.0>=3.20)
-            if(GTK3_FOUND)
-                set(USE_GTK3 TRUE)
-            endif()
-        endif()
-    endif()
-
-    if(USE_QT6 OR USE_GTK3)
-        message(STATUS "[lethe] Building GUI application")
-
-        file(GLOB_RECURSE SRC_UI src/ui/*.cc)
-# Backend-specific full-web sources are added by the USE_FULLWEB branch
-# below; the generic glob must not leak them across platforms.
-list(FILTER SRC_UI EXCLUDE REGEX "fullweb_gtk\.cc$")
-list(FILTER SRC_UI EXCLUDE REGEX "fullweb_mac\.mm$")
-
+    if(GTK3_FOUND)
+        message(STATUS "[lethe] Building GUI application (GTK3)")
         add_executable(lethe
-            "browser/app/main.cc"
-            "${SRC_UI}"
+            browser/app/main.cc
+            src/ui/main_window.cc
+            src/ui/viewport.cc
+            src/ui/e2e_driver.cc
         )
-
-        set_target_properties(lethe PROPERTIES
-            MACOSX_BUNDLE TRUE
-            MACOSX_BUNDLE_BUNDLE_NAME "Lethe"
-            MACOSX_BUNDLE_IDENTIFIER "org.aletheia.lethe"
-            WIN32_EXECUTABLE TRUE
-        )
-
         target_include_directories(lethe PRIVATE
-            ${CMAKE_SOURCE_DIR}/include
-            ${CMAKE_SOURCE_DIR}/src
-            ${CMAKE_SOURCE_DIR}/browser
-        )
-
-        target_link_libraries(lethe PRIVATE
-            lethe_core
-        )
-
-        # --- Full-web mode: embed the platform web engine ---
+            ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/browser)
+        target_compile_definitions(lethe PRIVATE -DUSE_GTK3 -DHAVE_OPENSSL)
+        target_link_libraries(lethe PRIVATE lethe_core PkgConfig::GTK3)
         if(USE_FULLWEB)
-            if(UNIX)
-                find_package(PkgConfig QUIET)
-                if(PkgConfig_FOUND)
-                    pkg_check_modules(WEBKITGTK QUIET IMPORTED_TARGET webkit2gtk-4.1)
-                    if(NOT WEBKITGTK_FOUND)
-                        pkg_check_modules(WEBKITGTK QUIET IMPORTED_TARGET webkit2gtk-4.0)
-                    endif()
-                    if(WEBKITGTK_FOUND)
-                        target_sources(lethe PRIVATE src/ui/fullweb_gtk.cc)
-                        target_compile_definitions(lethe PRIVATE HAVE_FULLWEB)
-                        target_link_libraries(lethe PRIVATE PkgConfig::WEBKITGTK)
-                    else()
-                        message(STATUS "[lethe] webkit2gtk not found - full-web mode disabled")
-                    endif()
-                endif()
+            pkg_check_modules(WEBKITGTK QUIET IMPORTED_TARGET webkit2gtk-4.1)
+            if(NOT WEBKITGTK_FOUND)
+                pkg_check_modules(WEBKITGTK QUIET IMPORTED_TARGET webkit2gtk-4.0)
+            endif()
+            if(WEBKITGTK_FOUND)
+                message(STATUS "[lethe] full-web engine: WebKitGTK ${WEBKITGTK_VERSION}")
+                target_compile_definitions(lethe PRIVATE HAVE_FULLWEB)
+                target_link_libraries(lethe PRIVATE PkgConfig::WEBKITGTK)
+            else()
+                message(STATUS "[lethe] webkit2gtk not found - reader-only shell")
             endif()
         endif()
-
-        if(USE_QT6)
-            target_compile_definitions(lethe PRIVATE -DUSE_QT6)
-            target_link_libraries(lethe PRIVATE
-                Qt6::Widgets
-                Qt6::Quick
-                Qt6::Controls2
-            )
-        endif()
-
-        if(USE_GTK3)
-            target_compile_definitions(lethe PRIVATE -DUSE_GTK3 -DHAVE_OPENSSL)
-            target_link_libraries(lethe PRIVATE
-                PkgConfig::GTK3
-            )
-        endif()
-
-        if(APPLE)
-            target_link_libraries(lethe PRIVATE
-                "-framework Cocoa"
-                "-framework AppKit"
-                "-framework Foundation"
-            )
-        endif()
-
-        install(TARGETS lethe DESTINATION bin)
+        install(TARGETS lethe RUNTIME DESTINATION bin)
     else()
-        message(STATUS "[lethe] No UI framework found, skipping GUI application")
+        message(STATUS "[lethe] GTK3 not found - GUI application skipped")
     endif()
 endif()
 
-# --- Tests ---
 if(BUILD_TESTS)
     enable_testing()
 

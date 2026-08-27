@@ -2,7 +2,74 @@
 
 All notable changes to Lethe are documented in this file.
 
-## [1.1.0] — 2025
+## [0.1.0] — 2026-08-27
+
+First version that is a usable browser. Earlier tags "1.0.0"/"1.1.0" were
+mislabelled: the GUI was a blank window whose widgets were never attached,
+and the TLS context had no trust anchors, so no HTTPS (or DoH) connection
+could succeed. Their content is folded in below under the honest number.
+
+### Browser shells
+- macOS: native AppKit shell around WKWebView (`src/ui/mac/`). Tabs are
+  native NSWindow tabs (⌘T/⌘W/⌃⇥, drag to reorder, merge/move); address bar
+  with search fallback; back/forward/reload/stop; load progress; https lock
+  indicator; find bar (⌘F); zoom; print; downloads to `~/Downloads`;
+  JavaScript alert/confirm/prompt; file-upload panel; HTTP Basic/Digest
+  prompt; `window.open`/`target=_blank` open beside the current tab; reader
+  view (⌘⇧R); block/error/new-tab internal pages; Security Status panel;
+  VPN toggle and Clear Browsing Data in a Privacy menu. Bundle Info.plist
+  registers http/https so Lethe can be the default browser. No GTK on macOS
+  (DMG shrank from 12.7 MB to 2.9 MB).
+- Linux: the GTK3 shell is now a browser: WebKitGTK view per tab in a
+  notebook, header-bar navigation, address entry with progress, find
+  revealer, zoom, reader view, downloads, keyboard shortcuts (Ctrl+T/W/L/R/F,
+  Alt+←/→, F5, F11, Ctrl+1..9). Reader-only Cairo fallback when WebKitGTK is
+  absent. Dead widgets (`tab_bar`, `address_bar`, `fullweb_*`) removed.
+- Every WebKit navigation is gated off the main thread by
+  `HttpClient::policyCheckUrl` (DoH-only, private-network guard on the
+  RESOLVED address, VPN fail-closed). On macOS 14+ (`proxyConfigurations`)
+  and on Linux (`WEBKIT_NETWORK_PROXY_MODE_CUSTOM`) all engine traffic rides
+  the local PolicyProxyServer so subresources are enforced at transport.
+- Shared across shells: `browser/url_input` (address text -> URL: explicit
+  http(s) kept, bare hosts get https:// / loopback http://, everything else
+  including `javascript:`/`data:`/`file:` becomes a search) and
+  `renderer/page_templates` (script-free internal pages with CSP meta).
+- `--e2e-script <file>`: scripted driver with the same command language on
+  macOS and Linux (docs/E2E.md); `tests/e2e/basic.lethe` is the release
+  checklist and passes on both.
+- `--persistent` keeps site data; default stays ephemeral. `--no-proxy`,
+  `--version`, `--help`.
+
+### Security fixes
+- TLS: `SSL_CTX_set_default_verify_paths` was never called, so a context
+  without an explicit CA bundle had NO trust anchors and every verified
+  handshake failed ("SSL error 1"). Fixed; failures now print the
+  certificate verify result / OpenSSL error text.
+- TLS: hostname verification (`SSL_set1_host`, IP SANs for literals) added on
+  the direct and relay paths - previously any valid certificate for any
+  host was accepted.
+- Reader extraction: numeric character references are emitted as UTF-8 (raw
+  0x80-0xFF bytes previously corrupted documents); nav/header/footer/aside/
+  noscript/template/svg/iframe regions dropped from reader text.
+- macOS Seatbelt profile additionally allows writes to `~/Downloads` and
+  Lethe's own `~/Library` subtrees (persistent WebKit profile, window state).
+- Linux GUI: the multi-process WebKit engine cannot run under the engine's
+  default-deny seccomp filter (children inherit it); the shell relies on
+  WebKitGTK's bubblewrap + seccomp content sandbox instead and says so in
+  the Security Status panel. The engine filter still guards the reader-only
+  build and the test suite.
+
+### Build / CI / release
+- Version single-sourced from `project(lethe VERSION 0.1.0)`; `config.h`
+  reads `LETHE_VERSION`.
+- macOS: `browser/app/Info.plist.in`, ARC, Cocoa/WebKit/Network frameworks;
+  release workflow no longer installs GTK on macOS.
+- `Dockerfile.linux-build`: Ubuntu 24.04 image that builds the GTK shell,
+  runs the unit tests and the headless e2e under Xvfb.
+- 221 unit tests (url input, page templates, UTF-8 entities, boilerplate
+  regions added).
+
+### Previously labelled "1.1.0" (2026-08-26, retracted label)
 
 ### Full-web mode: platform engines behind Lethe policy
 - Local PolicyProxyServer: HTTP forwarding + CONNECT splicing where every
@@ -18,7 +85,7 @@ All notable changes to Lethe are documented in this file.
   (Chrome/Firefox/Safari/Edge/Brave/Tor), including Lethe's weaknesses
 - 5 new proxy security tests incl. verified TLS 1.3 splice; suite at 210
 
-## [1.0.0] — 2025
+### Previously labelled "1.0.0" (2026-08-26, retracted label)
 
 ### Browser engine & OS integration
 - Single-process browser engine with tab management, per-tab navigation
@@ -157,4 +224,4 @@ All notable changes to Lethe are documented in this file.
   target compiles and links cleanly (pkg-config imported target, so
   non-system GTK installs work too)
 
-[1.0.0]: https://github.com/hotocoo/lethe
+[0.1.0]: https://github.com/hotocoo/lethe

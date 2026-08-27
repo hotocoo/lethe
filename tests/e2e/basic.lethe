@@ -1,0 +1,73 @@
+# Chrome-like checklist, part 1: load, navigate, history, tabs
+load https://example.com
+wait
+assert-url-contains https://example.com
+assert-title-contains Example Domain
+assert-body-contains This domain is for use
+screenshot $TMPDIR/lethe-e2e-e2e-01-example.png
+# follow a real link (IANA)
+click a
+wait
+assert-url-contains iana.org
+# history: back/forward across two distinct sites
+load https://www.wikipedia.org
+wait
+assert-url-contains wikipedia.org
+back
+wait
+assert-url-contains iana.org
+forward
+wait
+assert-url-contains wikipedia.org
+# search from the address bar
+type-address lethe browser aletheia
+wait
+assert-url-contains duckduckgo.com/?q=lethe
+# tabs
+newtab https://www.wikipedia.org
+wait
+assert-tabs 2
+assert-title-contains Wikipedia
+assert-body-contains Wikipedia
+screenshot $TMPDIR/lethe-e2e-e2e-02-tabs.png
+closetab
+sleep 300
+assert-tabs 1
+# JS-heavy site
+load https://www.youtube.com
+wait 30000
+assert-url-contains youtube.com
+assert-js document.querySelectorAll('ytd-app, #content, video, ytd-rich-grid-renderer').length > 0
+screenshot $TMPDIR/lethe-e2e-e2e-03-youtube.png
+# private network refused, named reason
+load http://169.254.169.254/latest/meta-data/
+wait
+assert-body-contains Blocked by Lethe policy
+screenshot $TMPDIR/lethe-e2e-e2e-04-block.png
+# non-resolvable host -> block page (DoH failure fails closed)
+load https://definitely-not-a-real-host-lethe.invalid/
+wait
+assert-body-contains Blocked by Lethe policy
+# reader view
+load https://en.wikipedia.org/wiki/Lethe
+wait
+reader
+wait
+assert-reader on
+assert-body-contains Lethe
+screenshot $TMPDIR/lethe-e2e-e2e-05-reader.png
+reader
+wait
+assert-reader off
+# target=_blank opens a new tab
+load https://example.com
+wait
+js var a=document.createElement('a');a.href='https://www.iana.org/';a.target='_blank';a.textContent='blank';a.id='lethe-blank';document.body.appendChild(a);'ok'
+click #lethe-blank
+sleep 1500
+assert-tabs 2
+assert-url-contains iana.org
+closetab
+sleep 300
+assert-tabs 1
+quit

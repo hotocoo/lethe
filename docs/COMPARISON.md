@@ -5,15 +5,19 @@ about Lethe below is backed by code in this repository or a measurement
 reproduced with tools/fetch_bench or ps. Where we are weaker than the
 incumbents, we say so plainly.*
 
-## What Lethe actually is (v1.1.0)
+## What Lethe actually is (v0.1.0)
 
-A privacy-hardened **network stack** first, a browser second:
+A privacy-hardened **network stack** wrapped in a native browser shell:
 
-- Reader-mode rendering of fetched documents (no JS/CSS/layout engine of
-  its own)
-- **Full-web mode**: the platform web engine (WKWebView on macOS,
-  WebKitGTK on Linux, WebView2/Chromium on Windows) driven through
-  Lethe's policy layer - this is how YouTube-class sites work
+- The platform web engine renders pages (WKWebView on macOS, WebKitGTK on
+  Linux, WebView2/Chromium on Windows) - JavaScript, CSS, media, YouTube
+- Lethe's shell supplies the chrome (tabs, address bar, history, find,
+  downloads, dialogs) and gates EVERY navigation through its policy layer;
+  on macOS 14+ and Linux all engine traffic also rides Lethe's local policy
+  proxy so subresources are enforced at the transport layer
+- Reader view re-fetches the page through Lethe's own stack (TLS 1.3 floor,
+  pinning, HSTS, partitioned cookies) and renders extracted text with a
+  script-free CSP
 - WireGuard-style built-in VPN with fail-closed routing
 - DoH-only DNS, HSTS pre-connect upgrade, SPKI certificate pinning,
   private-network (SSRF) isolation, RFC6265bis partitioned cookies,

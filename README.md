@@ -4,56 +4,62 @@
 
 Minimalist, high-performance browser with maximum security and a built-in VPN, built as the native browser for the Aletheia OS. Lethe's secure network stack is also used by the OS's LLM agent for private, encrypted web searching.
 
-## Downloads
+## Status: v0.1.0 (early, usable, not finished)
 
-Prebuilt, self-contained binaries ship with every release:
-**https://github.com/hotocoo/lethe/releases/latest**
+Lethe is now a working browser you can actually use day to day, but it is
+young. What exists and works end to end:
 
-| Artifact | Platform | Notes |
-|---|---|---|
-| `Lethe-<ver>-macos-arm64.dmg` | macOS 13+ (Apple Silicon) | Bundles its own GTK/OpenSSL runtime — no Homebrew required |
-| `lethe-<ver>-linux-<arch>-ubuntu24.04.tar.gz` | Linux (glibc 2.39+) | Needs system GTK3 / OpenSSL 3 / libseccomp |
-| `lethe-<ver>-linux-x86_64-ubuntu22.04.tar.gz` | Linux x86_64 | Same runtime deps on older glibc |
-| `Lethe-<ver>-windows-x64.exe` | Windows 10+ (x64) | WebView2 host; Evergreen runtime auto-installs |
+- **Native shells**: AppKit + WKWebView on macOS, GTK3 + WebKitGTK on Linux,
+  a WebView2 host on Windows. Tabs, address bar with search fallback,
+  back/forward/reload/stop, progress, lock indicator, find in page, zoom,
+  print, downloads, JavaScript dialogs, file-upload panel, HTTP auth,
+  `window.open`/`target=_blank` into new tabs, reader view, block/error
+  pages with the refusal reason, security status panel.
+- **Policy on every navigation**: DoH-only resolution, private-network
+  (SSRF) guard on the RESOLVED address, VPN fail-closed routing - checked off
+  the main thread before the engine is allowed to load. On macOS 14+ and on
+  Linux, ALL engine traffic additionally rides Lethe's local
+  PolicyProxyServer, so subresources are enforced at the transport layer.
+- **Ephemeral by default** (`--persistent` to keep site data), no history
+  written to disk, macOS Seatbelt profile limiting writes to temp,
+  `~/Downloads` and Lethe's own caches.
+- Scripted end-to-end checklist (`--e2e-script`, see `docs/E2E.md`) that
+  loads real sites, follows links, uses history, opens/closes tabs, renders
+  YouTube, gets refused on `169.254.169.254`, and round-trips reader view.
 
-Honest cross-browser security/performance comparison:
-**docs/COMPARISON.md** — including where Lethe loses.
+Honest limits (see `docs/COMPARISON.md` for the full audit):
 
-## Scope & Honest Limitations (read before judging)
+- Inside https, TLS is the platform engine's (system trust store). Lethe's
+  TLS 1.3 floor, SPKI pinning and HSTS learning cover reader-mode fetches and
+  the proxy's own hops, not WebKit's end-to-end connections.
+- Cookies live in the engine's data store (ephemeral unless `--persistent`),
+  not Lethe's RFC6265bis memory jar (which serves reader mode and the LLM
+  search path).
+- Linux: the multi-process WebKit engine cannot run under the engine's
+  default-deny seccomp filter (children would inherit it and die); web
+  content is sandboxed by WebKitGTK's own bubblewrap + seccomp instead. The
+  seccomp filter still guards the reader-only build and the test suite.
+- No extensions, no sync, no password manager, no bookmarks yet.
+- Windows host is a single-view WebView2 window with the navigation gate;
+  tabs and the rest of the shell are macOS/Linux only for now.
 
-Lethe ships two rendering paths, and honesty about both:
-
-- **Reader mode** (default): extracted readable text only — no JS/CSS/
-  media execution. Strong no-JS guarantees, YouTube-class sites do NOT
-  work here by design.
-- **Full-web mode** (Ctrl+Shift+W / menu): embeds the PLATFORM engine —
-  WKWebView (macOS), WebKitGTK (Linux), WebView2 (Windows .exe) — so
-  JavaScript, CSS and video work. Every navigation is gated by Lethe's
-  policy (DoH-only resolution, private-network guard, VPN fail-closed);
-  on Linux all transport rides the local policy proxy. Inside CONNECT
-  tunnels TLS stays end-to-end, so pinning/HSTS inspection does not apply
-  there (documented, not hidden).
-- The reader renderer is single-process with no renderer sandbox; see
-  docs/COMPARISON.md for the full honest weakness list.
-- The macOS DMG is ad-hoc signed (no Developer ID notarization yet);
-  right-click → Open on first launch.
-
-Everything the README claims below the renderer line — DoH-only
-resolution, HSTS, certificate pinning, SSRF isolation, partitioned
-cookies, WireGuard-style VPN with fail-closed routing — is real,
-socket-level code exercised by the 205-test suite and e2e scripts.
+Prebuilt binaries for 0.1.0 are produced by `.github/workflows/release.yml`
+on a `v0.1.0` tag (macOS DMG, Linux tarballs, Windows exe). Until then,
+build from source (below).
 
 ## Features
 
 ### Performance
-- **Single-process architecture**: Combined browser/renderer for reduced overhead
-- **Renderer abstraction**: software pipeline today with a hardware-accelerated
-  backend hook and automatic fallback
-- **Optimized memory management**: Custom allocator with strict limits
-- **Fast startup**: Precompiled components, minimal warm-up time
-- **Efficient network stack**: HTTP/1.1 keep-alive connection reuse with
-  transparent stale-connection retry, buffered response parsing, and a TTL
-  cache for DNS-over-HTTPS answers
+- Rendering is the platform engine's (WebKit / Chromium): hardware
+  accelerated, multi-process, the same performance class as Safari/Edge
+- Lethe's own stack (reader mode, DoH, proxy hops): HTTP/1.1 keep-alive
+  connection reuse with transparent stale-connection retry, buffered
+  response parsing, TTL cache for DNS-over-HTTPS answers (measured in
+  `docs/COMPARISON.md` with `tools/fetch_bench`)
+- Policy checks run off the UI thread; a slow resolver never freezes the
+  window
+- Small footprint: the macOS app bundle is under 3 MB (OpenSSL is the only
+  bundled runtime)
 
 ### Security
 - **Strict Content Security Policy (CSP)**: No eval(), no inline scripts by default
@@ -62,10 +68,13 @@ socket-level code exercised by the 205-test suite and e2e scripts.
   hosts are rewritten to https:// BEFORE any connection attempt - plaintext
   is never put on the wire and there is no insecure fallback
 - **Enforced sandboxing**: macOS Seatbelt profile denies file writes outside
-  temp locations; Linux seccomp-bpf default-deny allowlist (~90 syscalls)
-  with PR_SET_NO_NEW_PRIVS — the whole suite runs under the active sandbox
-- **Network isolation**: Per-tab network namespaces for multi-instance sessions
-- **Memory protection**: ASLR, DEP, stack canaries, heap metadata separation
+  temp, `~/Downloads` and Lethe's own caches; web content runs in WebKit's
+  own out-of-process sandbox. Linux: WebKitGTK bubblewrap + seccomp content
+  sandbox for web processes; the engine's seccomp-bpf default-deny allowlist
+  (~90 syscalls, PR_SET_NO_NEW_PRIVS) guards the reader-only build and the
+  whole test suite
+- **Hardened build**: `-fstack-protector-strong`, `_FORTIFY_SOURCE=2`, LTO,
+  PIE/ASLR from the platform toolchain
 - **Secure TLS configuration**: TLS 1.3+, modern cipher suites only,
   certificate verification on by default
 - **Certificate pinning**: per-host SPKI SHA-256 pins ("sha256-<base64>",
@@ -246,11 +255,24 @@ auto results = bridge.llmWebSearch("aletheia os features");
 - **DNS over HTTPS (DoH)**: Encrypted DNS queries via Cloudflare/DNS-over-HTTPS providers
 - **VPN encryption**: All traffic can be encrypted through the built-in tunnel
 
-### Minimal UI
-- Clean, distraction-free interface with focus mode (**Ctrl+Shift+F**
-  hides the address entry and menu button until toggled again)
-- Tab bar only when needed (the strip hides entirely while a single tab is open)
-- No extensions or plugins — pure web rendering
+### Browser shell
+- Native per platform: AppKit + WKWebView (macOS), GTK3 + WebKitGTK (Linux),
+  WebView2 host (Windows)
+- Tabs (native window tabs on macOS, notebook on Linux), address bar with
+  search fallback (DuckDuckGo) and fail-closed scheme handling
+  (`javascript:`/`data:`/`file:` typed into the bar become searches)
+- Back/forward/reload/stop, load progress, https lock indicator, find in
+  page, zoom, print, downloads to `~/Downloads`, JavaScript alert/confirm/
+  prompt, file-upload chooser, HTTP Basic/Digest prompt
+- `window.open` and `target=_blank` open beside the current tab; popups
+  need a user gesture
+- Reader view (⌘⇧R / Ctrl+Shift+R): the page fetched through lethe_core
+  (DoH, HSTS, pins, partitioned cookies) and rendered as clean text with a
+  script-free CSP
+- Internal pages (blocked, load error, new tab) name the exact reason and
+  can never run script
+- Security Status panel showing DoH provider, isolation mode, transport
+  enforcement, VPN state, data-store mode, sandbox, UA mode
 
 ## Architecture
 
@@ -285,17 +307,14 @@ auto results = bridge.llmWebSearch("aletheia os features");
 
 ## Build Requirements
 
-- Platforms: **Linux and macOS** (portable POSIX sockets; sandboxing uses
-  Seatbelt on macOS and seccomp-bpf on Linux — Windows is not supported)
-- Linux only: `libseccomp` development files (`libseccomp-dev` on
-  Debian/Ubuntu, `libseccomp-devel` on Fedora) — required by the enforced
-  sandbox; the build fails loudly without them
-- C++20 compiler (Clang 13+ or GCC 11+)
-- CMake >= 3.18
-- OpenSSL >= 3.0 (for VPN cryptography and TLS)
-- Zlib
-- Ninja build system (recommended)
-- Optional: Qt6 or GTK3 (for GUI)
+- Platforms: **macOS 13+**, **Linux** (glibc, GTK3), Windows for the
+  WebView2 host only
+- C++20 compiler (Clang 13+ or GCC 11+), CMake >= 3.18, Ninja (recommended)
+- OpenSSL >= 3.0, Zlib
+- macOS: nothing else (AppKit/WebKit/Network frameworks ship with the OS)
+- Linux: `libseccomp-dev`, `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`
+  (or `-4.0-dev`); without WebKitGTK the shell builds reader-only
+- Windows: WebView2 SDK (`-DWEBVIEW2_DIR=...`), target `lethe-win`
 
 ## Building
 
@@ -306,13 +325,29 @@ auto results = bridge.llmWebSearch("aletheia os features");
 # Or manually with ninja
 mkdir -p build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
-ninja lethe_core lethe_tests
+ninja lethe lethe_core lethe_tests
+
+# Run the browser
+./build/lethe.app/Contents/MacOS/lethe https://example.com      # macOS
+./build/lethe https://example.com                               # Linux
+
+# Linux build + headless e2e in a container (no host GTK needed)
+docker build -f Dockerfile.linux-build -t lethe-linux .
+docker run --rm lethe-linux                                     # unit tests
+docker run --rm -e LETHE_WEBKIT_SANDBOX=0 lethe-linux \
+  sh -c 'xvfb-run -a ./build-linux/lethe --e2e-script tests/e2e/basic.lethe'
+# (LETHE_WEBKIT_SANDBOX=0 only because bubblewrap cannot create namespaces
+#  inside an unprivileged container; on a desktop the content sandbox is on)
 ```
+
+Packaging: `scripts/package_mac_app.sh build` produces a self-contained,
+ad-hoc signed `dist/Lethe-<ver>-macos-<arch>.dmg`; `scripts/package_linux.sh`
+the Linux tarball.
 
 ## Running Tests
 
 ```bash
-# Run the full test suite (205 tests)
+# Run the full test suite (221 tests)
 ./build/lethe_tests
 
 # Or with ctest
@@ -321,7 +356,11 @@ cd build && ctest
 
 ### End-to-End Verification
 
-Two layers of e2e run for every change — locally and in CI:
+Three layers of e2e run for every change:
+
+0. **Browser checklist** (`--e2e-script tests/e2e/basic.lethe`, docs/E2E.md):
+   the shell drives itself against real sites and asserts what the user
+   would see - exit code 0 means the release checklist held.
 
 1. **Full-stack suite** (inside `lethe_tests`): browser-grade navigation e2e
    against real local origins — mock DoH, real TCP/HTTP servers, real TLS 1.3
@@ -473,9 +512,12 @@ The test suite covers:
 - `src/network/vpn/` — Built-in VPN (WireGuard-style crypto, tunnel)
 - `src/llm/` — LLM search service (web search, page reading)
 - `src/aletheia/` — Aletheia OS integration bridge
-- `src/renderer/` — Renderer process bindings (Skia + GPU)
-- `src/ui/` — User interface (Qt6/GTK3)
-- `browser/app/` — Main application entry point
+- `src/renderer/` — Reader-mode extraction, internal page templates
+- `src/ui/mac/` — macOS shell (AppKit + WKWebView, ObjC++)
+- `src/ui/` — Linux shell (GTK3 + WebKitGTK), Cairo reader fallback, e2e driver
+- `src/win/` — Windows WebView2 host
+- `browser/app/` — Entry points (`main_mac.mm`, `main.cc`) and Info.plist
+- `tests/e2e/` — Scripted browser checklists
 - `tools/` — Standalone reference VPN server and e2e verification client
 - `scripts/` — End-to-end verification scripts (used locally and by CI)
 - `include/` — Public headers by domain
@@ -499,10 +541,13 @@ Environment is applied first; explicit command-line flags always win over it.
 Command line:
 
 ```bash
-lethe [url]                     # Open URL (or new window if omitted)
-lethe --incognito                # Force incognito mode
+lethe [url-or-search]            # Open URL / search (new-tab page if omitted)
+lethe --persistent               # Keep cookies and site data between runs
+lethe --incognito                # Ephemeral data store (default)
+lethe --no-proxy                 # Navigation gate only; skip the local policy proxy
 lethe --disable-sandbox          # Disable sandboxing (dangerous!)
 lethe --dns-provider URL         # DNS-over-HTTPS provider URL
+lethe --e2e-script FILE          # Scripted session, exit 0/1 (docs/E2E.md)
 ```
 
 ## License

@@ -1,7 +1,8 @@
 name: CI
 
-# Lethe is a POSIX-only codebase (portable BSD sockets, Seatbelt/seccomp
-# sandboxing), so CI covers Linux and macOS — not Windows.
+# lethe_core is POSIX (BSD sockets, Seatbelt/seccomp sandboxing); the
+# shells are native per platform: AppKit+WKWebView (macOS), GTK3+WebKitGTK
+# (Linux), WebView2 host (Windows, separate job).
 on:
   push:
     branches: [main]
@@ -10,7 +11,7 @@ on:
 
 jobs:
   build-test-e2e:
-    name: ${{ matrix.os }} / ${{ matrix.cpp_compiler }}${{ matrix.gui && ' + GTK3 GUI' || '' }}
+    name: ${{ matrix.os }} / ${{ matrix.cpp_compiler }}${{ matrix.gui && ' + GUI' || '' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -27,7 +28,7 @@ jobs:
           - os: macos-latest
             c_compiler: clang
             cpp_compiler: clang++
-            gui: false
+            gui: true # AppKit + WKWebView shell (no GTK on macOS)
 
     steps:
       - uses: actions/checkout@v4

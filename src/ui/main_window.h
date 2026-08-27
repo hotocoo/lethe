@@ -1,61 +1,147 @@
 #ifndef LETHE_UI_MAIN_WINDOW_H
 #define LETHE_UI_MAIN_WINDOW_H
 
+// main_window.h - GTK3 browser shell (Linux)
+//
+// A real browser window: tab strip (GtkNotebook), address bar with search
+// fallback, back/forward/reload/stop, progress, find bar, zoom, reader
+// view, downloads. Each tab hosts a WebKitGTK view when the engine is
+// available (HAVE_FULLWEB) - JavaScript, CSS, media - otherwise the Cairo
+// reader Viewport. Every WebKit navigation is gated off the main loop by
+// HttpClient::policyCheckUrl (DoH-only, private-network guard, VPN rule)
+// and, when a PolicyProxyServer port is given, ALL engine traffic rides
+// that proxy so subresources are enforced at the transport layer too.
+
 #include <gtk/gtk.h>
+#if defined(HAVE_FULLWEB)
+#include <webkit2/webkit2.h>
+#endif
+
 #include <functional>
+#include <memory>
 #include <string>
+#include <vector>
+
 #include "core/engine.h"
+#include "network/http_client.h"
+#include "network/tls_config.h"
 
 namespace lethe {
 
+class Viewport;
+
+struct ShellOptions {
+    TLSConfig tls;
+    int proxyPort = 0;         // local PolicyProxyServer (0 = none)
+    bool persistent = false;   // false = ephemeral (incognito) web context
+    bool webkitSandbox = true; // WebKitGTK content-process sandbox (bwrap)
+    std::string homeUrl;
+};
+
 class MainWindow {
 public:
-    MainWindow(Engine* engine);
+    MainWindow(Engine* engine, ShellOptions options);
     ~MainWindow();
-    
+
+    MainWindow(const MainWindow&) = delete;
+    MainWindow& operator=(const MainWindow&) = delete;
+
     void create();
     void show();
-    void run();
-    void quit();
-
-    // Full-web mode hook: invoked with the address-bar URL when the user
-    // picks the menu item or hits Ctrl+Shift+W. The app layer owns the
-    // FullWebWindow (and its policy plumbing); the window stays decoupled.
-    using FullWebCallback = std::function<void(const std::string& url)>;
-    void setFullWebCallback(FullWebCallback cb) { fullWebCallback_ = std::move(cb); }
-    // Invokes fullWebCallback_ with the current address-bar text.
-    void triggerFullWeb();
-    
     GtkWidget* getWidget() { return window_; }
 
+    // --- Browsing API (menu, keyboard, e2e driver) ---
+    struct Tab;
+    Tab* currentTab();
+    Tab* newTab(const std::string& addressText = "");
+    void closeTab(Tab* tab);
+    size_t tabCount() const { return tabs_.size(); }
+    void loadAddress(Tab* tab, const std::string& text);   // URL or search
+    void loadUrl(Tab* tab, const std::string& url);
+    void goBack(Tab* tab);
+    void goForward(Tab* tab);
+    void reload(Tab* tab);
+    void stop(Tab* tab);
+    void toggleReader(Tab* tab);
+    bool readerActive(Tab* tab) const;
+    bool busy(Tab* tab) const;                 // loading or reader fetch
+    std::string currentUrl(Tab* tab) const;
+    std::string currentTitle(Tab* tab) const;
+    std::string addressText() const;
+    void focusAddressBar();
+    void showFindBar();
+    void hideFindBar();
+    void zoom(Tab* tab, double factor);        // 0 = reset
+    std::string securityStatusText() const;
+#if defined(HAVE_FULLWEB)
+    WebKitWebView* webView(Tab* tab) const;
+#endif
+
+    struct Tab {
+        GtkWidget* container = nullptr;    // notebook page
+        GtkWidget* labelBox = nullptr;
+        GtkWidget* label = nullptr;
+#if defined(HAVE_FULLWEB)
+        WebKitWebView* web = nullptr;
+#endif
+        std::unique_ptr<Viewport> reader;  // fallback renderer (no WebKit)
+        std::string url;                   // shown in the address bar
+        std::string title;
+        bool readerActive = false;
+        bool readerFetching = false;
+        bool readerLoadPending = false;
+        std::string readerSourceUrl;
+        std::string internalPageUrl;       // block/error page for this URL
+        MainWindow* owner = nullptr;
+    };
+
 private:
-    friend void on_window_destroy(GtkWidget* widget, gpointer data);
-    friend void on_entry_activate(GtkWidget* widget, gpointer data);
-    friend void on_focus_mode_activate(GtkWidget* widget, gpointer data);
+    friend struct MainWindowSignals;
 
-    std::string entryText() const { return entry_ ? gtk_entry_get_text(GTK_ENTRY(entry_)) : ""; }
+    void buildChrome();
+    void updateChrome();
+    void setTabTitle(Tab* tab, const std::string& title);
+    void showInternalPage(Tab* tab, const std::string& html, const std::string& url);
+    void showBlockPage(Tab* tab, const std::string& url, const std::string& reason);
+    void showErrorPage(Tab* tab, const std::string& url, const std::string& message);
+    void showNewTabPage(Tab* tab);
+    Tab* tabForPage(GtkWidget* page);
+    Tab* tabAt(int index);
+    bool handleKey(GdkEventKey* event);
 
-    void setupUI();
-    void connectSignals();
-
-    GtkWidget* createMenu();
-    // Distraction-free reading: hides address entry and menu button until
-    // toggled again (Ctrl+Shift+F or the menu item).
-    void toggleFocusMode();
+#if defined(HAVE_FULLWEB)
+    WebKitWebContext* webContext();
+    WebKitWebView* makeWebView(WebKitWebView* related);
+    void attachWebSignals(Tab* tab);
+    Tab* newTabWithView(WebKitWebView* view);
+    void decidePolicy(Tab* tab, WebKitPolicyDecision* decision,
+                      WebKitPolicyDecisionType type);
+#endif
 
     Engine* engine_;
-    GtkWidget* window_;
-    GtkWidget* headerBar_;
-    GtkWidget* menuButton_;
-    GtkWidget* menu_;
-    GtkWidget* entry_;
-    GtkWidget* box_;
-    GtkWidget* tabBox_;
-    GtkWidget* scrollWindow_;
-    GtkWidget* viewport_;
-    GtkAccelGroup* accelGroup_ = nullptr;
-    bool focusMode_ = false;
-    FullWebCallback fullWebCallback_;
+    ShellOptions options_;
+    std::unique_ptr<HttpClient> policyChecker_;   // policy-gate thread only
+    std::unique_ptr<HttpClient> readerClient_;    // reader-fetch thread only
+
+    GtkWidget* window_ = nullptr;
+    GtkWidget* headerBar_ = nullptr;
+    GtkWidget* backButton_ = nullptr;
+    GtkWidget* forwardButton_ = nullptr;
+    GtkWidget* reloadButton_ = nullptr;
+    GtkWidget* readerButton_ = nullptr;
+    GtkWidget* entry_ = nullptr;
+    GtkWidget* menuButton_ = nullptr;
+    GtkWidget* notebook_ = nullptr;
+    GtkWidget* findRevealer_ = nullptr;
+    GtkWidget* findEntry_ = nullptr;
+    GtkWidget* findStatus_ = nullptr;
+    GtkWidget* box_ = nullptr;
+#if defined(HAVE_FULLWEB)
+    WebKitWebContext* context_ = nullptr;
+#endif
+    std::vector<std::unique_ptr<Tab>> tabs_;
+    bool addressEditing_ = false;
+    bool suppressSwitch_ = false;
 };
 
 } // namespace lethe

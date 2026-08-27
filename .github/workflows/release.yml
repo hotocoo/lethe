@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to build and attach artifacts to (e.g. v1.0.0)"
+        description: "Existing tag to build and attach artifacts to (e.g. v0.1.0)"
         required: true
 
 permissions:
@@ -31,7 +31,7 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: |
-          brew install cmake ninja pkg-config openssl@3 gtk+3
+          brew install cmake ninja pkg-config openssl@3
       - name: Configure, build, test
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja

@@ -267,7 +267,11 @@
     return [arr substringWithRange:NSMakeRange(1, arr.length - 2)];
 }
 
-- (void)screenshotTo:(NSString*)path {
+- (void)screenshotTo:(NSString*)pathIn {
+    NSString* path = pathIn;
+    if ([path hasPrefix:@"$TMPDIR/"]) {
+        path = [NSTemporaryDirectory() stringByAppendingPathComponent:[path substringFromIndex:8]];
+    }
     NSWindow* w = current_.window;
     if (!w) { [self fail:@"screenshot: no window"]; return; }
     [w makeKeyAndOrderFront:nil];
