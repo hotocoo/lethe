@@ -13,10 +13,19 @@ click a.fallback
 sleep 1500
 wait 30000
 assert-url-contains http://httpforever.com
-assert-body-contains HTTP Forever
+assert-body-contains reliably insecure connection
 screenshot $TMPDIR/lethe-e2e-sec-02-http-fallback.png
 # The allow-list is per host and per session: a different host still upgrades.
 load http://www.iana.org/
 wait
 assert-url-contains https://www.iana.org
+# Tracker protection: from a first-party page, a third-party request to a
+# listed analytics host must fail at the engine (blocked), while an
+# unlisted third-party host still loads. Same probe, opposite outcomes.
+load https://example.com/
+wait
+js window.__lethe={};fetch('https://www.google-analytics.com/collect?v=1',{mode:'no-cors'}).then(function(){window.__lethe.ga='loaded'},function(){window.__lethe.ga='blocked'});fetch('https://www.iana.org/',{mode:'no-cors'}).then(function(){window.__lethe.ok='loaded'},function(){window.__lethe.ok='blocked'});'sent'
+wait-js 15000 window.__lethe.ga && window.__lethe.ok
+assert-js window.__lethe.ga === 'blocked'
+assert-js window.__lethe.ok === 'loaded'
 quit

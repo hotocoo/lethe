@@ -11,6 +11,7 @@
 #include <thread>
 
 #include "browser/url_input.h"
+#include "security/tracker_blocklist.h"
 #include "config.h"
 #include "renderer/html_view.h"
 #include "renderer/page_templates.h"
@@ -294,6 +295,7 @@ void MainWindow::create() {
 #if defined(HAVE_FULLWEB)
     g_signal_connect(webContext(), "download-started",
                      G_CALLBACK(MainWindowSignals::onDownloadStarted), this);
+    prepareTrackerProtection();
 #endif
 }
 
@@ -422,10 +424,63 @@ WebKitWebContext* MainWindow::webContext() {
     return context_;
 }
 
+// Compile the built-in tracker rules into WebKit's content-filter store
+// (cached on disk under the user cache dir, keyed by a hash of the list) and
+// keep the filter for every view created afterwards. Runs the main loop
+// until the async save finishes so the FIRST navigation is already
+// protected - determinism the e2e checklist relies on.
+void MainWindow::prepareTrackerProtection() {
+    if (!options_.trackerBlocking) {
+        std::cout << "[lethe] tracker protection: OFF (--no-tracker-block)" << std::endl;
+        return;
+    }
+    const TrackerBlocklist& list = builtinTrackerBlocklist();
+    const std::string ident = trackerRulesIdentifier(list);
+    const std::string json = trackerContentRulesJson(list);
+    const std::string dir = std::string(g_get_user_cache_dir()) + "/lethe/content-filters";
+    g_mkdir_with_parents(dir.c_str(), 0700);
+    WebKitUserContentFilterStore* store = webkit_user_content_filter_store_new(dir.c_str());
+    struct Ctx { bool done = false; WebKitUserContentFilter* filter = nullptr; std::string how; } ctx;
+    auto onLoad = [](GObject* src, GAsyncResult* res, gpointer d) {
+        auto* c = static_cast<Ctx*>(d);
+        c->filter = webkit_user_content_filter_store_load_finish(WEBKIT_USER_CONTENT_FILTER_STORE(src), res, nullptr);
+        c->how = "cached";
+        c->done = true;
+    };
+    webkit_user_content_filter_store_load(store, ident.c_str(), nullptr, onLoad, &ctx);
+    while (!ctx.done) g_main_context_iteration(nullptr, TRUE);
+    if (!ctx.filter) {
+        ctx.done = false;
+        GBytes* bytes = g_bytes_new(json.data(), json.size());
+        const gint64 t0 = g_get_monotonic_time();
+        auto onSave = [](GObject* src, GAsyncResult* res, gpointer d) {
+            auto* c = static_cast<Ctx*>(d);
+            GError* err = nullptr;
+            c->filter = webkit_user_content_filter_store_save_finish(WEBKIT_USER_CONTENT_FILTER_STORE(src), res, &err);
+            if (err) { std::cerr << "[lethe] tracker protection: rule compile failed: " << err->message << std::endl; g_error_free(err); }
+            c->done = true;
+        };
+        webkit_user_content_filter_store_save(store, ident.c_str(), bytes, nullptr, onSave, &ctx);
+        while (!ctx.done) g_main_context_iteration(nullptr, TRUE);
+        g_bytes_unref(bytes);
+        ctx.how = "compiled in " + std::to_string((g_get_monotonic_time() - t0) / 1000) + " ms";
+    }
+    g_object_unref(store);
+    trackerFilter_ = ctx.filter;
+    if (trackerFilter_) {
+        trackerRuleCount_ = list.domains.size() + list.pathPatterns.size();
+        std::cout << "[lethe] tracker protection: " << trackerRuleCount_
+                  << " third-party rules (" << ctx.how << ")" << std::endl;
+    }
+}
+
 WebKitWebView* MainWindow::makeWebView(WebKitWebView* related) {
     WebKitWebView* web = related
         ? WEBKIT_WEB_VIEW(webkit_web_view_new_with_related_view(related))
         : WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(webContext()));
+    if (trackerFilter_) {
+        webkit_user_content_manager_add_filter(webkit_web_view_get_user_content_manager(web), trackerFilter_);
+    }
     WebKitSettings* s = webkit_web_view_get_settings(web);
     webkit_settings_set_javascript_can_open_windows_automatically(s, FALSE);
     webkit_settings_set_enable_developer_extras(s, TRUE);
@@ -869,6 +924,10 @@ void MainWindow::toggleReader(Tab* tab) {
 std::string MainWindow::securityStatusText() const {
     const Config& cfg = engine_->config();
     std::string s = "Lethe v" LETHE_VERSION "\n\n";
+    s += "Tracker protection: " + (trackerRuleCount_
+        ? "on (" + std::to_string(trackerRuleCount_) + " third-party rules)"
+        : std::string(options_.trackerBlocking ? "unavailable" : "OFF")) + "\n";
+    s += "HTTPS-first: " + std::string(options_.httpsFirst ? "on" : "OFF") + "\n";
     s += "Secure DNS (DoH): " + (cfg.dnsProvider.empty() ? std::string("OFF") : cfg.dnsProvider) + "\n";
     s += std::string("Private-network isolation: ") + (cfg.isolatePrivateNetworks ? "on (SSRF guard)" : "OFF") + "\n";
     s += options_.proxyPort > 0

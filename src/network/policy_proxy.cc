@@ -4,6 +4,7 @@
 #include <atomic>
 #include <openssl/rand.h>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <netinet/in.h>
@@ -25,12 +26,13 @@ std::string forbiddenResponse(const std::string& reason) {
            std::to_string(body.size()) + "\r\n\r\n" + body;
 }
 
-std::string proxyAuthRequiredResponse() {
+std::string proxyAuthRequiredResponse(bool keepAlive) {
     const std::string body = "Proxy authentication required (Lethe per-launch token)\n";
     return "HTTP/1.1 407 Proxy Authentication Required\r\n"
            "Proxy-Authenticate: Basic realm=\"Lethe\"\r\n"
            "Content-Type: text/plain\r\n"
-           "Connection: close\r\nContent-Length: " +
+           "Connection: " + std::string(keepAlive ? "keep-alive" : "close") +
+           "\r\nContent-Length: " +
            std::to_string(body.size()) + "\r\n\r\n" + body;
 }
 
@@ -192,27 +194,31 @@ HttpClient::PolicyDialConfig PolicyProxyServer::dialConfig() const {
 }
 
 void PolicyProxyServer::serveConnection(int clientFd) {
-    std::string head;
-    if (!readHead(clientFd, head)) {
-        ::close(clientFd);
-        return;
-    }
-    const size_t lineEnd = head.find("\r\n");
-    const std::string line = head.substr(0, lineEnd);
-    const size_t sp1 = line.find(' ');
-    if (sp1 == std::string::npos) {
-        ::close(clientFd);
-        return;
-    }
-    const size_t sp2 = line.find(' ', sp1 + 1);
-    const std::string method = line.substr(0, sp1);
-    const std::string target = sp2 == std::string::npos
-                                   ? ""
-                                   : line.substr(sp1 + 1, sp2 - sp1 - 1);
+    std::string head, method, target;
+    // Engines (CFNetwork, libsoup) do not remember proxy credentials across
+    // connections: every new connection opens with an unauthenticated
+    // request, gets 407, then retries WITH the credential. Serve that retry
+    // on the same socket instead of forcing a reconnect; a peer that never
+    // authenticates is dropped after a few attempts.
+    for (int attempt = 0;; attempt++) {
+        if (!readHead(clientFd, head)) {
+            ::close(clientFd);
+            return;
+        }
+        const size_t lineEnd = head.find("\r\n");
+        const std::string line = head.substr(0, lineEnd);
+        const size_t sp1 = line.find(' ');
+        if (sp1 == std::string::npos) {
+            ::close(clientFd);
+            return;
+        }
+        const size_t sp2 = line.find(' ', sp1 + 1);
+        method = line.substr(0, sp1);
+        target = sp2 == std::string::npos ? "" : line.substr(sp1 + 1, sp2 - sp1 - 1);
 
-    // Authenticate FIRST: an unauthenticated peer gets no policy work, no
-    // DoH traffic and no upstream socket - nothing it can measure or use.
-    if (!opts_.authToken.empty()) {
+        // Authenticate FIRST: an unauthenticated peer gets no policy work,
+        // no DoH traffic and no upstream socket - nothing it can measure.
+        if (opts_.authToken.empty()) break;
         const std::string presented = headerValue(head, "Proxy-Authorization");
         const std::string expected = basicCredentialFor(opts_.authToken);
         bool ok = presented.size() == expected.size();
@@ -221,17 +227,23 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         unsigned diff = ok ? 0 : 1;
         for (size_t i = 0; ok && i < expected.size(); i++)
             diff |= static_cast<unsigned>(presented[i] ^ expected[i]);
-        if (diff != 0) {
-            // Security event, always logged: either the engine's first
-            // challenge round trip or a foreign local process probing.
+        if (diff == 0) break;
+        // A wrong (not merely absent) credential is a foreign process
+        // probing - always logged. The empty first request is the normal
+        // challenge dance; LETHE_DEBUG shows it.
+        if (!presented.empty() || std::getenv("LETHE_DEBUG"))
             std::cout << "[lethe-proxy] 407 " << method << " " << target
-                      << (presented.empty() ? " (no credential)" : " (bad credential)")
+                      << (presented.empty() ? " (no credential)" : " (BAD credential)")
                       << std::endl;
-            const std::string resp = proxyAuthRequiredResponse();
-            sendAll(clientFd, resp.data(), resp.size());
+        const bool keepAlive = attempt < 2;
+        const std::string resp = proxyAuthRequiredResponse(keepAlive);
+        sendAll(clientFd, resp.data(), resp.size());
+        if (!keepAlive) {
             ::close(clientFd);
             return;
         }
+        // A body-less request head was consumed whole by readHead; the
+        // retry starts at the next byte.
     }
     const HttpClient::PolicyDialConfig cfg = dialConfig();
 

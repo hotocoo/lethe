@@ -376,6 +376,31 @@ LETHE_TEST_CASE(PolicyProxy_ConnectSplicesVerifiedTls) {
 
 
 
+// One HTTP response: head + Content-Length body (the 407 keeps the
+// connection open for the authenticated retry, so EOF never comes).
+std::string readOneResponse(int fd) {
+    std::string out;
+    char buf[4096];
+    size_t bodyStart = std::string::npos;
+    size_t contentLength = 0;
+    for (;;) {
+        if (bodyStart == std::string::npos) {
+            const size_t hdrEnd = out.find("\r\n\r\n");
+            if (hdrEnd != std::string::npos) {
+                bodyStart = hdrEnd + 4;
+                const size_t cl = out.find("Content-Length: ");
+                if (cl != std::string::npos && cl < hdrEnd)
+                    contentLength = static_cast<size_t>(std::atol(out.c_str() + cl + 16));
+            }
+        }
+        if (bodyStart != std::string::npos && out.size() >= bodyStart + contentLength) break;
+        ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+        if (n <= 0) break;
+        out.append(buf, static_cast<size_t>(n));
+    }
+    return out;
+}
+
 LETHE_TEST_CASE(PolicyProxy_AuthToken_RefusesUnauthenticatedPeers) {
     // With a per-launch token configured the proxy is no longer an open
     // loopback relay: a request without the exact Proxy-Authorization gets
@@ -396,30 +421,41 @@ LETHE_TEST_CASE(PolicyProxy_AuthToken_RefusesUnauthenticatedPeers) {
     CHECK_GE(fd, 0);
     std::string req = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
     CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
-    std::string resp = readAll(fd);
-    ::close(fd);
+    std::string resp = readOneResponse(fd);
     CHECK_TRUE(resp.find("407 Proxy Authentication Required") != std::string::npos);
     CHECK_TRUE(resp.find("Proxy-Authenticate: Basic") != std::string::npos);
+    CHECK_TRUE(resp.find("Connection: keep-alive") != std::string::npos);
     CHECK_EQ(origin.requests.load(), 0);
 
-    // 2. Wrong credential (same length, one byte off) - still refused.
+    // 2. Wrong credential (same length, one byte off) on the SAME socket -
+    //    still refused, connection still open for a real retry.
     std::string wrong = PolicyProxyServer::basicCredentialFor(o.authToken);
     wrong[wrong.size() - 3] = wrong[wrong.size() - 3] == 'A' ? 'B' : 'A';
-    fd = dial(proxy.port());
     req = "CONNECT 127.0.0.1:" + std::to_string(origin.port()) + " HTTP/1.1\r\nHost: x\r\n"
           "Proxy-Authorization: " + wrong + "\r\n\r\n";
     CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
-    resp = readAll(fd);
-    ::close(fd);
+    resp = readOneResponse(fd);
     CHECK_TRUE(resp.find("407") != std::string::npos);
     CHECK_EQ(origin.requests.load(), 0);
 
-    // 3. Correct credential (header name case-insensitive) - forwarded.
-    fd = dial(proxy.port());
+    // 3. Correct credential (header name case-insensitive), same socket as
+    //    the challenge - forwarded. This is the engine's real retry path.
     req = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nproxy-authorization: " +
           PolicyProxyServer::basicCredentialFor(o.authToken) + "\r\n\r\n";
     CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
     resp = readAll(fd);
+    ::close(fd);
+
+    // 4. A peer that never authenticates is dropped after three tries.
+    fd = dial(proxy.port());
+    for (int i = 0; i < 3; i++) {
+        req = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+        CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
+        std::string r = readOneResponse(fd);
+        CHECK_TRUE(r.find("407") != std::string::npos);
+        if (i == 2) CHECK_TRUE(r.find("Connection: close") != std::string::npos);
+    }
+    CHECK_EQ(readAll(fd), std::string());   // server closed
     ::close(fd);
     proxy.stop();
     CHECK_TRUE(resp.find("200 OK") != std::string::npos);

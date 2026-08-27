@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "browser/url_input.h"
+#include "security/tracker_blocklist.h"
 
 @interface LetheAppDelegate () {
     lethe::ShellContext* ctx_;
@@ -13,6 +14,8 @@
     NSMutableArray<BrowserWindowController*>* controllers_;
     WKWebsiteDataStore* dataStore_;
     NSMutableSet<NSString*>* httpAllowedHosts_;
+    WKUserContentController* userContent_;   // shared: one rule list, every tab
+    NSUInteger trackerRuleCount_;
     BOOL proxyApplied_;
     LetheAutomation* automation_;
 }
@@ -36,9 +39,64 @@
 
 #pragma mark - Lifecycle
 
+- (NSUInteger)trackerRuleCount { return trackerRuleCount_; }
+
+- (WKUserContentController*)userContentController {
+    if (!userContent_) userContent_ = [[WKUserContentController alloc] init];
+    return userContent_;
+}
+
+// Compile (or fetch from WebKit's on-disk store) the built-in tracker rules
+// and attach them to the shared user-content controller BEFORE the first
+// web view exists, so even the very first navigation is protected. The
+// store is keyed by a hash of the list: editing trackers.txt recompiles.
+- (void)prepareTrackerProtection:(void (^)(void))done {
+    if (!ctx_->trackerBlocking) {
+        std::cout << "[lethe] tracker protection: OFF (--no-tracker-block)" << std::endl;
+        done();
+        return;
+    }
+    const lethe::TrackerBlocklist& list = lethe::builtinTrackerBlocklist();
+    const NSUInteger count = list.domains.size() + list.pathPatterns.size();
+    NSString* ident = @(lethe::trackerRulesIdentifier(list).c_str());
+    WKContentRuleListStore* store = [WKContentRuleListStore defaultStore];
+    __weak LetheAppDelegate* weakSelf = self;
+    void (^install)(WKContentRuleList*, NSString*) = ^(WKContentRuleList* rules, NSString* how) {
+        LetheAppDelegate* self = weakSelf;
+        if (!self) return;
+        [[self userContentController] addContentRuleList:rules];
+        self->trackerRuleCount_ = count;
+        std::cout << "[lethe] tracker protection: " << count << " third-party rules ("
+                  << how.UTF8String << ")" << std::endl;
+    };
+    [store lookUpContentRuleListForIdentifier:ident
+                            completionHandler:^(WKContentRuleList* found, NSError* lookupErr) {
+        (void)lookupErr;
+        if (found) { install(found, @"cached"); done(); return; }
+        NSString* json = @(lethe::trackerContentRulesJson(list).c_str());
+        const NSTimeInterval t0 = [NSDate timeIntervalSinceReferenceDate];
+        [store compileContentRuleListForIdentifier:ident
+                            encodedContentRuleList:json
+                                 completionHandler:^(WKContentRuleList* compiled, NSError* err) {
+            if (compiled) {
+                install(compiled, [NSString stringWithFormat:@"compiled in %.0f ms",
+                                   ([NSDate timeIntervalSinceReferenceDate] - t0) * 1000.0]);
+            } else {
+                std::cerr << "[lethe] tracker protection: rule compile failed: "
+                          << (err.localizedDescription.UTF8String ?: "unknown") << std::endl;
+            }
+            done();
+        }];
+    }];
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
     (void)note;
     [self buildMenuBar];
+    [self prepareTrackerProtection:^{ [self openInitialWindow]; }];
+}
+
+- (void)openInitialWindow {
     NSString* initial = ctx_->cfg.initialUrl.empty()
         ? nil : @(ctx_->cfg.initialUrl.c_str());
     BrowserWindowController* c = [self openWindowWithURL:initial];
@@ -123,6 +181,7 @@
 - (WKWebViewConfiguration*)webViewConfiguration {
     WKWebViewConfiguration* c = [[WKWebViewConfiguration alloc] init];
     c.websiteDataStore = [self dataStore];
+    c.userContentController = [self userContentController];
     c.defaultWebpagePreferences.allowsContentJavaScript = YES;
     // Popup blocking like Chrome: window.open needs a user gesture.
     c.preferences.javaScriptCanOpenWindowsAutomatically = NO;
@@ -204,6 +263,9 @@
     const lethe::Config& cfg = ctx_->cfg;
     NSMutableString* s = [NSMutableString string];
     [s appendFormat:@"Lethe v%s\n\n", LETHE_VERSION];
+    [s appendFormat:@"Tracker protection: %@\n", trackerRuleCount_
+        ? [NSString stringWithFormat:@"on (%lu third-party rules)", (unsigned long)trackerRuleCount_]
+        : (ctx_->trackerBlocking ? @"unavailable (rule compile failed)" : @"OFF")];
     [s appendFormat:@"HTTPS-first: %@\n", ctx_->httpsFirst
         ? [NSString stringWithFormat:@"on (%lu host%@ allowed plain http this session)",
            (unsigned long)httpAllowedHosts_.count, httpAllowedHosts_.count == 1 ? @"" : @"s"]

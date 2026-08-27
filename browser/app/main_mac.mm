@@ -26,6 +26,7 @@ void printHelp() {
         "  --no-proxy              do not route WebKit traffic through the\n"
         "                          local policy proxy (macOS 14+ only)\n"
         "  --no-https-first        do not upgrade top-level http:// to https://\n"
+        "  --no-tracker-block      disable the built-in third-party tracker rules\n"
         "  --e2e-script <file>     run a scripted browsing session and exit\n"
         "  --version, --help\n"
         "Environment: LETHE_SANDBOX, LETHE_DNS_PROVIDER, LETHE_USER_AGENT_MODE,\n"
@@ -43,6 +44,7 @@ int main(int argc, char** argv) {
     bool persistent = false;
     bool useProxy = true;
     bool httpsFirst = true;
+    bool trackerBlock = true;
     std::string e2eScript;
     if (const char* e = std::getenv("LETHE_MAC_PROXY")) {
         const std::string v(e);
@@ -58,6 +60,7 @@ int main(int argc, char** argv) {
         if (a == "--disable-hardware-acceleration") { cfg.useHardwareAcceleration = false; continue; }
         if (a == "--no-proxy") { useProxy = false; continue; }
         if (a == "--no-https-first") { httpsFirst = false; continue; }
+        if (a == "--no-tracker-block") { trackerBlock = false; continue; }
         if (a == "--dns-provider" && i + 1 < argc) { cfg.dnsProvider = argv[++i]; continue; }
         if (a == "--e2e-script" && i + 1 < argc) { e2eScript = argv[++i]; continue; }
         if (a.rfind("-psn_", 0) == 0) continue;  // Finder/LaunchServices token
@@ -83,6 +86,9 @@ int main(int argc, char** argv) {
     ctx.persistent = persistent;
     ctx.e2eScript = e2eScript;
     ctx.httpsFirst = httpsFirst;
+    ctx.trackerBlocking = trackerBlock;
+    if (const char* tb = std::getenv("LETHE_TRACKER_BLOCK"); tb && trackerBlock)
+        ctx.trackerBlocking = !(std::string(tb) == "0" || std::string(tb) == "off");
     // One DoH answer cache for the whole browser: gate, reader and every
     // proxied connection resolve a hostname once per TTL.
     // LETHE_DOH_SHARED_CACHE=0 disables it (per-connection resolution, as

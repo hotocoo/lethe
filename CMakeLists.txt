@@ -116,6 +116,17 @@ endif()
 # and the Aletheia bridge. It can be linked by the GUI app, tests, or the
 # Aletheia OS integration.
 
+# Built-in tracker protection list -> embedded string constant. Edit
+# browser/blocklist/trackers.txt; the binary picks it up on rebuild.
+set(TRACKER_LIST_TXT "${CMAKE_SOURCE_DIR}/browser/blocklist/trackers.txt")
+set(TRACKER_LIST_INC "${CMAKE_BINARY_DIR}/generated/security/tracker_blocklist_data.inc")
+file(READ "${TRACKER_LIST_TXT}" TRACKER_LIST_CONTENT)
+file(WRITE "${TRACKER_LIST_INC}.tmp"
+    "// Generated from browser/blocklist/trackers.txt - do not edit.\n"
+    "static const char kBuiltinTrackerBlocklistText[] = R\"LETHE_BL(\n${TRACKER_LIST_CONTENT})LETHE_BL\";\n")
+configure_file("${TRACKER_LIST_INC}.tmp" "${TRACKER_LIST_INC}" COPYONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TRACKER_LIST_TXT}")
+
 file(GLOB_RECURSE SRC_CORE src/core/*.cc)
 file(GLOB_RECURSE SRC_RENDERER src/renderer/*.cc)
 file(GLOB_RECURSE SRC_BROWSER src/browser/*.cc)
@@ -137,6 +148,7 @@ add_library(lethe_core STATIC
 target_include_directories(lethe_core PUBLIC
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_BINARY_DIR}/generated
 )
 
 target_link_libraries(lethe_core PUBLIC

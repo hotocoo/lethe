@@ -37,6 +37,7 @@ struct ShellOptions {
     std::shared_ptr<SharedDohCache> dohCache;  // shared by gate, reader, proxy
     std::string proxyAuthToken; // per-launch secret WebKit presents to the proxy
     bool httpsFirst = true;     // upgrade top-level http:// to https:// first
+    bool trackerBlocking = true; // built-in third-party tracker rules (content filter)
     bool persistent = false;   // false = ephemeral (incognito) web context
     bool webkitSandbox = true; // WebKitGTK content-process sandbox (bwrap)
     std::string homeUrl;
@@ -112,6 +113,11 @@ private:
     void showErrorPage(Tab* tab, const std::string& url, const std::string& message,
                        const std::string& httpFallback = "");
     std::set<std::string> httpAllowedHosts_;   // HTTPS-first user exemptions
+#if defined(HAVE_FULLWEB)
+    void prepareTrackerProtection();           // compiles rules before the first view
+    WebKitUserContentFilter* trackerFilter_ = nullptr;
+#endif
+    size_t trackerRuleCount_ = 0;
     void showNewTabPage(Tab* tab);
     Tab* tabForPage(GtkWidget* page);
     Tab* tabAt(int index);

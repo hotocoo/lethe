@@ -36,6 +36,7 @@ struct ShellContext {
     int proxyPort = 0;        // local PolicyProxyServer port (0 = none)
     std::string proxyAuthToken;  // per-launch secret WebKit presents to the proxy
     bool httpsFirst = true;   // upgrade top-level http:// to https:// first
+    bool trackerBlocking = true;  // built-in third-party tracker rules (WKContentRuleList)
     std::shared_ptr<SharedDohCache> dohCache;  // shared by gate, reader, proxy
     bool persistent = false;  // false = ephemeral (incognito) data store
     std::string homeUrl;      // "" = built-in new-tab page
@@ -97,6 +98,8 @@ struct ShellContext {
                                    webView:(WKWebView*)existingWebView;
 - (BrowserWindowController*)openWindowWithURL:(NSString*)url;
 - (WKWebViewConfiguration*)webViewConfiguration;
+// Number of built-in tracker rules active in every web view (0 = off/failed).
+@property (nonatomic, readonly) NSUInteger trackerRuleCount;
 - (void)controllerDidClose:(BrowserWindowController*)controller;
 - (NSString*)securityStatusText;
 - (NSArray<BrowserWindowController*>*)controllers;

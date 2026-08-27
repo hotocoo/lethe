@@ -26,6 +26,7 @@ void printHelp() {
         "  --disable-sandbox       do not apply the seccomp sandbox\n"
         "  --dns-provider <url>    DoH provider (default Cloudflare)\n"
         "  --no-https-first        do not upgrade top-level http:// to https://\n"
+        "  --no-tracker-block      disable the built-in third-party tracker rules\n"
         "  --no-proxy              do not route WebKit traffic through the\n"
         "                          local policy proxy (navigation gate stays)\n"
         "  --e2e-script <file>     run a scripted browsing session and exit\n"
@@ -45,6 +46,7 @@ int main(int argc, char** argv) {
     bool persistent = false;
     bool useProxy = true;
     bool httpsFirst = true;
+    bool trackerBlock = true;
     std::string e2eScript;
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
@@ -56,6 +58,7 @@ int main(int argc, char** argv) {
         if (a == "--disable-hardware-acceleration") { cfg.useHardwareAcceleration = false; continue; }
         if (a == "--no-proxy") { useProxy = false; continue; }
         if (a == "--no-https-first") { httpsFirst = false; continue; }
+        if (a == "--no-tracker-block") { trackerBlock = false; continue; }
         if (a == "--dns-provider" && i + 1 < argc) { cfg.dnsProvider = argv[++i]; continue; }
         if (a == "--e2e-script" && i + 1 < argc) { e2eScript = argv[++i]; continue; }
         if (!a.empty() && a[0] != '-') cfg.initialUrl = lethe::normalizeAddressInput(a);
@@ -100,6 +103,9 @@ int main(int argc, char** argv) {
     shell.tls = tls;
     shell.persistent = persistent;
     shell.httpsFirst = httpsFirst;
+    shell.trackerBlocking = trackerBlock;
+    if (const char* tb = std::getenv("LETHE_TRACKER_BLOCK"); tb && trackerBlock)
+        shell.trackerBlocking = !(std::string(tb) == "0" || std::string(tb) == "off");
     if (const char* hf = std::getenv("LETHE_HTTPS_FIRST"); hf && httpsFirst)
         shell.httpsFirst = !(std::string(hf) == "0" || std::string(hf) == "off");
     // One DoH answer cache for the whole browser: gate, reader and every
