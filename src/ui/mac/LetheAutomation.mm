@@ -67,13 +67,13 @@
 // win activation on its own, so we re-assert it. Only when another app is
 // in front, so an interactive user looking at Lethe is never fought.
 - (void)keepFront {
-    if (![NSApp isActive]) {
-        // Modern, LaunchServices-backed activation. The legacy
-        // activateIgnoringOtherApps: is unreliable for a binary launched
-        // from the command line, which is how benchmarks drive us.
-        [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateIgnoringOtherApps];
-        [NSApp activateIgnoringOtherApps:YES];
-    }
+    // Only re-assert when another app is in front. If the user (or the
+    // benchmark) already has Lethe active, leave it alone - calling
+    // makeKeyAndOrderFront: every 2 s steals key focus from text fields
+    // the user is typing into.
+    if ([NSApp isActive]) return;
+    [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+    [NSApp activateIgnoringOtherApps:YES];
     BrowserWindowController* c = (current_ && current_.window) ? current_ : app_.controllers.lastObject;
     if (c && c.window) [c.window makeKeyAndOrderFront:nil];
 }
@@ -386,7 +386,9 @@
                         err ? err.localizedDescription : [self stringify:result]]];
             return;
         }
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        // 500 ms: the same cadence the benchmark harness uses to poll Chrome
+        // over CDP, so neither browser pays more evaluate() overhead than the other.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
             [self pollJs:code deadline:deadline timeoutMs:ms];
         });
     }];

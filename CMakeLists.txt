@@ -192,7 +192,7 @@ if(BUILD_UI AND APPLE)
     find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
     find_library(NETWORK_FRAMEWORK Network REQUIRED)
     file(GLOB SRC_UI_MAC src/ui/mac/*.mm)
-    add_executable(lethe MACOSX_BUNDLE browser/app/main_mac.mm ${SRC_UI_MAC})
+    add_executable(lethe MACOSX_BUNDLE browser/app/main_mac.mm browser/app/shell_bootstrap.cc ${SRC_UI_MAC})
     set_source_files_properties(browser/app/main_mac.mm ${SRC_UI_MAC}
         PROPERTIES LANGUAGE OBJCXX)
     target_compile_options(lethe PRIVATE -fobjc-arc)
