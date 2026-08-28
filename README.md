@@ -276,6 +276,24 @@ auto results = bridge.llmWebSearch("aletheia os features");
 - **DNS over HTTPS (DoH)**: Encrypted DNS queries via Cloudflare/DNS-over-HTTPS providers
 - **VPN encryption**: All traffic can be encrypted through the built-in tunnel
 
+### Everything is a plugin
+- **22 feature plugins** (`lethe --list-plugins`): every toggleable
+  capability — tracker protection, HTTPS-first/only, stealth UA, DNT,
+  fingerprint shield, third-party cookie and Referer stripping, WebRTC
+  blocking, Oblivion windows, persistent site data, DoH + cache + pool,
+  policy proxy, private-network isolation, VPN, JavaScript, hardware
+  acceleration, high-refresh, telemetry, crash reports — registers in one
+  `PluginRegistry` with id, description, default, restart-honesty and, where
+  a live path exists, a runtime apply hook.
+- **Settings → Plugins** (or `lethe://plugins`, or the toolbar gear →
+  Settings) renders that registry: one switch per feature, restart
+  requirements called out honestly.
+- **Script plugins**: drop `.js` files into
+  `~/Library/Application Support/Lethe/plugins/` with an optional
+  `// @name / @description / @match host` header; enabled scripts run at
+  document start on matching pages, IIFE-wrapped so they cannot see each
+  other. Listed and toggleable alongside the built-ins.
+
 ### Browser shell
 - Native per platform: AppKit + WKWebView (macOS), GTK3 + WebKitGTK (Linux),
   WebView2 host (Windows)

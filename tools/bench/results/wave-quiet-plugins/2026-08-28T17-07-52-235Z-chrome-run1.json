@@ -1,0 +1,187 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 151.0.7922.175",
+  "run": 1,
+  "startedAt": "2026-08-28T17:07:52.235Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup",
+    "pageload"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 1124.106792,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 1,
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 90.10000002384186,
+      "dcl": 95.60000002384186,
+      "load": 95.80000007152557,
+      "fcp": 276,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 618,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": 50.60000002384186,
+      "dcl": 149.30000007152557,
+      "load": 270.90000009536743,
+      "fcp": 160,
+      "resources": 9,
+      "opaqueResources": 0,
+      "bytes": 1296421,
+      "domNodes": 242
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "ttfb": 68.79999995231628,
+      "dcl": 147.59999990463257,
+      "load": 181.79999995231628,
+      "fcp": 188,
+      "resources": 36,
+      "opaqueResources": 1,
+      "bytes": 476565,
+      "domNodes": 4172
+    },
+    {
+      "url": "https://github.com/",
+      "ttfb": 70.60000002384186,
+      "dcl": 601.8000000715256,
+      "load": 604,
+      "fcp": 528,
+      "resources": 141,
+      "opaqueResources": 2,
+      "bytes": 3759140,
+      "domNodes": 1779
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 166.60000002384186,
+      "dcl": 412.39999997615814,
+      "load": 1780,
+      "fcp": 216,
+      "resources": 152,
+      "opaqueResources": 61,
+      "bytes": 2089493,
+      "domNodes": 1506
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "ttfb": 85.20000004768372,
+      "dcl": 322.7000000476837,
+      "load": 460.2000000476837,
+      "fcp": 284,
+      "resources": 97,
+      "opaqueResources": 74,
+      "bytes": 405321,
+      "domNodes": 5038
+    },
+    {
+      "url": "https://edition.cnn.com/",
+      "ttfb": 138.60000002384186,
+      "dcl": 678.3999999761581,
+      "load": null,
+      "fcp": 616,
+      "resources": 250,
+      "opaqueResources": 205,
+      "bytes": 1950955,
+      "domNodes": 4125
+    },
+    {
+      "url": "https://www.nytimes.com/",
+      "ttfb": 280.7999999523163,
+      "dcl": 986.5,
+      "load": 3629.399999976158,
+      "fcp": 540,
+      "resources": 236,
+      "opaqueResources": 107,
+      "bytes": 3395242,
+      "domNodes": 6182
+    }
+  ],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 1124.111125,
+      "rssMb": 1001.78125,
+      "processes": 8,
+      "cpuSec": 0.97,
+      "breakdown": [
+        {
+          "pid": 78913,
+          "rssMb": 211.7,
+          "cpuSec": 0.53,
+          "name": "Google"
+        },
+        {
+          "pid": 78918,
+          "rssMb": 136.8,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 78919,
+          "rssMb": 92.4,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 78920,
+          "rssMb": 81,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 78924,
+          "rssMb": 143.8,
+          "cpuSec": 0.08,
+          "name": "Google"
+        },
+        {
+          "pid": 78926,
+          "rssMb": 118.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 78929,
+          "rssMb": 98.8,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 78930,
+          "rssMb": 118.8,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    }
+  ]
+}

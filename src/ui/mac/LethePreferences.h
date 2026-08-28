@@ -100,6 +100,13 @@ typedef NS_ENUM(NSInteger, LetheUpscaler) {
 @property (nonatomic) BOOL telemetry;              // default NO; we do not phone home
 @property (nonatomic) BOOL crashReports;           // default NO; off by default
 
+// Plugins
+// Engine-only plugin overrides (no LethePreferences key of their own),
+// keyed by plugin registry id, e.g. {"oblivion-windows": @NO}.
+@property (nonatomic, copy) NSDictionary<NSString*, NSNumber*>* pluginOverrides;
+// Disabled script plugins (file names in the plugins folder).
+@property (nonatomic, copy) NSArray<NSString*>* disabledPlugins;
+
 + (instancetype)shared;
 - (void)load;
 - (void)save;

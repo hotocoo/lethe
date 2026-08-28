@@ -9,6 +9,7 @@
 
 #include "browser/url_input.h"
 #include "network/http_client.h"
+#include "plugins/plugin_registry.h"
 
 namespace lethe {
 
@@ -57,6 +58,17 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
     for (int i = 1; i < argc; i++) {
         const std::string a = argv[i];
         if (a == "--help" || a == "-h") { printHelp(); return 0; }
+        if (a == "--list-plugins") {
+            // Every feature as a plugin: id, apply-mode, default, name.
+            PluginRegistry::instance().registerBuiltins();
+            for (const PluginSpec& p : PluginRegistry::instance().plugins()) {
+                std::cout << p.id << "\t"
+                          << (p.requiresRestart ? "restart" : "live") << "\t"
+                          << (p.defaultOn ? "default-on" : "default-off")
+                          << "\t" << p.name << std::endl;
+            }
+            return 0;
+        }
         if (a == "--version") {
             std::cout << "Lethe Browser v" LETHE_VERSION;
             if (!engineName.empty()) std::cout << " (" << engineName << ")";

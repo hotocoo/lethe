@@ -136,6 +136,7 @@ file(GLOB_RECURSE SRC_SECURITY src/security/*.cc)
 file(GLOB_RECURSE SRC_NETWORK src/network/*.cc)
 file(GLOB_RECURSE SRC_LLM src/llm/*.cc)
 file(GLOB_RECURSE SRC_ALETHEIA src/aletheia/*.cc)
+file(GLOB_RECURSE SRC_PLUGINS src/plugins/*.cc)
 
 add_library(lethe_core STATIC
     "${SRC_CORE}"
@@ -145,6 +146,7 @@ add_library(lethe_core STATIC
     "${SRC_NETWORK}"
     "${SRC_LLM}"
     "${SRC_ALETHEIA}"
+    "${SRC_PLUGINS}"
 )
 
 target_include_directories(lethe_core PUBLIC

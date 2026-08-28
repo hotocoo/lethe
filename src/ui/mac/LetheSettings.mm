@@ -6,6 +6,10 @@
 #import "ui/mac/LetheShell.h"
 #import "ui/mac/LethePreferences.h"
 #import "ui/mac/LethePermissions.h"
+#import "ui/mac/LethePluginLoader.h"
+#import <objc/runtime.h>
+
+#include "plugins/plugin_registry.h"
 
 NSString* const LetheSettingsDidCloseNotification = @"LetheSettingsDidCloseNotification";
 
@@ -42,6 +46,25 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
     [parent addSubview:t];
     return t;
 }
+
+// Lowest y any pane has laid content at, tracked via an associated object.
+// The window controller reads it to give each pane its full content height
+// inside a scroll view (several categories lay out past the fixed container
+// height; without this their bottom rows are unreachable).
+@implementation NSView (LetheSettingsMinY)
+static void* kLetheMinYKey = &kLetheMinYKey;
+- (void)letheNoteMinY:(CGFloat)y {
+    CGFloat cur = self.letheMinYLaid;
+    if (y < cur) self.letheMinYLaid = y;
+}
+- (CGFloat)letheMinYLaid {
+    id v = objc_getAssociatedObject(self, kLetheMinYKey);
+    return v ? [v doubleValue] : CGFLOAT_MAX;
+}
+- (void)setLetheMinYLaid:(CGFloat)y {
+    objc_setAssociatedObject(self, kLetheMinYKey, @(y), OBJC_ASSOCIATION_RETAIN);
+}
+@end
 
 #pragma mark - Category: General
 
@@ -114,6 +137,7 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
         for (int i = 0; i < 6; i++) if ([p.language isEqualToString:langs[i]]) langIdx = i;
         [_languagePopup selectItemAtIndex:langIdx];
         [self addSubview:_languagePopup];
+        [self letheNoteMinY:_languagePopup.frame.origin.y - 4];
     }
     return self;
 }
@@ -197,6 +221,7 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
         placeCheckbox(crash, 20, y - 22, 540);
         _boxes[@"crashReports"] = crash;
         helpText(self, @"Off by default. When on, sends stack traces without personally identifiable information.", y - 36, 540);
+        [self letheNoteMinY:y - 52];
     }
     return self;
 }
@@ -366,6 +391,7 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
         _proxyAllowField.bezelStyle = NSTextFieldRoundedBezel;
         _proxyAllowField.placeholderString = @"router.local:80, 192.168.1.0/24:8080";
         [self addSubview:_proxyAllowField];
+        [self letheNoteMinY:_proxyAllowField.frame.origin.y - 4];
     }
     return self;
 }
@@ -482,6 +508,7 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
         h.lineBreakMode = NSLineBreakByWordWrapping;
         h.maximumNumberOfLines = 3;
         [self addSubview:h];
+        [self letheNoteMinY:y - 44];
     }
     return self;
 }
@@ -574,6 +601,135 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
 }
 @end
 
+#pragma mark - Category: Plugins
+
+// The Plugins category is GENERATED from the plugin registry: one switch
+// per registered feature plus the script plugins on disk. A feature added
+// to the registry shows up here with no settings code of its own.
+@interface LetheSettingsPlugins : NSView
+@property (nonatomic) NSMutableDictionary<NSString*, NSButton*>* switches;   // plugin id
+@property (nonatomic) NSMutableDictionary<NSString*, NSButton*>* jsSwitches; // file name
+@end
+
+@implementation LetheSettingsPlugins
+- (instancetype)initWithFrame:(NSRect)frame {
+    if ((self = [super initWithFrame:frame])) {
+        _switches = [NSMutableDictionary dictionary];
+        _jsSwitches = [NSMutableDictionary dictionary];
+        lethe::PluginRegistry& reg = lethe::PluginRegistry::instance();
+        reg.registerBuiltins();
+        LethePreferences* prefs = [LethePreferences shared];
+        CGFloat y = frame.size.height - 40;
+        sectionHeader(self, @"BUILT-IN FEATURE PLUGINS", y); y -= 26;
+        NSTextField* intro = [NSTextField labelWithString:
+            @"Every capability of the browser, packaged as a plugin. Switch "
+            @"any of them here; entries marked “restart” apply on next launch."];
+        intro.font = [NSFont systemFontOfSize:11];
+        intro.textColor = [NSColor tertiaryLabelColor];
+        intro.frame = NSMakeRect(20, y, 540, 14);
+        [self addSubview:intro]; y -= 26;
+        for (NSString* group in @[@"privacy", @"network", @"data", @"engine",
+                                  @"performance"]) {
+            BOOL wroteHeader = NO;
+            for (const lethe::PluginSpec& p : reg.plugins()) {
+                if (p.group != std::string(group.UTF8String)) continue;
+                if (!wroteHeader) {
+                    sectionHeader(self,
+                        [NSString stringWithFormat:@"%@ PLUGINS",
+                         group.uppercaseString], y);
+                    y -= 24;
+                    wroteHeader = YES;
+                }
+                NSString* pid = @(p.id.c_str());
+                NSString* title = [NSString stringWithFormat:@"%@%@",
+                    @(p.name.c_str()),
+                    p.requiresRestart ? @"  (restart)" : @""];
+                // State: preference-keyed plugins read the pref; engine-only
+                // plugins read the registry override map.
+                BOOL on;
+                if (p.prefKey.length()) {
+                    id v = [prefs valueForKey:@(p.prefKey.c_str())];
+                    on = [v respondsToSelector:@selector(boolValue)]
+                        ? [v boolValue] : p.defaultOn;
+                } else {
+                    on = reg.enabled(p.id) ? YES : NO;
+                }
+                NSButton* cb = makeCheckbox(self, title, on,
+                                            @selector(noop:), nil);
+                placeCheckbox(cb, 20, y - 22, 540);
+                _switches[pid] = cb;
+                helpText(self, @(p.description.c_str()), y - 36, 540);
+                y -= 56;
+            }
+        }
+        sectionHeader(self, @"SCRIPT PLUGINS", y); y -= 26;
+        NSString* folder = [LethePluginLoader pluginsFolder];
+        NSTextField* sh = [NSTextField labelWithString:
+            [NSString stringWithFormat:@"Drop .js files into %@. They run at "
+             @"document start on every page. Header: // @name, @description, "
+             @"@match host.", folder]];
+        sh.font = [NSFont systemFontOfSize:11];
+        sh.textColor = [NSColor tertiaryLabelColor];
+        sh.frame = NSMakeRect(20, y, 540, 28);
+        sh.lineBreakMode = NSLineBreakByWordWrapping;
+        sh.maximumNumberOfLines = 2;
+        [self addSubview:sh]; y -= 40;
+        for (LethePluginScript* jp in [[LethePluginLoader shared] scanPlugins]) {
+            NSString* title = jp.name.length ? jp.name : jp.fileName;
+            NSButton* cb = makeCheckbox(self, title, jp.enabled,
+                                        @selector(noop:), nil);
+            placeCheckbox(cb, 20, y - 22, 540);
+            _jsSwitches[jp.fileName] = cb;
+            NSString* d = jp.pluginDescription.length
+                ? jp.pluginDescription
+                : [NSString stringWithFormat:@"Script plugin %@", jp.fileName];
+            helpText(self, d, y - 36, 540);
+            y -= 56;
+        }
+        [self letheNoteMinY:y];
+    }
+    return self;
+}
+- (void)saveToPreferences:(LethePreferences*)p {
+    lethe::PluginRegistry& reg = lethe::PluginRegistry::instance();
+    reg.registerBuiltins();
+    // Preference-keyed plugins write their pref; engine-only plugins write
+    // the pluginOverrides map. All of it funnels through one [p save],
+    // whose notification drives the live apply.
+    for (NSString* pid in _switches) {
+        const lethe::PluginSpec* spec =
+            reg.find(std::string(pid.UTF8String ?: ""));
+        if (!spec) continue;
+        const BOOL on = _switches[pid].state == NSControlStateValueOn;
+        if (spec->prefKey.length()) {
+            [p setValue:@(on) forKey:@(spec->prefKey.c_str())];
+        }
+        reg.setEnabled(std::string(pid.UTF8String ?: ""), on);
+    }
+    // Script plugins: enabled = not in the disabled set.
+    NSMutableSet<NSString*>* disabled = [NSMutableSet setWithArray:
+        p.disabledPlugins ?: @[]];
+    for (LethePluginScript* jp in [[LethePluginLoader shared] scanPlugins]) {
+        NSButton* cb = _jsSwitches[jp.fileName];
+        if (!cb) continue;
+        if (cb.state == NSControlStateValueOn) [disabled removeObject:jp.fileName];
+        else [disabled addObject:jp.fileName];
+    }
+    p.disabledPlugins = [disabled allObjects];
+    // Engine-only registry overrides: persist the ones with a switch.
+    NSMutableDictionary<NSString*, NSNumber*>* ov =
+        [p.pluginOverrides mutableCopy] ?: [NSMutableDictionary dictionary];
+    for (NSString* pid in _switches) {
+        const lethe::PluginSpec* spec =
+            reg.find(std::string(pid.UTF8String ?: ""));
+        if (!spec || spec->prefKey.empty()) continue;
+        ov[pid] = @(_switches[pid].state == NSControlStateValueOn);
+    }
+    p.pluginOverrides = ov;
+}
+- (void)noop:(id)sender { (void)sender; }
+@end
+
 #pragma mark - Window controller
 
 @interface LetheSettings () <NSTableViewDataSource, NSTableViewDelegate>
@@ -596,7 +752,8 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
 - (instancetype)init {
     if ((self = [super init])) {
         _categories = @[ @"General", @"Privacy", @"Permissions",
-                         @"Network", @"Engine", @"Shortcuts", @"About" ];
+                         @"Network", @"Engine", @"Plugins",
+                         @"Shortcuts", @"About" ];
         _contentViews = [NSMutableArray array];
     }
     return self;
@@ -668,13 +825,29 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
     [root addSubview:cancel];
 
     NSRect cr = _contentContainer.bounds;
-    [_contentViews addObject:[[LetheSettingsGeneral alloc] initWithFrame:cr]];
-    [_contentViews addObject:[[LetheSettingsPrivacy alloc] initWithFrame:cr]];
-    [_contentViews addObject:[[LetheSettingsPermissions alloc] initWithFrame:cr]];
-    [_contentViews addObject:[[LetheSettingsNetwork alloc] initWithFrame:cr]];
-    [_contentViews addObject:[[LetheSettingsEngine alloc] initWithFrame:cr]];
-    [_contentViews addObject:[[LetheSettingsShortcuts alloc] initWithFrame:cr]];
-    [_contentViews addObject:[[LetheSettingsAbout alloc] initWithFrame:cr]];
+    // Each pane is built once at its FULL content height (tracked by the
+    // panes during layout), so the scroll view below can reach every row.
+    // Without this, categories taller than the container (Privacy, Engine,
+    // Plugins) simply clipped their bottom rows.
+    CGFloat contentH = NSHeight(cr);
+    for (NSView* v in @[
+            [[LetheSettingsGeneral alloc] initWithFrame:cr],
+            [[LetheSettingsPrivacy alloc] initWithFrame:cr],
+            [[LetheSettingsPermissions alloc] initWithFrame:cr],
+            [[LetheSettingsNetwork alloc] initWithFrame:cr],
+            [[LetheSettingsEngine alloc] initWithFrame:cr],
+            [[LetheSettingsPlugins alloc] initWithFrame:cr],
+            [[LetheSettingsShortcuts alloc] initWithFrame:cr],
+            [[LetheSettingsAbout alloc] initWithFrame:cr] ]) {
+        const CGFloat minY = v.letheMinYLaid;
+        if (minY != CGFLOAT_MAX) {
+            contentH = MAX(contentH, -minY + 56.0);
+        }
+        v.frame = NSMakeRect(0, 0, NSWidth(cr), contentH);
+        v.autoresizingMask = NSViewNotSizable;
+        [_contentViews addObject:v];
+        contentH = NSHeight(cr);
+    }
 
     [[NSNotificationCenter defaultCenter] addObserver:self
         selector:@selector(windowWillClose:)
@@ -689,10 +862,15 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
 - (void)swapToCategory:(NSInteger)idx {
     if (_currentContent) [_currentContent removeFromSuperview];
     NSView* v = _contentViews[idx];
-    v.frame = _contentContainer.bounds;
-    v.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    [_contentContainer addSubview:v];
-    _currentContent = v;
+    // Scroll wrapper: pane frames are full-content-height (see buildWindow).
+    NSScrollView* sv = [[NSScrollView alloc]
+        initWithFrame:_contentContainer.bounds];
+    sv.hasVerticalScroller = YES;
+    sv.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    sv.borderType = NSNoBorder;
+    sv.documentView = v;
+    [_contentContainer addSubview:sv];
+    _currentContent = sv;
 }
 
 - (NSInteger)numberOfRowsInTableView:(NSTableView*)tv { return (NSInteger)_categories.count; }

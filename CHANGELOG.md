@@ -2,6 +2,52 @@
 
 All notable changes to Lethe are documented in this file.
 
+## [0.2.1] — 2026-08-29 KL — "Quiet chrome, and everything is a plugin"
+
+### UI (Lethe Quiet)
+- **Native unified toolbar** (macOS): the old hand-laid chrome row is gone.
+  The window now uses a compact unified NSToolbar — hidden title, ghost
+  icon buttons, one hairline-bordered address pill that tracks window
+  width. Fewer layers and views per frame; the design tokens live in
+  `src/ui/mac/LetheDesign.h` and are mirrored by the internal pages
+  (`src/renderer/page_templates.cc`, `kQuietPageStyle`).
+- **Settings button in the chrome**: a gear item in the toolbar opens the
+  unified Settings window (same as ⌘,).
+- **Settings window scroll fix**: categories taller than the window
+  (Privacy, Engine) used to clip their bottom rows; every pane now sizes
+  to its full content height inside a scroll view, and a new generated
+  "Plugins" category was added.
+
+### Plugins — every feature is a plugin
+- **PluginRegistry** (`include/plugins/plugin_registry.h`,
+  `src/plugins/plugin_registry.cc`): all 22 toggleable features register
+  with an id, description, group, default, restart-honesty flag, optional
+  live-apply hook and (where one exists) the preference key they persist
+  under. `--list-plugins` prints the table from either shell.
+- **Runtime application**: the macOS app mirrors preferences into the
+  registry on every apply, then live-applies the flags the registry owns
+  (https-first, tracker-block, stealth-ua, vpn). Switching the
+  `oblivion-windows` plugin off removes the "New Oblivion Window" path.
+- **Script plugins**: drop `.js` files into
+  `~/Library/Application Support/Lethe/plugins/` with an optional
+  `// @name / @description / @match host` header; enabled ones inject at
+  document start on matching pages, IIFE-wrapped. Listed and toggleable in
+  Settings → Plugins and `lethe://plugins`.
+- **`lethe://plugins` page**: every built-in plugin plus every script
+  plugin, with live ON/OFF toggles that persist through preferences.
+- **New unit tests**: registry structure, defaults/overrides, JSON
+  round-trip (unknown ids ignored), live-apply honesty (restart-flagged
+  plugins never claim a live toggle).
+
+### Measurement (wave proof, `tools/bench/results/wave-quiet-plugins/`)
+Quick suite (`startup,pageload`, one run per browser, same machine,
+same site list): startup to ready **291 ms** vs Chrome **1124 ms**
+(3.9x); the tracker blocker cuts the heaviest ad pages' transfer 30x
+(BBC News 66 KB vs 2.1 MB, GitHub 119 KB vs 3.8 MB). Known
+characteristic carried from v1.0 (not a regression): some ad-heavy
+news pages report multi-second TTFB in the WebKit shell — Wave-3
+performance target. 240 unit tests pass.
+
 ## [0.2.0] — 2026-08-27 22:30–23:59 KL
 
 Security and performance wave, driven by measurement: `tools/bench` runs

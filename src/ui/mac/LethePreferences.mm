@@ -126,6 +126,10 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         _antiAliasing = [v integerValue];
     if ((v = dict[@"policyProxyWorkerThreads"]) && [v respondsToSelector:@selector(integerValue)])
         _policyProxyWorkerThreads = [v integerValue];
+    if ((v = dict[@"pluginOverrides"]) && [v isKindOfClass:[NSDictionary class]])
+        _pluginOverrides = v;
+    if ((v = dict[@"disabledPlugins"]) && [v isKindOfClass:[NSArray class]])
+        _disabledPlugins = v;
 }
 
 - (void)save {
@@ -153,6 +157,8 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
     [d setObject:@(_upscaler) forKey:@"upscaler"];
     [d setObject:@(_antiAliasing) forKey:@"antiAliasing"];
     [d setObject:@(_policyProxyWorkerThreads) forKey:@"policyProxyWorkerThreads"];
+    [d setObject:_pluginOverrides ?: @{} forKey:@"pluginOverrides"];
+    [d setObject:_disabledPlugins ?: @[] forKey:@"disabledPlugins"];
     [d writeToFile:_path atomically:YES];
     [[NSNotificationCenter defaultCenter]
         postNotificationName:LethePreferencesDidChangeNotification object:self];

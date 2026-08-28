@@ -4,6 +4,7 @@
 #import "ui/mac/LetheBookmarks.h"
 #import "ui/mac/LetheHistory.h"
 #import "ui/mac/LethePreferences.h"
+#import "ui/mac/LethePluginLoader.h"
 #import "ui/mac/LetheSession.h"
 #import "ui/mac/LethePermissions.h"
 #import "ui/mac/LetheTabSearch.h"
@@ -14,6 +15,7 @@
 #include <iostream>
 
 #include "browser/url_input.h"
+#include "plugins/plugin_registry.h"
 #include "security/tracker_blocklist.h"
 
 @interface LetheAppDelegate () {
@@ -501,6 +503,19 @@
     });
 }
 
+- (void)showPlugins:(id)sender {
+    (void)sender;
+    BrowserWindowController* c = [self openTabWithURL:@"lethe://plugins"
+                                          fromWindow:[NSApp keyWindow] webView:nil];
+    if (!c) return;
+    __weak BrowserWindowController* weakC = c;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+        BrowserWindowController* strong = weakC;
+        if (strong) [strong renderPluginsPage];
+    });
+}
+
 - (void)clearAllPermissions:(id)sender {
     (void)sender;
     NSAlert* a = [[NSAlert alloc] init];
@@ -559,6 +574,11 @@
         const bool on = ctx_->engine && ctx_->engine->isVpnConnected();
         item.title = on ? @"Disconnect VPN" : @"Connect VPN";
     }
+    if (item.action == @selector(newOblivionWindow:)) {
+        // Oblivion windows are a plugin like everything else: switching the
+        // plugin off removes the way in.
+        return lethe::PluginRegistry::instance().enabled("oblivion-windows");
+    }
     return YES;
 }
 
@@ -608,6 +628,26 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
 // so we alert the user; everything else is live.
 - (void)applyPreferences {
     LethePreferences* prefs = [LethePreferences shared];
+    // --- Plugins: the registry is the runtime view of every feature ------
+    // 1. Mirror the preference-keyed plugins into the registry.
+    lethe::PluginRegistry& reg = lethe::PluginRegistry::instance();
+    reg.registerBuiltins();
+    for (const lethe::PluginSpec& spec : reg.plugins()) {
+        if (spec.prefKey.empty()) continue;
+        id v = [prefs valueForKey:@(spec.prefKey.c_str())];
+        if ([v respondsToSelector:@selector(boolValue)]) {
+            reg.setEnabled(spec.id, [v boolValue]);
+        }
+    }
+    // 2. Engine-only plugins (no pref key) live in pluginOverrides.
+    for (NSString* k in prefs.pluginOverrides) {
+        reg.setEnabled(std::string(k.UTF8String ?: ""),
+                       [prefs.pluginOverrides[k] boolValue]);
+    }
+    // 3. Live-apply what the registry owns (https-first, tracker-block,
+    //    stealth-ua, vpn flags) and (re)install the enabled script plugins.
+    reg.applyTo(*ctx_);
+    [[LethePluginLoader shared] installInto:[self userContentController]];
     // Tracker blocking: remove the currently-installed list (if any) and
     // optionally install a fresh one.
     WKUserContentController* uc = [self userContentController];
@@ -757,6 +797,7 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     addItem(privacy, @"Site Permissions…", @selector(showPermissions:), @"", 0);
     addItem(privacy, @"Clear All Permissions", @selector(clearAllPermissions:), @"", 0);
     [privacy addItem:[NSMenuItem separatorItem]];
+    addItem(privacy, @"Plugins…", @selector(showPlugins:), @"", 0);
     addItem(privacy, @"Security Status…", @selector(showSecurityStatus:), @"", 0);
 
     NSMenu* window = addSubmenu(bar, @"Window");

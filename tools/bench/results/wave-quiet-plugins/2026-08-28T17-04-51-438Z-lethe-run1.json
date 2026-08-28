@@ -1,0 +1,163 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-08-28T17:04:51.438Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup",
+    "pageload"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 311.687417,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 2,
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 61,
+      "dcl": 68,
+      "load": 68,
+      "fcp": 69,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 636,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": null,
+      "dcl": 69,
+      "load": 201,
+      "fcp": 215,
+      "resources": 8,
+      "opaqueResources": 0,
+      "bytes": 1293064,
+      "domNodes": 242
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "ttfb": 34,
+      "dcl": 167,
+      "load": 3318,
+      "fcp": 157,
+      "resources": 35,
+      "opaqueResources": 6,
+      "bytes": 443532,
+      "domNodes": 4171
+    },
+    {
+      "url": "https://github.com/",
+      "ttfb": 65,
+      "dcl": 857,
+      "load": 906,
+      "fcp": 654,
+      "resources": 140,
+      "opaqueResources": 139,
+      "bytes": 118599,
+      "domNodes": 1779
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 62,
+      "dcl": 375,
+      "load": 17523,
+      "fcp": 79,
+      "resources": 74,
+      "opaqueResources": 74,
+      "bytes": 66082,
+      "domNodes": 1439
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "ttfb": 2754,
+      "dcl": 9322.000000000002,
+      "load": 38068,
+      "fcp": 2844,
+      "resources": 74,
+      "opaqueResources": 74,
+      "bytes": 147454,
+      "domNodes": 5039
+    },
+    {
+      "url": "https://edition.cnn.com/",
+      "ttfb": 28492,
+      "dcl": 28789,
+      "load": null,
+      "fcp": 28713,
+      "resources": 177,
+      "opaqueResources": 141,
+      "bytes": 1501639,
+      "domNodes": 3928
+    },
+    {
+      "url": "https://www.nytimes.com/",
+      "ttfb": 12819,
+      "dcl": 16644.000000000004,
+      "load": null,
+      "fcp": 16198,
+      "resources": 146,
+      "opaqueResources": 81,
+      "bytes": 543242,
+      "domNodes": 6157
+    }
+  ],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 656.6483330000001,
+      "rssMb": 194.78125,
+      "processes": 4,
+      "cpuSec": 0.47,
+      "breakdown": [
+        {
+          "pid": 76685,
+          "rssMb": 117.6,
+          "cpuSec": 0.32,
+          "name": "lethe"
+        },
+        {
+          "pid": 76686,
+          "rssMb": 15,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 76687,
+          "rssMb": 30.9,
+          "cpuSec": 0.07,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 76688,
+          "rssMb": 31.3,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ]
+}

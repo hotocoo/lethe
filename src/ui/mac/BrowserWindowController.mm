@@ -10,11 +10,14 @@
 #import "ui/mac/LetheDownloads.h"
 #import "ui/mac/LethePermissions.h"
 #import "ui/mac/LethePreferences.h"
+#import "ui/mac/LethePluginLoader.h"
 #import "ui/mac/LetheSettings.h"
 #import "ui/mac/LetheDesign.h"
 #import <objc/runtime.h>
 
 #include <string>
+
+#include "plugins/plugin_registry.h"
 #include <vector>
 
 #include "browser/url_input.h"
@@ -658,6 +661,82 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
         @"(window.webkit.messageHandlers[%@]||{postMessage:function(){}}).postMessage({op:'clear',host:u,type:t});}"
         @"});</script>", kQuietPageStyle, body, messageHandlerNames_.lastObject ?: @"perms"];
     internalPageUrl_ = @"lethe://permissions";
+    [webView_ loadHTMLString:html baseURL:nil];
+    [self updateTitle];
+    [self updateAddress];
+}
+
+// lethe://plugins - every feature of the browser, packaged as a plugin,
+// rendered straight from the PluginRegistry plus the script plugins on
+// disk. Toggling posts back over the bookmarks message channel; the op
+// persists through LethePreferences so the Settings window, this page and
+// the registry never disagree.
+- (void)renderPluginsPage {
+    lethe::PluginRegistry& reg = lethe::PluginRegistry::instance();
+    reg.registerBuiltins();
+    LethePreferences* prefs = [LethePreferences shared];
+    NSMutableString* rows = [NSMutableString string];
+    for (const lethe::PluginSpec& p : reg.plugins()) {
+        const BOOL on = reg.enabled(p.id) ? YES : NO;
+        NSString* idEsc = [@(p.id.c_str())
+            stringByReplacingOccurrencesOfString:@"\"" withString:@""];
+        NSString* name = [@(p.name.c_str())
+            stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        NSString* desc = [@(p.description.c_str())
+            stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        NSString* note = p.requiresRestart ? @" · restart" : @"";
+        [rows appendFormat:
+            @"<li><span class=\"pn\">%@</span><span class=\"st %@\">%@</span>"
+            @"<button class=\"rm tog\" data-id=\"%@\">Turn %@</button>"
+            @"<br><span class=\"u\">%@%@</span></li>",
+            name, on ? @"On" : @"Off", on ? @"ON" : @"OFF",
+            idEsc, on ? @"off" : @"on", desc, note];
+    }
+    NSMutableString* jsRows = [NSMutableString string];
+    for (LethePluginScript* jp in [[LethePluginLoader shared] scanPlugins]) {
+        NSString* fileEsc = [jp.fileName
+            stringByReplacingOccurrencesOfString:@"\"" withString:@""];
+        NSString* name = [jp.name
+            stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        NSString* desc = [jp.pluginDescription
+            stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        [jsRows appendFormat:
+            @"<li><span class=\"pn\">%@</span><span class=\"st %@\">%@</span>"
+            @"<button class=\"rm tog\" data-file=\"%@\">Turn %@</button>"
+            @"<br><span class=\"u\">%@</span></li>",
+            name, jp.enabled ? @"On" : @"Off", jp.enabled ? @"ON" : @"OFF",
+            fileEsc, jp.enabled ? @"off" : @"on",
+            desc.length ? desc : fileEsc];
+    }
+    NSString* body = [NSString stringWithFormat:
+        @"<h2>Built-in feature plugins</h2><ul>%@</ul>"
+        @"<h2>Script plugins</h2><p class=\"sub\">Drop .js files into "
+        @"<span class=\"u\">%@</span> — they run at document start on every "
+        @"page. Optional header: // @name, @description, @match host.</p>"
+        @"%@",
+        rows,
+        [LethePluginLoader pluginsFolder],
+        jsRows.length ? [NSString stringWithFormat:@"<ul>%@</ul>", jsRows]
+                      : @"<p class=\"empty\">No script plugins yet.</p>"];
+    NSString* html = [NSString stringWithFormat:
+        @"<!doctype html><meta charset=\"utf-8\"><title>Plugins</title>"
+        @"%@"
+        @"<style>.pn{font-weight:500;font-size:15px}"
+        @".st{font-size:11px;margin-left:8px;padding:1px 6px;border-radius:4px}"
+        @".st.On{color:#0a7a3a;border:1px solid rgba(10,122,58,.35)}"
+        @".st.Off{color:#8a8a8e;border:1px solid rgba(128,128,128,.3)}"
+        @"</style>"
+        @"<h1>Plugins</h1>"
+        @"<p class=\"sub\">Every Lethe feature is a plugin: switch it here "
+        @"or in Settings → Plugins.</p>%@"
+        @"<script>document.addEventListener('click',function(e){"
+        @"if(e.target.classList.contains('tog')){"
+        @"var id=e.target.getAttribute('data-id'),f=e.target.getAttribute('data-file');"
+        @"(window.webkit.messageHandlers[%@]||{postMessage:function(){}})"
+        @".postMessage({op:'plugin-toggle',id:id,file:f});}"
+        @"});</script>",
+        kQuietPageStyle, body, messageHandlerNames_.firstObject ?: @"bookmarks"];
+    internalPageUrl_ = @"lethe://plugins";
     [webView_ loadHTMLString:html baseURL:nil];
     [self updateTitle];
     [self updateAddress];
@@ -1454,12 +1533,17 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
     NSDictionary* body = [msg.body isKindOfClass:[NSDictionary class]] ? msg.body : nil;
     NSString* op = body[@"op"];
     if ([msg.name isEqualToString:messageHandlerNames_.firstObject]) {
-        // bookmarks handler
+        // bookmarks handler (also carries the lethe://plugins ops)
         NSString* url = body[@"url"];
         if ([op isEqualToString:@"remove"] && url.length) {
             [[LetheBookmarks shared] removeURL:url];
             if ([internalPageUrl_ isEqualToString:@"lethe://bookmarks"]) {
                 [self renderBookmarksPage];
+            }
+        } else if ([op isEqualToString:@"plugin-toggle"]) {
+            [self togglePluginWithId:body[@"id"] file:body[@"file"]];
+            if ([internalPageUrl_ isEqualToString:@"lethe://plugins"]) {
+                [self renderPluginsPage];
             }
         }
     } else if ([msg.name isEqualToString:messageHandlerNames_.lastObject]) {
@@ -1473,5 +1557,42 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
             }
         }
     }
+}
+
+// One toggle from lethe://plugins: persist through LethePreferences so the
+// Settings window and the registry stay in agreement, and let the
+// preferences-changed notification do the live apply.
+- (void)togglePluginWithId:(NSString*)pluginId file:(NSString*)file {
+    LethePreferences* prefs = [LethePreferences shared];
+    if (file.length) {
+        NSMutableSet<NSString*>* disabled = [NSMutableSet setWithArray:
+            prefs.disabledPlugins ?: @[]];
+        // The button label shows the action; the current state comes from
+        // the scan, so flipping is: disabled set membership toggle.
+        for (LethePluginScript* jp in [[LethePluginLoader shared] scanPlugins]) {
+            if (![jp.fileName isEqualToString:file]) continue;
+            if (jp.enabled) [disabled addObject:file];
+            else [disabled removeObject:file];
+            break;
+        }
+        prefs.disabledPlugins = [disabled allObjects];
+    } else if (pluginId.length) {
+        const std::string id(pluginId.UTF8String ?: "");
+        lethe::PluginRegistry& reg = lethe::PluginRegistry::instance();
+        reg.registerBuiltins();
+        const lethe::PluginSpec* spec = reg.find(id);
+        if (!spec) return;
+        const BOOL on = reg.enabled(id) ? NO : YES;  // flipping
+        reg.setEnabled(id, on);
+        if (spec->prefKey.length()) {
+            [prefs setValue:@(on) forKey:@(spec->prefKey.c_str())];
+        } else {
+            NSMutableDictionary<NSString*, NSNumber*>* ov =
+                [prefs.pluginOverrides mutableCopy] ?: [NSMutableDictionary dictionary];
+            ov[pluginId] = @(on);
+            prefs.pluginOverrides = ov;
+        }
+    }
+    [prefs save];  // posts LethePreferencesDidChangeNotification -> applyPreferences
 }
 @end
