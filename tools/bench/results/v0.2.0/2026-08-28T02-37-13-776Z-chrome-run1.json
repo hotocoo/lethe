@@ -1,0 +1,354 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 151.0.7922.175",
+  "run": 1,
+  "startedAt": "2026-08-28T02:37:13.776Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "speedometer",
+    "jetstream"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 841.3440840000001,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": "42.8",
+  "jetstream": "562.735",
+  "motionmark": null,
+  "youtube": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 841.3475000000001,
+      "rssMb": 1002.375,
+      "processes": 8,
+      "cpuSec": 0.98,
+      "breakdown": [
+        {
+          "pid": 12106,
+          "rssMb": 216.5,
+          "cpuSec": 0.54,
+          "name": "Google"
+        },
+        {
+          "pid": 12113,
+          "rssMb": 138,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 12114,
+          "rssMb": 93.7,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 12115,
+          "rssMb": 78.8,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 12118,
+          "rssMb": 137.2,
+          "cpuSec": 0.07,
+          "name": "Google"
+        },
+        {
+          "pid": 12120,
+          "rssMb": 120.3,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 12122,
+          "rssMb": 99.1,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 12123,
+          "rssMb": 118.8,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "speedometer:start",
+      "tMs": 2455.47675,
+      "rssMb": 1306.875,
+      "processes": 10,
+      "cpuSec": 1.49,
+      "breakdown": [
+        {
+          "pid": 12106,
+          "rssMb": 226.6,
+          "cpuSec": 0.7,
+          "name": "Google"
+        },
+        {
+          "pid": 12113,
+          "rssMb": 141.1,
+          "cpuSec": 0.24,
+          "name": "Google"
+        },
+        {
+          "pid": 12114,
+          "rssMb": 101.9,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 12115,
+          "rssMb": 79.3,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 12118,
+          "rssMb": 169.1,
+          "cpuSec": 0.16,
+          "name": "Google"
+        },
+        {
+          "pid": 12120,
+          "rssMb": 120.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 12123,
+          "rssMb": 118.9,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 12139,
+          "rssMb": 113.8,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 12140,
+          "rssMb": 137,
+          "cpuSec": 0.07,
+          "name": "Google"
+        },
+        {
+          "pid": 12152,
+          "rssMb": 98.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "speedometer:end",
+      "tMs": 33428.975834,
+      "rssMb": 1879.765625,
+      "processes": 9,
+      "cpuSec": 28.35,
+      "breakdown": [
+        {
+          "pid": 12106,
+          "rssMb": 282,
+          "cpuSec": 7.18,
+          "name": "Google"
+        },
+        {
+          "pid": 12113,
+          "rssMb": 162.8,
+          "cpuSec": 2.67,
+          "name": "Google"
+        },
+        {
+          "pid": 12114,
+          "rssMb": 95.7,
+          "cpuSec": 0.94,
+          "name": "Google"
+        },
+        {
+          "pid": 12115,
+          "rssMb": 67.4,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 12118,
+          "rssMb": 147.5,
+          "cpuSec": 0.22,
+          "name": "Google"
+        },
+        {
+          "pid": 12120,
+          "rssMb": 97.9,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 12140,
+          "rssMb": 803.7,
+          "cpuSec": 17.14,
+          "name": "Google"
+        },
+        {
+          "pid": 12297,
+          "rssMb": 99.9,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 12299,
+          "rssMb": 122.9,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "jetstream:start",
+      "tMs": 45860.51575,
+      "rssMb": 1473.953125,
+      "processes": 9,
+      "cpuSec": 30.06,
+      "breakdown": [
+        {
+          "pid": 12106,
+          "rssMb": 283,
+          "cpuSec": 7.55,
+          "name": "Google"
+        },
+        {
+          "pid": 12113,
+          "rssMb": 135.1,
+          "cpuSec": 3.06,
+          "name": "Google"
+        },
+        {
+          "pid": 12114,
+          "rssMb": 103.4,
+          "cpuSec": 1.2,
+          "name": "Google"
+        },
+        {
+          "pid": 12115,
+          "rssMb": 63.4,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 12118,
+          "rssMb": 129.9,
+          "cpuSec": 0.23,
+          "name": "Google"
+        },
+        {
+          "pid": 12120,
+          "rssMb": 98.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 12140,
+          "rssMb": 401.5,
+          "cpuSec": 17.5,
+          "name": "Google"
+        },
+        {
+          "pid": 12861,
+          "rssMb": 159.1,
+          "cpuSec": 0.36,
+          "name": "Google"
+        },
+        {
+          "pid": 12863,
+          "rssMb": 99.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "jetstream:end",
+      "tMs": 82723.33012500001,
+      "rssMb": 2177.3125,
+      "processes": 9,
+      "cpuSec": 86.1,
+      "breakdown": [
+        {
+          "pid": 12106,
+          "rssMb": 353.6,
+          "cpuSec": 10.12,
+          "name": "Google"
+        },
+        {
+          "pid": 12113,
+          "rssMb": 113.6,
+          "cpuSec": 3.37,
+          "name": "Google"
+        },
+        {
+          "pid": 12114,
+          "rssMb": 161.2,
+          "cpuSec": 1.7,
+          "name": "Google"
+        },
+        {
+          "pid": 12115,
+          "rssMb": 61.8,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 12118,
+          "rssMb": 108.6,
+          "cpuSec": 0.23,
+          "name": "Google"
+        },
+        {
+          "pid": 12120,
+          "rssMb": 99.3,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 12140,
+          "rssMb": 137.3,
+          "cpuSec": 17.51,
+          "name": "Google"
+        },
+        {
+          "pid": 12861,
+          "rssMb": 1066.3,
+          "cpuSec": 53,
+          "name": "Google"
+        },
+        {
+          "pid": 12863,
+          "rssMb": 75.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    }
+  ]
+}

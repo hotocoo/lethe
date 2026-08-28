@@ -1,0 +1,147 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.2.0",
+  "run": 1,
+  "startedAt": "2026-08-28T02:48:29.034Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "jetstream"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 314.10991700000005,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 6: wait-js '(function(){ var e = document.querySelector('#result-summary .score'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()' still falsy after 1200000 ms ()",
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 659.413292,
+      "rssMb": 192.953125,
+      "processes": 4,
+      "cpuSec": 0.47,
+      "breakdown": [
+        {
+          "pid": 21965,
+          "rssMb": 113.3,
+          "cpuSec": 0.26,
+          "name": "lethe"
+        },
+        {
+          "pid": 21966,
+          "rssMb": 14.1,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 21967,
+          "rssMb": 31.9,
+          "cpuSec": 0.08,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 21968,
+          "rssMb": 33.7,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "jetstream:start",
+      "tMs": 12170.568125,
+      "rssMb": 266.3125,
+      "processes": 5,
+      "cpuSec": 2.74,
+      "breakdown": [
+        {
+          "pid": 21965,
+          "rssMb": 94.3,
+          "cpuSec": 0.73,
+          "name": "lethe"
+        },
+        {
+          "pid": 21966,
+          "rssMb": 63.4,
+          "cpuSec": 1.08,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 21967,
+          "rssMb": 32.9,
+          "cpuSec": 0.27,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 21968,
+          "rssMb": 18.8,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 21987,
+          "rssMb": 57,
+          "cpuSec": 0.54,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "Lethe Browser v0.2.0",
+    "[lethe] Applying macOS sandbox (Seatbelt)...",
+    "[lethe] Seatbelt profile active (file writes limited to temp, ~/Downloads and Lethe's own Library subtrees)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN initialized (disabled by default)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.2.0 initialized",
+    "[lethe] policy proxy listening on 127.0.0.1:56488 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:56488 (subresource enforcement on)",
+    "[e2e] start: 11 lines",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab https://browserbench.org/JetStream2.2/",
+    "[e2e] > try-wait 45000",
+    "[e2e] > wait-js 60000 (function(){ var a = document.querySelector('#status a.button'); if (a && typeof JetStream !== 'undefined' && JetStream.start) { JetStream.start(); return 'started'; } return ''; })()",
+    "[e2e] ok   wait-js -> started",
+    "[e2e] > mark jetstream:start",
+    "[e2e] mark jetstream:start",
+    "[e2e] > wait-js 1200000 (function(){ var e = document.querySelector('#result-summary .score'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] FAIL line 6: wait-js '(function(){ var e = document.querySelector('#result-summary .score'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()' still falsy after 1200000 ms ()",
+    "[e2e] failure screenshot: /var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/lethe-e2e-failure.png",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

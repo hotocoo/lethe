@@ -15,6 +15,16 @@ xvfb-run -a ./build-linux/lethe --e2e-script tests/e2e/basic.lethe
 Exit status is 0 when every assertion held, 1 otherwise; the first failing
 step stops the run and writes `lethe-e2e-failure.png` to the temp dir.
 
+## Keeping the window frontmost (`LETHE_KEEP_FRONT`)
+
+WebKit suspends `requestAnimationFrame` and reports
+document.visibilityState "hidden" for occluded windows, so animation-driven
+benchmarks (MotionMark 1.3.1) hang when a command-line-launched Lethe stays
+behind other apps. Set `LETHE_KEEP_FRONT=1` to re-assert frontmost every 2 s
+for the life of the script (only when another app is in front, so it never
+fights an interactive user). It is off by default; `tools/bench/bench.mjs`
+sets it automatically when the `motionmark` suite runs.
+
 ## Commands
 
 One per line, `#` starts a comment. `<text>` runs to end of line.

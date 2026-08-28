@@ -1,0 +1,237 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.2.0",
+  "run": 2,
+  "startedAt": "2026-08-28T02:15:02.588Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "speedometer",
+    "jetstream"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 271.7209160000202,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 13: wait-js '(function(){ var e = document.querySelector('#result-summary .score'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()' still falsy after 1200000 ms ()",
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": "45.1",
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 613.655666000006,
+      "rssMb": 193.171875,
+      "processes": 4,
+      "cpuSec": 0.42,
+      "breakdown": [
+        {
+          "pid": 87742,
+          "rssMb": 118.4,
+          "cpuSec": 0.29,
+          "name": "lethe"
+        },
+        {
+          "pid": 87749,
+          "rssMb": 14,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 87751,
+          "rssMb": 30.8,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 87755,
+          "rssMb": 30,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "speedometer:start",
+      "tMs": 3353.8310829999973,
+      "rssMb": 260.21875,
+      "processes": 5,
+      "cpuSec": 0.77,
+      "breakdown": [
+        {
+          "pid": 87742,
+          "rssMb": 139.6,
+          "cpuSec": 0.49,
+          "name": "lethe"
+        },
+        {
+          "pid": 87749,
+          "rssMb": 19.9,
+          "cpuSec": 0.07,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 87751,
+          "rssMb": 34.3,
+          "cpuSec": 0.08,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 87755,
+          "rssMb": 29.9,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 87789,
+          "rssMb": 36.5,
+          "cpuSec": 0.08,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "speedometer:end",
+      "tMs": 38665.86250000002,
+      "rssMb": 855.796875,
+      "processes": 5,
+      "cpuSec": 25.39,
+      "breakdown": [
+        {
+          "pid": 87742,
+          "rssMb": 146.9,
+          "cpuSec": 2.31,
+          "name": "lethe"
+        },
+        {
+          "pid": 87749,
+          "rssMb": 31.4,
+          "cpuSec": 0.62,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 87751,
+          "rssMb": 117.5,
+          "cpuSec": 2.3,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 87755,
+          "rssMb": 29.7,
+          "cpuSec": 0.07,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 87789,
+          "rssMb": 530.3,
+          "cpuSec": 20.09,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "jetstream:start",
+      "tMs": 48856.448791,
+      "rssMb": 1002.078125,
+      "processes": 6,
+      "cpuSec": 27.61,
+      "breakdown": [
+        {
+          "pid": 87742,
+          "rssMb": 151.5,
+          "cpuSec": 2.82,
+          "name": "lethe"
+        },
+        {
+          "pid": 87749,
+          "rssMb": 96.1,
+          "cpuSec": 1.44,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 87751,
+          "rssMb": 137.5,
+          "cpuSec": 2.63,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 87755,
+          "rssMb": 29.7,
+          "cpuSec": 0.08,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 87789,
+          "rssMb": 525.7,
+          "cpuSec": 20.13,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 88717,
+          "rssMb": 61.5,
+          "cpuSec": 0.51,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN initialized (disabled by default)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.2.0 initialized",
+    "[lethe] policy proxy listening on 127.0.0.1:60082 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:60082 (subresource enforcement on)",
+    "[e2e] start: 18 lines",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab https://browserbench.org/Speedometer3.1/?startAutomatically=true",
+    "[e2e] > try-wait 45000",
+    "[e2e] > mark speedometer:start",
+    "[e2e] mark speedometer:start",
+    "[e2e] > wait-js 720000 (function(){ var e = document.querySelector('#result-number'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] ok   wait-js -> 45.1",
+    "[e2e] > mark speedometer:end",
+    "[e2e] mark speedometer:end",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var e = document.querySelector('#result-number'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] result 45.1",
+    "[e2e] > newtab https://browserbench.org/JetStream2.2/",
+    "[e2e] > try-wait 45000",
+    "[e2e] > wait-js 60000 (function(){ var a = document.querySelector('#status a.button'); if (a && typeof JetStream !== 'undefined' && JetStream.start) { JetStream.start(); return 'started'; } return ''; })()",
+    "[e2e] ok   wait-js -> started",
+    "[e2e] > mark jetstream:start",
+    "[e2e] mark jetstream:start",
+    "[e2e] > wait-js 1200000 (function(){ var e = document.querySelector('#result-summary .score'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] FAIL line 13: wait-js '(function(){ var e = document.querySelector('#result-summary .score'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()' still falsy after 1200000 ms ()",
+    "[e2e] failure screenshot: /var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/lethe-e2e-failure.png",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}
