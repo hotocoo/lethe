@@ -1,0 +1,88 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-08-28T07:27:00.459Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "pageload"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.bbc.com/news"
+  ],
+  "startupMs": 193.374833,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 1,
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 1252,
+      "dcl": 1264,
+      "load": 1265.0000000000002,
+      "fcp": 1266,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 636,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 110,
+      "dcl": 518,
+      "load": null,
+      "fcp": 168,
+      "resources": 97,
+      "opaqueResources": 97,
+      "bytes": 64165,
+      "domNodes": 1438
+    }
+  ],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 545.3390410000001,
+      "rssMb": 192.6875,
+      "processes": 4,
+      "cpuSec": 0.34,
+      "breakdown": [
+        {
+          "pid": 48321,
+          "rssMb": 113.7,
+          "cpuSec": 0.21,
+          "name": "lethe"
+        },
+        {
+          "pid": 48322,
+          "rssMb": 14.9,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 48323,
+          "rssMb": 33,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 48324,
+          "rssMb": 31.2,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ]
+}

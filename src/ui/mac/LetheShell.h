@@ -57,6 +57,9 @@
 - (void)renderBookmarksPage;
 - (void)renderHistoryPage;
 - (void)renderPermissionsPage;
+// renderStressPage: in-page torture for the renderer/main thread; used by
+// the bench harness to compare Lethe and Chrome on the same workload.
+- (void)renderStressPage;
 - (void)goBack:(id)sender;
 - (void)goForward:(id)sender;
 - (void)reloadPage:(id)sender;

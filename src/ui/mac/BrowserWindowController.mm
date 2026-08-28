@@ -545,6 +545,46 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     [self updateAddress];
 }
 
+// renderStressPage: in-page torture that exercises the renderer/main
+// thread. 100k DOM nodes, a rotating WebGL quad, 20ms of JS work per
+// frame, and a stats overlay that reports live FPS. Same workload in
+// Chrome under the same harness (the bench calls this through a
+// e2e command; the URL itself is never navigated to, so the policy
+// gate cannot block it). v0.1.1 perf regression baseline.
+- (void)renderStressPage {
+    NSString* html = @"<!doctype html><meta charset=\"utf-8\">"
+        "<title>Lethe stress</title>"
+        "<style>body{margin:0;background:#000;color:#fff;font:14px monospace}</style>"
+        "<canvas id=\"gl\" width=\"1280\" height=\"720\"></canvas>"
+        "<div id=\"nodes\"></div>"
+        "<div id=\"stats\" style=\"position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.6);padding:6px 10px;border-radius:6px\"></div>"
+        "<script>"
+        "var nd=document.getElementById('nodes');"
+        "for(var i=0;i<2000;i++){var row=document.createElement('div');var s='';"
+        "for(var j=0;j<50;j++)s+='<span>'+(i*50+j)+'</span> ';row.innerHTML=s;nd.appendChild(row);}"
+        "var gl=document.getElementById('gl').getContext('webgl');var prog=null;"
+        "if(gl){var vs=gl.createShader(gl.VERTEX_SHADER);"
+        "gl.shaderSource(vs,'attribute vec2 p;uniform float t;varying float v;void main(){v=t;gl_Position=vec2(p.x*cos(t)-p.y*sin(t),p.x*sin(t)+p.y*cos(t))*0.6,0,1);}');"
+        "gl.compileShader(vs);var fs=gl.createShader(gl.FRAGMENT_SHADER);"
+        "gl.shaderSource(fs,'precision mediump float;varying float v;void main(){gl_FragColor=vec4(0.5+0.5*sin(v),0.3+0.5*cos(v*0.7),0.6+0.4*sin(v*1.3),1);}');"
+        "gl.compileShader(fs);prog=gl.createProgram();gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);"
+        "var buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);"
+        "gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-0.5,-0.5,0.5,-0.5,-0.5,0.5,0.5,-0.5,0.5,0.5,-0.5,0.5]),gl.STATIC_DRAW);}"
+        "var frames=0,t0=performance.now(),lastJ=0;"
+        "function tick(t){frames++;if(gl){gl.viewport(0,0,1280,720);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(prog);"
+        "var loc=gl.getUniformLocation(prog,'t');gl.uniform1f(loc,t/1000);"
+        "var pl=gl.getAttribLocation(prog,'p');gl.enableVertexAttribArray(pl);gl.vertexAttribPointer(pl,2,gl.FLOAT,false,0,0);gl.drawArrays(gl.TRIANGLES,0,6);}"
+        "var x=0;for(var i=0;i<1e6;i++)x+=Math.sqrt(i)*Math.sin(i*0.001);lastJ=x;"
+        "if(frames%30===0){var e=performance.now()-t0;"
+        "document.getElementById('stats').textContent='fps='+(frames*1000/e).toFixed(1)+' frames='+frames+' dom=100k j='+lastJ.toFixed(2);}"
+        "requestAnimationFrame(tick);}requestAnimationFrame(tick);"
+        "</script>";
+    internalPageUrl_ = @"lethe://stress";
+    [webView_ loadHTMLString:html baseURL:nil];
+    [self updateTitle];
+    [self updateAddress];
+}
+
 - (void)loadAddress:(NSString*)text {
     const std::string in = text.UTF8String ? text.UTF8String : "";
     const std::string normalized = lethe::normalizeAddressInput(in);

@@ -1,0 +1,193 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-08-28T07:36:16.477Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "stress"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 184.587917,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 9: print-js: A JavaScript exception occurred",
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 522.3584999999999,
+      "rssMb": 190.21875,
+      "processes": 4,
+      "cpuSec": 0.32,
+      "breakdown": [
+        {
+          "pid": 52023,
+          "rssMb": 113,
+          "cpuSec": 0.2,
+          "name": "lethe"
+        },
+        {
+          "pid": 52024,
+          "rssMb": 13.9,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 52025,
+          "rssMb": 32.7,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 52026,
+          "rssMb": 30.6,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "stress:start",
+      "tMs": 7338.133417,
+      "rssMb": 307.078125,
+      "processes": 5,
+      "cpuSec": 0.95,
+      "breakdown": [
+        {
+          "pid": 52023,
+          "rssMb": 131,
+          "cpuSec": 0.41,
+          "name": "lethe"
+        },
+        {
+          "pid": 52024,
+          "rssMb": 26,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 52025,
+          "rssMb": 38,
+          "cpuSec": 0.1,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 52026,
+          "rssMb": 30.8,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 52043,
+          "rssMb": 81.3,
+          "cpuSec": 0.27,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "stress:end",
+      "tMs": 68401.413667,
+      "rssMb": 306.953125,
+      "processes": 5,
+      "cpuSec": 1.12,
+      "breakdown": [
+        {
+          "pid": 52023,
+          "rssMb": 131,
+          "cpuSec": 0.58,
+          "name": "lethe"
+        },
+        {
+          "pid": 52024,
+          "rssMb": 26,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 52025,
+          "rssMb": 38,
+          "cpuSec": 0.1,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 52026,
+          "rssMb": 30.8,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 52043,
+          "rssMb": 81.2,
+          "cpuSec": 0.27,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[lethe] Applying macOS sandbox (Seatbelt)...",
+    "[lethe] Seatbelt profile active (file writes limited to temp, ~/Downloads and Lethe's own Library subtrees)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN initialized (disabled by default)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] worker pool: 16 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:53333 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:53333 (subresource enforcement on)",
+    "[e2e] start: 11 lines",
+    "[e2e] keep-front: on",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab data:text/html;charset=utf-8,%0A%3C!doctype%20html%3E%3Cmeta%20charset%3D%22utf-8%22%3E%0A%3Ctitle%3ELethe%20stress%3C%2Ftitle%3E%0A%3Cstyle%3Ebody%7Bmargin%3A0%3Bbackground%3A%23000%3Bcolor%3A%23fff%3Bfont%3A14px%20monospace%7D%3C%2Fstyle%3E%0A%3Ccanvas%20id%3D%22gl%22%20width%3D%221280%22%20height%3D%22720%22%3E%3C%2Fcanvas%3E%0A%3Cdiv%20id%3D%22nodes%22%3E%3C%2Fdiv%3E%0A%3Cdiv%20id%3D%22stats%22%20style%3D%22position%3Afixed%3Btop%3A8px%3Bright%3A8px%3Bbackground%3Argba(0%2C0%2C0%2C0.6)%3Bpadding%3A6px%2010px%3Bborder-radius%3A6px%22%3E%3C%2Fdiv%3E%0A%3Cscript%3E%0A%2F%2F%20100k%20DOM%20nodes%20(one%20row%20per%2050%20nodes)%0Aconst%20nd%20%3D%20document.getElementById('nodes')%3B%0Aconst%20rows%20%3D%20%5B%5D%3B%0Afor%20(let%20i%20%3D%200%3B%20i%20%3C%202000%3B%20i%2B%2B)%20%7B%0A%20%20const%20row%20%3D%20document.createElement('div')%3B%0A%20%20let%20inner%20%3D%20''%3B%0A%20%20for%20(let%20j%20%3D%200%3B%20j%20%3C%2050%3B%20j%2B%2B)%20inner%20%2B%3D%20'%3Cspan%3E'%20%2B%20(i*50%2Bj)%20%2B%20'%3C%2Fspan%3E%20'%3B%0A%20%20row.innerHTML%20%3D%20inner%3B%0A%20%20rows.push(row)%3B%20nd.appendChild(row)%3B%0A%7D%0A%2F%2F%20WebGL%3A%20rotating%20cube%20with%2060fps%20animation%0Aconst%20gl%20%3D%20document.getElementById('gl').getContext('webgl')%3B%0Alet%20prog%3B%0Aif%20(gl)%20%7B%0A%20%20const%20vs%20%3D%20gl.createShader(gl.VERTEX_SHADER)%3B%0A%20%20gl.shaderSource(vs%2C%20'attribute%20vec2%20p%3Buniform%20float%20t%3Bvarying%20float%20v%3Bvoid%20main()%7Bv%3Dt%3Bgl_Position%3Dvec2(p.x*cos(t)-p.y*sin(t)%2Cp.x*sin(t)%2Bp.y*cos(t))*0.6%2C0%2C1)%3B%7D')%3B%0A%20%20gl.compileShader(vs)%3B%0A%20%20const%20fs%20%3D%20gl.createShader(gl.FRAGMENT_SHADER)%3B%0A%20%20gl.shaderSource(fs%2C%20'precision%20mediump%20float%3Bvarying%20float%20v%3Bvoid%20main()%7Bgl_FragColor%3Dvec4(0.5%2B0.5*sin(v)%2C0.3%2B0.5*cos(v*0.7)%2C0.6%2B0.4*sin(v*1.3)%2C1)%3B%7D')%3B%0A%20%20gl.compileShader(fs)%3B%0A%20%20prog%20%3D%20gl.createProgram()%3B%20gl.attachShader(prog%2C%20vs)%3B%20gl.attachShader(prog%2C%20fs)%3B%20gl.linkProgram(prog)%3B%0A%20%20const%20buf%20%3D%20gl.createBuffer()%3B%20gl.bindBuffer(gl.ARRAY_BUFFER%2C%20buf)%3B%0A%20%20gl.bufferData(gl.ARRAY_BUFFER%2C%20new%20Float32Array(%5B-0.5%2C-0.5%2C0.5%2C-0.5%2C-0.5%2C0.5%2C0.5%2C-0.5%2C0.5%2C0.5%2C-0.5%2C0.5%5D)%2C%20gl.STATIC_DRAW)%3B%0A%7D%0Alet%20frames%20%3D%200%2C%20t0%20%3D%20performance.now()%2C%20lastJ%20%3D%200%3B%0Afunction%20tick(t)%20%7B%0A%20%20frames%2B%2B%3B%0A%20%20if%20(gl)%20%7B%0A%20%20%20%20gl.viewport(0%2C%200%2C%201280%2C%20720)%3B%20gl.clearColor(0%2C%200%2C%200%2C%201)%3B%20gl.clear(gl.COLOR_BUFFER_BIT)%3B%0A%20%20%20%20gl.useProgram(prog)%3B%0A%20%20%20%20const%20loc%20%3D%20gl.getUniformLocation(prog%2C%20't')%3B%20gl.uniform1f(loc%2C%20t%20%2F%201000)%3B%0A%20%20%20%20const%20pl%20%3D%20gl.getAttribLocation(prog%2C%20'p')%3B%20gl.enableVertexAttribArray(pl)%3B%0A%20%20%20%20gl.vertexAttribPointer(pl%2C%202%2C%20gl.FLOAT%2C%20false%2C%200%2C%200)%3B%0A%20%20%20%20gl.drawArrays(gl.TRIANGLES%2C%200%2C%206)%3B%0A%20%20%7D%0A%20%20%2F%2F%2020ms%20JS%20work%20every%20frame%20to%20stress%20the%20main%20thread%0A%20%20let%20x%20%3D%200%3B%20for%20(let%20i%20%3D%200%3B%20i%20%3C%201e6%3B%20i%2B%2B)%20x%20%2B%3D%20Math.sqrt(i)%20*%20Math.sin(i%20*%200.001)%3B%0A%20%20lastJ%20%3D%20x%3B%0A%20%20if%20(frames%20%25%2030%20%3D%3D%3D%200)%20%7B%0A%20%20%20%20const%20e%20%3D%20performance.now()%20-%20t0%3B%0A%20%20%20%20document.getElementById('stats').textContent%20%3D%0A%20%20%20%20%20%20'fps%3D'%20%2B%20(frames%20*%201000%20%2F%20e).toFixed(1)%20%2B%20'%20frames%3D'%20%2B%20frames%20%2B%20'%20dom%3D100k%20j%3D'%20%2B%20lastJ.toFixed(2)%3B%0A%20%20%7D%0A%20%20requestAnimationFrame(tick)%3B%0A%7D%0ArequestAnimationFrame(tick)%3B%0A%3C%2Fscript%3E%0A",
+    "[e2e] > try-wait 30000",
+    "[e2e] > sleep 5000",
+    "[e2e] > mark stress:start",
+    "[e2e] mark stress:start",
+    "[e2e] > sleep 60000",
+    "[e2e] > mark stress:end",
+    "[e2e] mark stress:end",
+    "[e2e] > sleep 1000",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[e2e] FAIL line 9: print-js: A JavaScript exception occurred",
+    "[e2e] failure screenshot: /var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/lethe-e2e-failure.png",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-08-28T07:28:53.667Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "pageload"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.theguardian.com/international",
+    "https://www.bbc.com/news"
+  ],
+  "startupMs": 188.046833,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 1,
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 702.0000000000001,
+      "dcl": 717,
+      "load": 719,
+      "fcp": 719,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 636,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "ttfb": 223,
+      "dcl": 766,
+      "load": 1252,
+      "fcp": 335,
+      "resources": 91,
+      "opaqueResources": 91,
+      "bytes": 144766,
+      "domNodes": 5054
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 164,
+      "dcl": 856,
+      "load": null,
+      "fcp": 226,
+      "resources": 65,
+      "opaqueResources": 65,
+      "bytes": 64166,
+      "domNodes": 1422
+    }
+  ],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 527.319792,
+      "rssMb": 192.359375,
+      "processes": 4,
+      "cpuSec": 0.33,
+      "breakdown": [
+        {
+          "pid": 49047,
+          "rssMb": 113.3,
+          "cpuSec": 0.21,
+          "name": "lethe"
+        },
+        {
+          "pid": 49048,
+          "rssMb": 15.1,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 49049,
+          "rssMb": 32.8,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 49050,
+          "rssMb": 31.2,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ]
+}

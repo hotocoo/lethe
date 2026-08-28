@@ -241,6 +241,7 @@
     }
 
     if ([cmd isEqualToString:@"load"]) {
+        if (current_.webView.loading) [current_.webView stopLoading];
         [current_ loadAddress:arg];
         [self later:50];
     } else if ([cmd isEqualToString:@"type-address"]) {
@@ -259,6 +260,11 @@
     } else if ([cmd isEqualToString:@"sleep"]) {
         [self later:MAX(0, arg.doubleValue)];
     } else if ([cmd isEqualToString:@"newtab"]) {
+        // Stop any in-flight navigation on the current tab first. Pages
+        // that stream many subresources (news, social) keep the WebView's
+        // run loop busy with timers / resource loads long after loadEvent
+        // has fired; without stopLoading a new tab can stall the harness.
+        if (current_.webView.loading) [current_.webView stopLoading];
         BrowserWindowController* c =
             [app_ openTabWithURL:arg.length ? arg : nil fromWindow:current_.window webView:nil];
         current_ = c;
@@ -375,6 +381,9 @@
         }];
     } else if ([cmd isEqualToString:@"quit"]) {
         [self finishWithMessage:"quit"];
+    } else if ([cmd isEqualToString:@"stress"]) {
+        [current_ renderStressPage];
+        [self later:200];
     } else {
         [self fail:[NSString stringWithFormat:@"unknown command '%@'", cmd]];
     }

@@ -51,7 +51,72 @@ const MOTIONMARK_URL = 'https://browserbench.org/MotionMark1.3.2/';
 const MOTIONMARK_TIMEOUT = 15 * 60 * 1000;
 // Blender's Big Buck Bunny (public, stable id), played muted for 20 s.
 const YOUTUBE_URL = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';
+const YOUTUBE_4K_URL = 'https://www.youtube.com/watch?v=Ba5_jnu_6Jo';  // "Costa Rica in 4K" public 4K HDR sample (60fps, no sign-in)
 const YOUTUBE_PLAY_MS = 20000;
+const YOUTUBE_4K_PLAY_MS = 30000;   // longer so the player actually reaches 4K
+// Stress test: 100,000 DOM nodes + rotating WebGL quad + 20ms JS work per
+// frame, all on a same-origin file:// page so the WebView treats it as
+// first-party. The page self-reports fps and frame count; the harness
+// reads the stats overlay at the end. The page is written to a temp
+// file once per run so a fresh copy is used for each measurement.
+function writeStressPage() {
+  const path = join(mkdtempSync(join(tmpdir(), 'lethe-stress-')), 'stress.html');
+  writeFileSync(path, `<!doctype html><meta charset="utf-8">
+<title>Lethe stress</title>
+<style>body{margin:0;background:#000;color:#fff;font:14px monospace}</style>
+<canvas id="gl" width="1280" height="720"></canvas>
+<div id="nodes"></div>
+<div id="stats" style="position:fixed;top:8px;right:8px;background:rgba(0,0,0,0.6);padding:6px 10px;border-radius:6px"></div>
+<script>
+// 100k DOM nodes (one row per 50 nodes)
+const nd = document.getElementById('nodes');
+for (let i = 0; i < 2000; i++) {
+  const row = document.createElement('div');
+  let inner = '';
+  for (let j = 0; j < 50; j++) inner += '<span>' + (i*50+j) + '</span> ';
+  row.innerHTML = inner;
+  nd.appendChild(row);
+}
+// WebGL: rotating quad
+const gl = document.getElementById('gl').getContext('webgl');
+let prog;
+if (gl) {
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vs, 'attribute vec2 p;uniform float t;varying float v;void main(){v=t;gl_Position=vec2(p.x*cos(t)-p.y*sin(t),p.x*sin(t)+p.y*cos(t))*0.6,0,1);}');
+  gl.compileShader(vs);
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(fs, 'precision mediump float;varying float v;void main(){gl_FragColor=vec4(0.5+0.5*sin(v),0.3+0.5*cos(v*0.7),0.6+0.4*sin(v*1.3),1);}');
+  gl.compileShader(fs);
+  prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5,-0.5,0.5,-0.5,-0.5,0.5,0.5,-0.5,0.5,0.5,-0.5,0.5]), gl.STATIC_DRAW);
+}
+let frames = 0, t0 = performance.now(), lastJ = 0;
+function tick(t) {
+  frames++;
+  if (gl) {
+    gl.viewport(0, 0, 1280, 720); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(prog);
+    const loc = gl.getUniformLocation(prog, 't'); gl.uniform1f(loc, t / 1000);
+    const pl = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(pl);
+    gl.vertexAttribPointer(pl, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+  let x = 0; for (let i = 0; i < 1e6; i++) x += Math.sqrt(i) * Math.sin(i * 0.001);
+  lastJ = x;
+  if (frames % 30 === 0) {
+    const e = performance.now() - t0;
+    document.getElementById('stats').textContent =
+      'fps=' + (frames * 1000 / e).toFixed(1) + ' frames=' + frames + ' dom=100k j=' + lastJ.toFixed(2);
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+`);
+  return path;
+}
+const STRESS_DURATION_MS = 60000;
 
 // Identical in every browser: navigation timing + paint + resource bytes.
 const METRICS_JS = `(function(){
@@ -112,6 +177,42 @@ function buildSteps() {
     steps.push({ op: 'mark', name: 'youtube:end' });
     steps.push({ op: 'sleep', ms: 1500 });   // keep the process alive while the harness samples
     steps.push({ op: 'eval', js: YOUTUBE_STATS_JS, key: 'youtube:stats' });
+  }
+  if (SUITES.includes('youtube4k')) {
+    // 4K HDR YouTube torture. The player is asked for the highest available
+    // rendition; on a 4K-capable machine WebKit negotiates 3840x2160 @ 60fps.
+    // The bench reports decoded vs dropped frames at the end.
+    steps.push({ op: 'newtab', url: YOUTUBE_4K_URL, timeout: 60000 });
+    steps.push({ op: 'waitJs', js: YOUTUBE_START_JS, timeout: 30000 });
+    steps.push({ op: 'waitJs', js: YOUTUBE_PLAYING_JS, timeout: 30000 });
+    steps.push({ op: 'mark', name: 'youtube4k:start' });
+    steps.push({ op: 'sleep', ms: YOUTUBE_4K_PLAY_MS });
+    steps.push({ op: 'mark', name: 'youtube4k:end' });
+    steps.push({ op: 'sleep', ms: 1500 });
+    steps.push({ op: 'eval', js: YOUTUBE_STATS_JS, key: 'youtube4k:stats' });
+  }
+  if (SUITES.includes('stress')) {
+    // In-page torture: 100k DOM nodes, rotating WebGL quad, 20ms JS work
+    // per frame. On Lethe, the e2e "stress" command renders the page
+    // directly via the internal page handler (no policy gate, no
+    // network). On Chrome, the bench serves a same-origin file://
+    // page so the same JS runs. The page self-reports its FPS; the
+    // bench reads the stats overlay at the end.
+    if (BROWSER.startsWith('lethe')) {
+      steps.push({ op: 'newtab', url: 'about:blank', timeout: 5000 });
+      steps.push({ op: 'stress' });
+    } else {
+      const stressPath = writeStressPage();
+      const stressUrl = 'file://' + stressPath;
+      steps.push({ op: 'newtab', url: stressUrl, timeout: 30000 });
+    }
+    steps.push({ op: 'sleep', ms: 5000 });   // warm up
+    steps.push({ op: 'mark', name: 'stress:start' });
+    steps.push({ op: 'sleep', ms: STRESS_DURATION_MS });
+    steps.push({ op: 'mark', name: 'stress:end' });
+    steps.push({ op: 'sleep', ms: 1000 });
+    steps.push({ op: 'eval', js: 'document.getElementById("stats").textContent',
+                 key: 'stress:stats' });
   }
   if (SUITES.includes('speedometer')) {
     steps.push({ op: 'newtab', url: SPEEDOMETER_URL, timeout: NAV_TIMEOUT });
@@ -187,6 +288,7 @@ async function runLethe(steps, { noProxy, binOverride }) {
       case 'sleep': script.push(`sleep ${s.ms}`); break;
       case 'eval': script.push(`print-js ${s.js.replace(/\s*\n\s*/g, ' ')}`); break;
       case 'waitJs': script.push(`wait-js ${s.timeout} ${s.js.replace(/\s*\n\s*/g, ' ')}`); break;
+      case 'stress': script.push('stress'); break;
       case 'quit': script.push('quit'); break;
     }
   }
@@ -382,6 +484,8 @@ async function main() {
       jetstream: ev.results.find(r => r.key === 'jetstream:score')?.value ?? null,
       motionmark: ev.results.find(r => r.key === 'motionmark:score')?.value ?? null,
       youtube: (() => { const r = ev.results.find(r => r.key === 'youtube:stats'); if (!r) return null; try { return JSON.parse(r.value); } catch { return { error: r.value }; } })(),
+      youtube4k: (() => { const r = ev.results.find(r => r.key === 'youtube4k:stats'); if (!r) return null; try { return JSON.parse(r.value); } catch { return { error: r.value }; } })(),
+      stress: (() => { const r = ev.results.find(r => r.key === 'stress:stats'); if (!r) return null; return r.value; })(),
       memory: ev.marks,
     };
     if (ev.failure) doc.log = ev.log.slice(-40);
@@ -393,6 +497,8 @@ async function main() {
       `  cpu=${mem ? mem.cpuSec + 's' : 'n/a'}  timeouts=${doc.timeouts}  speedometer=${doc.speedometer ?? 'n/a'}` +
       `  jetstream=${doc.jetstream ?? 'n/a'}  motionmark=${doc.motionmark ?? 'n/a'}` +
       `  youtube=${doc.youtube ? (doc.youtube.droppedFrames + '/' + doc.youtube.totalFrames + ' dropped @' + doc.youtube.height + 'p') : 'n/a'}` +
+      `  youtube4k=${doc.youtube4k ? (doc.youtube4k.droppedFrames + '/' + doc.youtube4k.totalFrames + ' dropped @' + doc.youtube4k.height + 'p') : 'n/a'}` +
+      `  stress=${doc.stress ? doc.stress.replace(/\s+/g, ' ') : 'n/a'}` +
       `  exit=${doc.exitCode}${doc.failure ? '  FAIL: ' + doc.failure : ''}`);
     console.log(`[bench]   -> ${file}`);
   }
