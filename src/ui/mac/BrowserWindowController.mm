@@ -43,7 +43,14 @@ static const CGFloat kChromeHeight = 44.0;
     NSView* findBar_;
     NSTextField* findField_;
     NSTextField* findStatus_;
-    NSLayoutConstraint* findBarHeight_;
+    // Unique per-BWC names for the "bookmarks" and "perms" script message
+    // handlers. The shared userContentController can only have one object
+    // registered per name; suffixing with a counter lets every BWC register
+    // its own handler. The injected JS reads the right name from
+    // window.__letheHandlerNames injected at doc-start (see webView:
+    // didStartProvisionalNavigation). The names are also stored so the
+    // dealloc can remove them.
+    NSArray* messageHandlerNames_;    NSLayoutConstraint* findBarHeight_;
     NSMutableArray<WKDownload*>* downloads_;
     BOOL observing_;
     BOOL addressEditing_;
@@ -138,8 +145,21 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
             // fixed low-entropy profile.
             webView_.customUserAgent = @(lethe::stealthUserAgentString());
         }
-        [webView_.configuration.userContentController addScriptMessageHandler:self name:@"bookmarks"];
-        [webView_.configuration.userContentController addScriptMessageHandler:self name:@"perms"];
+        // The userContentController is shared across all BWCs so that the
+        // tracker rules compile once. The trade-off is that
+        // addScriptMessageHandler: requires a unique name PER HANDLER
+        // OBJECT - WebKit throws if a different object tries to register
+        // a name that is already taken. Solution: give this BWC a unique
+        // name by suffixing a per-instance counter. The JS calls
+        // webkit.messageHandlers["bookmarks-<suffix>"] via the global
+        // window.__letheHandlerNames() we inject at doc-start.
+        static NSUInteger s_handlerCounter = 0;
+        const NSUInteger n = ++s_handlerCounter;
+        NSString* bmName = [NSString stringWithFormat:@"bookmarks-%lu", (unsigned long)n];
+        NSString* pmName = [NSString stringWithFormat:@"perms-%lu", (unsigned long)n];
+        messageHandlerNames_ = @[bmName, pmName];
+        [webView_.configuration.userContentController addScriptMessageHandler:self name:bmName];
+        [webView_.configuration.userContentController addScriptMessageHandler:self name:pmName];
         [self buildChrome];
         [self startObserving];
     }
@@ -440,7 +460,7 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     }
     NSString* body = all.count ? [NSString stringWithFormat:@"<ul>%@</ul>", rows]
                                 : @"<p class=\"empty\">No bookmarks yet. Press Cmd+D to bookmark the current page.</p>";
-    NSString* html = [NSString stringWithFormat:@"\n        <!doctype html><meta charset=\"utf-8\">\n        <title>Bookmarks</title>\n        <style>\n          body{font:14px -apple-system,system-ui,sans-serif;margin:32px;max-width:780px;color:#222;background:#fafafa}\n          h1{margin:0 0 8px;font-size:22px;font-weight:600}\n          p.sub{color:#666;margin:0 0 24px}\n          ul{list-style:none;padding:0;margin:0}\n          li{padding:14px 16px;margin:6px 0;background:#fff;border:1px solid #e5e5e5;border-radius:8px}\n          li a{color:#0a66c2;text-decoration:none;font-weight:500;font-size:15px}\n          li a:hover{text-decoration:underline}\n          .u{color:#666;font-size:12px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}\n          .rm{float:right;background:none;border:1px solid #ccc;border-radius:6px;padding:4px 10px;\n              color:#c0392b;cursor:pointer;font-size:12px}\n          .rm:hover{background:#fee}\n          .empty{color:#666;font-style:italic}\n        </style>\n        <h1>Bookmarks</h1>\n        <p class=\"sub\">%lu saved. Cmd+D toggles the bookmark on the current page.</p>\n        %@\n        <script>\n        document.addEventListener('click', function(e){\n          if (e.target.classList.contains('rm')) {\n            const u = e.target.getAttribute('data-url');\n            window.webkit.messageHandlers.bookmarks.postMessage({op:\"remove\", url:u});\n          }\n        });\n        </script>\n      ", (unsigned long)all.count, body];
+    NSString* html = [NSString stringWithFormat:@"\n        <!doctype html><meta charset=\"utf-8\">\n        <title>Bookmarks</title>\n        <style>\n          body{font:14px -apple-system,system-ui,sans-serif;margin:32px;max-width:780px;color:#222;background:#fafafa}\n          h1{margin:0 0 8px;font-size:22px;font-weight:600}\n          p.sub{color:#666;margin:0 0 24px}\n          ul{list-style:none;padding:0;margin:0}\n          li{padding:14px 16px;margin:6px 0;background:#fff;border:1px solid #e5e5e5;border-radius:8px}\n          li a{color:#0a66c2;text-decoration:none;font-weight:500;font-size:15px}\n          li a:hover{text-decoration:underline}\n          .u{color:#666;font-size:12px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}\n          .rm{float:right;background:none;border:1px solid #ccc;border-radius:6px;padding:4px 10px;\n              color:#c0392b;cursor:pointer;font-size:12px}\n          .rm:hover{background:#fee}\n          .empty{color:#666;font-style:italic}\n        </style>\n        <h1>Bookmarks</h1>\n        <p class=\"sub\">%lu saved. Cmd+D toggles the bookmark on the current page.</p>\n        %@\n        <script>\n        document.addEventListener('click', function(e){\n          if (e.target.classList.contains('rm')) {\n            const u = e.target.getAttribute('data-url');\n            (window.webkit.messageHandlers[%@] || {postMessage:function(){}}).postMessage({op:\"remove\", url:u});\n          }\n        });\n        </script>\n      ", (unsigned long)all.count, body, messageHandlerNames_.firstObject ?: @"bookmarks"];
     internalPageUrl_ = @"lethe://bookmarks";
     [webView_ loadHTMLString:html baseURL:nil];
     [self updateTitle];
@@ -517,8 +537,8 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
         @"<h1>Site Permissions</h1><p>Allow or block camera, microphone, and location per site. The browser prompts the first time; tick 'Remember' to persist.</p>%@"
         @"<script>document.addEventListener('click',function(e){"
         @"if(e.target.classList.contains('rm')){var u=e.target.getAttribute('data-host'),t=e.target.getAttribute('data-type');"
-        @"window.webkit.messageHandlers.perms.postMessage({op:'clear',host:u,type:t});}"
-        @"});</script>", body];
+        @"(window.webkit.messageHandlers[%@]||{postMessage:function(){}}).postMessage({op:'clear',host:u,type:t});}"
+        @"});</script>", body, messageHandlerNames_.lastObject ?: @"perms"];
     internalPageUrl_ = @"lethe://permissions";
     [webView_ loadHTMLString:html baseURL:nil];
     [self updateTitle];
@@ -1261,6 +1281,13 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
 
 - (void)dealloc {
     [self stopObserving];
+    // Drop the per-BWC script message handlers from the shared controller
+    // so the names can be reused by another tab.
+    if (webView_ && messageHandlerNames_.count == 2) {
+        WKUserContentController* uc = webView_.configuration.userContentController;
+        [uc removeScriptMessageHandlerForName:messageHandlerNames_[0]];
+        [uc removeScriptMessageHandlerForName:messageHandlerNames_[1]];
+    }
 }
 
 
@@ -1268,7 +1295,8 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
  didReceiveScriptMessage:(WKScriptMessage *)msg {
     NSDictionary* body = [msg.body isKindOfClass:[NSDictionary class]] ? msg.body : nil;
     NSString* op = body[@"op"];
-    if ([msg.name isEqualToString:@"bookmarks"]) {
+    if ([msg.name isEqualToString:messageHandlerNames_.firstObject]) {
+        // bookmarks handler
         NSString* url = body[@"url"];
         if ([op isEqualToString:@"remove"] && url.length) {
             [[LetheBookmarks shared] removeURL:url];
@@ -1276,7 +1304,8 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
                 [self renderBookmarksPage];
             }
         }
-    } else if ([msg.name isEqualToString:@"perms"]) {
+    } else if ([msg.name isEqualToString:messageHandlerNames_.lastObject]) {
+        // perms handler
         NSString* host = body[@"host"];
         NSString* type = body[@"type"];
         if ([op isEqualToString:@"clear"] && host.length && type.length) {

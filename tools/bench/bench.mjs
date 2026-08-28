@@ -40,6 +40,7 @@ const OUT = resolve(args.out || join(HERE, 'results'));
 const SITES = readFileSync(resolve(args.sites || join(HERE, 'sites.txt')), 'utf8')
   .split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
 const LETHE_BIN = args.lethe || join(REPO, 'build', 'lethe.app', 'Contents', 'MacOS', 'lethe');
+const LETHE_CEF_BIN = args['lethe-cef'] || join(REPO, 'build-cef', 'lethe-cef.app', 'Contents', 'MacOS', 'lethe-cef');
 const CHROME_BIN = args.chrome || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const NAV_TIMEOUT = Number(args['nav-timeout'] || 45000);
 const SPEEDOMETER_URL = 'https://browserbench.org/Speedometer3.1/?startAutomatically=true';
@@ -174,8 +175,9 @@ function sampleRss(filter) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ------------------------------------------------------------- Lethe
-async function runLethe(steps, { noProxy }) {
-  if (!existsSync(LETHE_BIN)) throw new Error(`lethe binary missing: ${LETHE_BIN}`);
+async function runLethe(steps, { noProxy, binOverride }) {
+  const bin = binOverride || LETHE_BIN;
+  if (!existsSync(bin)) throw new Error(`lethe binary missing: ${bin}`);
   const script = [];
   for (const s of steps) {
     switch (s.op) {
@@ -194,7 +196,6 @@ async function runLethe(steps, { noProxy }) {
 
   const before = new Set(psAll().map(r => r.pid));
   const t0 = performance.now();
-  const bin = LETHE_BIN;
   const argv = ['--e2e-script', scriptPath, ...EXTRA_ARGS];
   if (noProxy) argv.push('--no-proxy');
   // Chrome activates itself on launch and so runs every suite as the
@@ -348,6 +349,7 @@ async function runChrome(steps) {
 // --------------------------------------------------------------- main
 function versionOf(browser) {
   try {
+    if (browser === 'lethe-cef') return execFileSync(LETHE_CEF_BIN, ['--version'], { encoding: 'utf8' }).trim();
     if (browser.startsWith('lethe')) return execFileSync(LETHE_BIN, ['--version'], { encoding: 'utf8' }).trim();
     return execFileSync(CHROME_BIN, ['--version'], { encoding: 'utf8' }).trim();
   } catch { return 'unknown'; }
@@ -370,6 +372,7 @@ async function main() {
     const started = new Date();
     console.log(`[bench] run ${run}/${RUNS} ...`);
     const ev = BROWSER === 'chrome' ? await runChrome(steps)
+             : BROWSER === 'lethe-cef' ? await runLethe(steps, { noProxy: false, binOverride: LETHE_CEF_BIN })
              : await runLethe(steps, { noProxy: BROWSER === 'lethe-noproxy' });
     const doc = {
       browser: BROWSER, label: LABEL, env: EXTRA_ENV, browserArgs: EXTRA_ARGS, version, run, startedAt: started.toISOString(), host: hostInfo(),
