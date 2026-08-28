@@ -33,6 +33,7 @@ class LetheCefAutomation {
     LetheCefAutomation() = default;
     void Next();
     void RunLine(const std::string& line);
+    void LoadWhenReady(const std::string& url, int attempt);
     void EvalAndPrint(const std::string& code);
     void EvalAndPrintPoll(const std::string& id,
                           std::chrono::steady_clock::time_point deadline);

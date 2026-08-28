@@ -15,6 +15,39 @@
 
 #include "network/policy_proxy.h"
 
+CefBrowserClient::ReturnValue CefBrowserClient::OnBeforeResourceLoad(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request,
+    CefRefPtr<CefCallback> callback) {
+    (void)browser; (void)frame; (void)callback;
+    if (!ctx_ || ctx_->proxyPort <= 0 || ctx_->proxyAuthToken.empty()) {
+        return RV_CONTINUE;
+    }
+    if (proxy_auth_header_.empty()) {
+        proxy_auth_header_ = lethe::PolicyProxyServer::basicCredentialFor(
+            ctx_->proxyAuthToken);
+    }
+    // Pre-emptive proxy auth: Chromium uses a request-level
+    // Proxy-Authorization header directly on the CONNECT tunnel, so the
+    // policy proxy authenticates on first contact. GetAuthCredentials
+    // stays as the fallback for the 407 dance. The header terminates at
+    // the proxy: tunnels end there and plain HTTP is re-fetched
+    // internally, so the token never leaves loopback.
+    request->SetHeaderByName("Proxy-Authorization", proxy_auth_header_, true);
+    return RV_CONTINUE;
+}
+
+void CefBrowserClient::AppBrowserProcessHandler::OnContextInitialized() {
+    std::cout << "[lethe-cef] OnContextInitialized (browser process)" << std::endl;
+    std::cout.flush();
+}
+
+void CefBrowserClient::AppBrowserProcessHandler::OnBeforeChildProcessLaunch(
+    CefRefPtr<CefCommandLine> command_line) {
+    (void)command_line;
+}
+
 void CefBrowserClient::App::OnBeforeCommandLineProcessing(
     const CefString& process_type,
     CefRefPtr<CefCommandLine> command_line) {
@@ -38,12 +71,21 @@ void CefBrowserClient::App::OnBeforeCommandLineProcessing(
         // browser subprocess's resolver would defeat that gate.
         command_line->AppendSwitch("host-resolver-rules");
     }
+    // Delegate every login / proxy-auth challenge to the embedder's
+    // CefRequestHandler::GetAuthCredentials. Without this CEF falls back to
+    // Chrome's own login-prompt UI, which does not exist in an embedded
+    // app: the 407 challenge from the policy proxy then hangs forever and
+    // every https navigation dies as ERR_INVALID_AUTH_CREDENTIALS.
+    command_line->AppendSwitch("disable-chrome-login-prompt");
     // Privacy: turn off everything Chromium does in the background that
     // would phone home. These are all default-off in --no-first-run, but
     // we set them explicitly so a config drift in upstream CEF cannot
-    // silently re-enable them.
+    // silently re-enable them. NOTE: disable-component-update must stay
+    // OFF this list - the network service's builtin cert verifier waits
+    // for the Chrome root-store data that pipeline delivers, and with the
+    // updater disabled every TLS handshake times out (ERR_TIMED_OUT after
+    // a fully established tunnel).
     command_line->AppendSwitch("disable-background-networking");
-    command_line->AppendSwitch("disable-component-update");
     command_line->AppendSwitch("disable-default-apps");
     command_line->AppendSwitch("disable-domain-reliability");
     command_line->AppendSwitch("disable-sync");
@@ -96,6 +138,24 @@ bool CefBrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     // the UI consistent with the WebKit shell's "Blocked by Lethe policy".
     (void)browser; (void)request;
     return false;
+}
+
+bool CefBrowserClient::GetAuthCredentials(CefRefPtr<CefBrowser> browser,
+                                          const CefString& origin_url,
+                                          bool isProxy,
+                                          const CefString& host,
+                                          int port,
+                                          const CefString& realm,
+                                          const CefString& scheme,
+                                          CefRefPtr<CefAuthCallback> callback) {
+    (void)browser; (void)origin_url; (void)realm; (void)scheme;
+    if (!ctx_ || !isProxy) return false;
+    // Only ever answer the loopback policy proxy we started ourselves -
+    // never volunteer the per-launch token to any other host.
+    if (host.ToString() != "127.0.0.1" || port != ctx_->proxyPort) return false;
+    if (ctx_->proxyAuthToken.empty()) return false;
+    callback->Continue("lethe", ctx_->proxyAuthToken);
+    return true;
 }
 
 void CefBrowserClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
@@ -155,6 +215,7 @@ void CefBrowserClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
     (void)browser;
     if (frame && frame->IsMain()) {
         main_loading_ = false;
+        first_load_done_ = true;
         std::cout << "[e2e] nav-end " << frame->GetURL().ToString()
                   << " status=" << httpStatusCode << std::endl;
         std::cout.flush();

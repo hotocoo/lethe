@@ -284,8 +284,15 @@ void PolicyProxyServer::serveConnection(int clientFd) {
 
         // Authenticate FIRST: an unauthenticated peer gets no policy work,
         // no DoH traffic and no upstream socket - nothing it can measure.
+        // Chromium strips Proxy-Authorization out of CONNECT tunnel requests
+        // (it belongs to the auth system), so the CEF shell also stamps the
+        // same per-launch credential into X-Lethe-Proxy-Auth, which survives
+        // the tunnel. Either header authenticates; both terminate here and
+        // are never forwarded upstream.
         if (opts_.authToken.empty()) break;
-        const std::string presented = headerValue(head, "Proxy-Authorization");
+        std::string presented = headerValue(head, "Proxy-Authorization");
+        if (presented.empty())
+            presented = headerValue(head, "X-Lethe-Proxy-Auth");
         const std::string expected = basicCredentialFor(opts_.authToken);
         bool ok = presented.size() == expected.size();
         // Constant-time compare: a local attacker could otherwise time the

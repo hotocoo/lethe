@@ -1,0 +1,97 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 151.0.7922.175",
+  "run": 2,
+  "startedAt": "2026-08-28T12:03:37.009Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 386.0895409999998,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 386.0928749999998,
+      "rssMb": 998,
+      "processes": 8,
+      "cpuSec": 0.83,
+      "breakdown": [
+        {
+          "pid": 46438,
+          "rssMb": 209,
+          "cpuSec": 0.45,
+          "name": "Google"
+        },
+        {
+          "pid": 46444,
+          "rssMb": 133,
+          "cpuSec": 0.11,
+          "name": "Google"
+        },
+        {
+          "pid": 46445,
+          "rssMb": 93.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 46446,
+          "rssMb": 78.9,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 46448,
+          "rssMb": 147,
+          "cpuSec": 0.07,
+          "name": "Google"
+        },
+        {
+          "pid": 46450,
+          "rssMb": 118.7,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 46451,
+          "rssMb": 99,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 46452,
+          "rssMb": 118.8,
+          "cpuSec": 0.04,
+          "name": "Google"
+        }
+      ]
+    }
+  ]
+}

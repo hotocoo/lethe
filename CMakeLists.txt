@@ -339,6 +339,17 @@ if(BUILD_UI AND APPLE)
         # process finds it at @executable_path/../Frameworks/...) AND the
         # Helper.app's adjacent Frameworks/ (so the helper binary finds it
         # at @executable_path/../../Frameworks/...).
+        #
+        # CEF 151 / Chromium 151 on macOS launches SOME child types from
+        # Chrome-style per-type helper bundles derived from the subprocess
+        # executable's basename, not from CefSettings.browser_subprocess_path:
+        #   <basename> (Renderer).app / (GPU) / (Plugin) / (Alerts)
+        # The renderer is the critical one - without its bundle the exec
+        # fails silently and every navigation aborts with ERR_ABORTED (-3).
+        # Each per-type bundle gets a clone of the helper binary (APFS
+        # clonefile, so it costs no extra disk) and a relative symlink to
+        # the shared CEF framework one level up.
+        set(LETHE_CEF_HELPER_SUFFIXES "Renderer" "GPU" "Plugin" "Alerts")
         add_custom_command(TARGET lethe-cef POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory
                 "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks"
@@ -361,6 +372,67 @@ if(BUILD_UI AND APPLE)
             COMMAND ${CMAKE_COMMAND} -E echo
                 "Bundled CEF framework + Helper into $<TARGET_BUNDLE_DIR:lethe-cef>"
             VERBATIM)
+
+        # Per-type helper bundles (see comment above). Chromium derives the
+        # per-type path by inserting the " (Type)" suffix into the subprocess
+        # path; depending on the build that suffix lands on the BUNDLE stem,
+        # the EXECUTABLE name, or both. Cover every spelling: one real bundle
+        # per suffix carries both executable names, and the bundle-name
+        # spelling is a symlink onto it so both lookups resolve.
+        set(LETHE_CEF_HELPER_BUNDLES "")
+        foreach(_suffix IN LISTS LETHE_CEF_HELPER_SUFFIXES)
+            string(TOLOWER "${_suffix}" _suffix_lc)
+            set(_exec "lethe_cef_helper (${_suffix})")
+            set(_exec2 "Lethe CEF Helper (${_suffix})")
+            set(_bundleName "${_exec}.app")
+            set(_bundleName2 "${_exec2}.app")
+            set(_plist "${CMAKE_CURRENT_BINARY_DIR}/Info_helper_${_suffix_lc}.plist")
+            set(_bundlePath "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/${_bundleName}")
+            set(_bundlePath2 "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/${_bundleName2}")
+            list(APPEND LETHE_CEF_HELPER_BUNDLES "${_bundleName}" "${_bundleName2}")
+            set(HELPER_EXEC "${_exec}")
+            set(HELPER_ID "org.aletheia.lethe.cef.helper.${_suffix_lc}")
+            set(HELPER_NAME "${_exec}")
+            configure_file(
+                "${CMAKE_SOURCE_DIR}/browser/app/Info_helper_type.plist.in"
+                "${_plist}" @ONLY)
+            add_custom_command(TARGET lethe-cef POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${_bundlePath}/Contents/MacOS"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${_bundlePath}/Contents/Frameworks"
+                COMMAND /bin/cp -c
+                    "$<TARGET_FILE:lethe-cef-helper>"
+                    "${_bundlePath}/Contents/MacOS/${_exec}"
+                COMMAND /bin/cp -c
+                    "$<TARGET_FILE:lethe-cef-helper>"
+                    "${_bundlePath}/Contents/MacOS/${_exec2}"
+                COMMAND ${CMAKE_COMMAND} -E copy
+                    "${_plist}"
+                    "${_bundlePath}/Contents/Info.plist"
+                COMMAND ${CMAKE_COMMAND} -E create_symlink
+                    "../../../Chromium Embedded Framework.framework"
+                    "${_bundlePath}/Contents/Frameworks/Chromium Embedded Framework.framework"
+                COMMAND ${CMAKE_COMMAND} -E create_symlink
+                    "${_bundleName}"
+                    "${_bundlePath2}"
+                VERBATIM)
+        endforeach()
+        list(JOIN LETHE_CEF_HELPER_BUNDLES "," LETHE_CEF_HELPER_BUNDLES_CSV)
+        message(STATUS "[lethe-cef] per-type helper bundles: ${LETHE_CEF_HELPER_BUNDLES_CSV}")
+
+        # Ad-hoc sign the whole app (framework + helper bundles). Chromium's
+        # macOS child-process launch constraints require the parent and its
+        # helpers to share a signing authority; ad-hoc satisfies this for
+        # local development builds. The release packaging script does the
+        # same for the distributed DMG.
+        find_program(LETHE_CODESIGN codesign)
+        if(LETHE_CODESIGN)
+            add_custom_command(TARGET lethe-cef POST_BUILD
+                COMMAND ${LETHE_CODESIGN} --force --deep --sign -
+                    "$<TARGET_BUNDLE_DIR:lethe-cef>"
+                VERBATIM)
+        endif()
         install(TARGETS lethe-cef BUNDLE DESTINATION .)
     endif()
 elseif(BUILD_UI)

@@ -13,65 +13,96 @@ engine family as Chrome).
   `lethe.app`. The CEF framework and Helper are bundled into the .app.
 - **CefInitialize succeeds.** The browser process boots, the policy
   proxy starts, the browser window is created, and the message loop
-  runs. (Previously this aborted in `chrome_main_delegate.cc` /
-  `path_service.cc`.)
-- **Shared bootstrap.** `ShellBootstrap` is shared: same engine
-  init, same policy proxy, same DoH pool, same per-launch auth token.
-  The CEF net stack is pointed at the local policy proxy via
-  `OnBeforeCommandLineProcessing` (proxy-server + proxy-auth).
-- **Sandbox fix.** The shared macOS Seatbelt profile now honors
-  `LETHE_SANDBOX_EXTRA_WRITE_DIRS` (colon-separated). The CEF shell
-  sets it to its user-data dir so Chromium can write its
-  SingletonLock and per-profile caches. Without this, the Seatbelt
-  profile denied the SingletonLock write and CefInitialize aborted.
-- **Render handler in the Helper.** The CEF Helper binary now links
-  `cef_render_handler.mm` and registers a
-  `LetheCefRenderHandler` via `GetRenderProcessHandler`, so the
-  renderer can answer the browser's `lethe:eval` process messages
-  (the e2e / bench eval path).
+  runs.
+- **RENDERER LAUNCHES (round-3 fix).** The blocker from rounds 1-2 is
+  fixed. CEF 151 / Chromium 151 on macOS launches SOME child types from
+  Chrome-style per-type helper bundles derived from the subprocess
+  executable basename (`lethe_cef_helper (Renderer).app` etc.) and NOT
+  from `CefSettings.browser_subprocess_path`. GPU and utility children
+  used the generic path, which is why only the renderer was missing:
+  its bundle never existed, the exec failed silently, and every
+  navigation aborted with ERR_ABORTED. The CMake post-build step now
+  creates `(Renderer)`, `(GPU)`, `(Plugin)` and `(Alerts)` bundles (APFS
+  clones of the helper binary + a per-type Info.plist + a symlink to
+  the shared framework) and ad-hoc signs the whole app.
+- **Shared bootstrap.** Same engine init, same policy proxy, same DoH
+  pool, same per-launch auth token. The CEF net stack is pointed at the
+  local policy proxy via `OnBeforeCommandLineProcessing` (proxy-server).
+- **Eval round-trip.** The renderer answers the browser's `lethe:eval`
+  process messages (CefV8Context eval + reply), so the e2e / bench
+  driver works against lethe-cef.
+- **Proxy auth plumbing.** `GetAuthCredentials` answers the policy
+  proxy's 407 with the per-launch token (only ever to 127.0.0.1 on our
+  own port), `disable-chrome-login-prompt` routes login challenges to
+  the embedder instead of Chrome's nonexistent login UI, and
+  `OnBeforeResourceLoad` stamps a pre-emptive Proxy-Authorization on
+  every request (Chromium uses a request-level header directly on the
+  CONNECT tunnel). With the flow engaged, the tunnel reaches
+  `200 Connection Established` and the TLS handshake through it
+  completes with the real server certificates.
+- **Sandbox.** The shared Seatbelt profile honors
+  `LETHE_SANDBOX_EXTRA_WRITE_DIRS` for the CEF user-data dir.
 
-## What is still broken
+## What is still broken (round-3 findings)
 
-- **The renderer subprocess does not launch.** CEF spawns the GPU,
-  network, and storage Helper processes, but never a
-  `--type=renderer` process. Every navigation (even
-  `about:blank` and `data:` URLs) is reported as
-  `ERR_ABORTED (-3)`, and the `lethe:eval` round-trip times out
-  (no renderer to reply). This blocks:
-  - **G2** (`lethe-cef --e2e-script ...` loading example.com)
-  - **H1** (a bench run that includes `lethe-cef` as a third browser)
+Real https page loads are unreliable; about:blank and the in-process
+paths work. Two intermittent failure points, both inside CEF/Chromium
+plumbing rather than Lethe's stack:
 
-### Round 2 investigation findings
+1. **CEF frame handshake is flaky.** CEF's renderer normally answers
+   the browser's "new browser info" request per frame; in this build
+   the reply intermittently never arrives (`Timeout of new browser
+   info response for frame ... (has_rfh=1)`). While a frame has no
+   browser info, `CefFrame::LoadURL` is silently dropped and the proxy
+   auth challenge is not routed to `GetAuthCredentials` (no frame to
+   route through), so the CONNECT is 407'd in a loop and the
+   navigation hangs or dies with ERR_INVALID_AUTH_CREDENTIALS. In runs
+   where the handshake completes, the same navigation gets through the
+   tunnel with the pre-emptive credentials.
+2. **Cert verify can hang under the inherited Seatbelt.** With the
+   tunnel established, the network service's cert-verifier job
+   sometimes waits with no network activity until the 30 s connect-job
+   timeout (net_error -7). Removing `disable-component-update` (the
+   builtin verifier waits for Chrome root-store data that pipeline
+   delivers) did not fully eliminate it. Suspected: the browser
+   process's Seatbelt profile is inherited by every helper and
+   something in the macOS trustd / root-store path needs a write or
+   XPC the profile gates. Running with `--disable-sandbox` changes the
+   failure mode (fast 407 instead of a hang), which keeps the sandbox
+   in the suspect list.
 
-- **Not a crash.** No renderer crash reports are generated. The
-  renderer process simply never appears in the process list (verified
-  by continuous monitoring over 10 s).
-- **Not a network issue.** `data:text/html` URLs also abort with
-  `ERR_ABORTED`, so it is not the policy proxy or DNS.
-- **Not a missing resource.** The ICU data (`icudtl.dat`) and the
-  CEF framework are present in both the main bundle and the Helper
-  bundle. The GPU / network / storage Helpers launch fine using the
-  same Helper binary and framework.
-- **CEF verbose logging is silent.** `--enable-logging=stderr --v=2`
-  produces no renderer-launch lines, suggesting the browser process
-  is not even attempting to launch a renderer (or the attempt is
-  failing before logging).
-- **Hypothesis.** The navigation is being aborted before the
-  RenderFrameHost requests a renderer. Possible causes to investigate:
-  1. A race in `CreateBrowserSync` where the initial navigation is
-     cancelled before the renderer is attached.
-  2. A CEF/Chromium process-launch configuration issue (e.g., a
-     missing switch or an incorrect subprocess path for the renderer
-     specifically).
-  3. A conflict between Lethe's Seatbelt sandbox and the renderer
-     launch (less likely, since other Helpers launch fine).
+Ruled out (round 3): missing renderer resources (ICU / V8 snapshot /
+paks all present in every bundle), crash of the renderer (no .ips, and
+ps never shows a renderer at all when the bundle is missing), invalid
+bundle identifiers, embedded proxy credentials (Chromium strips
+user:pass from --proxy-server; see net/docs/proxy.md), and
+Proxy-Authorization passed as a custom X- header (Chromium strips
+Proxy-Authorization from CONNECT extra headers; custom X- headers were
+not verified to survive the tunnel either).
 
 ## Next steps (for a later round)
 
-1. Inspect the CEF process-launch path: confirm the browser process
-   is actually calling the renderer launcher and with what args.
-2. Check whether the missing renderer is due to a CEF setting
-   (`no_sandbox`, subprocess path, or a missing switch) versus a
-   Chromium content-layer issue.
-3. Once the renderer launches, re-verify the `lethe:eval` round-trip
-   and run the e2e + bench suites.
+1. Compare against the pristine cefclient binary from the same CEF
+   dist behind the same policy proxy: if cefclient also 407-loops, the
+   frame-handshake flake is upstream and worth a CEF issue; if it
+   loads, diff the app/bootstrap settings against ours.
+2. Instrument the Seatbelt theory for the cert-verify hang: run the
+   sandboxed shell with `sandbox_compile_file`-style deny logging
+   (`LETHE_DEBUG=1` + `log stream --predicate 'sender == "Sandbox"'`)
+   during a hang, and/or temporarily allow `~/Library/Keychains`
+   writes.
+3. Consider bumping CEF (the dist is 151.3.24+chromium-151.0.7922.174);
+   the frame-handshake code moved upstream more than once.
+4. Once real pages load: re-run the e2e suite (G2) and add lethe-cef
+   as a third browser in tools/bench (H1).
+
+## Driver notes
+
+- `CefBrowserProcessHandler` used to be null (never instantiated);
+  `OnBeforeChildProcessLaunch` / `OnContextInitialized` now work.
+- The e2e driver navigates via the renderer
+  (`ExecuteJavaScript location.assign`) because `CefFrame::LoadURL` is
+  dropped while the frame handshake is in flight; the driver waits for
+  the first main-frame commit before the first load.
+- `--single-process` loads pages (useful as a navigation sanity check)
+  but is not a supported shipping mode.

@@ -26,6 +26,8 @@
 
 #include "app/cef_automation.h"
 
+#include "network/policy_proxy.h"
+
 @implementation LetheCefAppDelegate {
     lethe::ShellContext* _ctx;
     CefRefPtr<CefBrowserClient::App> _cefApp;
@@ -73,6 +75,36 @@
             global->AppendSwitch("disable-dev-shm-usage");
         if (!global->HasSwitch("disable-gpu-sandbox"))
             global->AppendSwitch("disable-gpu-sandbox");
+        // Belt and suspenders for the net stack: OnBeforeCommandLineProcessing
+        // also appends proxy-server, but Chromium consumes --proxy-server and
+        // strips it from the command line handed to child processes. The
+        // network service runs as its own utility process in this build, so
+        // re-asserting on the global command line before CefInitialize is the
+        // reliable path (the same path that carries --no-sandbox). Without it
+        // the network service dials targets directly and every navigation
+        // hangs past OnBeforeBrowse with no OnLoadStart and no OnLoadError.
+        if (_ctx && _ctx->proxyPort > 0) {
+            const std::string proxyUrl =
+                "http://127.0.0.1:" + std::to_string(_ctx->proxyPort);
+            if (!global->HasSwitch("proxy-server"))
+                global->AppendSwitchWithValue("proxy-server", proxyUrl);
+            if (!_ctx->proxyAuthToken.empty() && !global->HasSwitch("proxy-auth"))
+                global->AppendSwitchWithValue(
+                    "proxy-auth",
+                    lethe::PolicyProxyServer::basicCredentialFor(
+                        _ctx->proxyAuthToken));
+            // Never bypass the proxy for loopback targets: the policy proxy
+            // itself is loopback, and Chromium's default bypass list would
+            // otherwise let loopback destinations escape the policy gate.
+            if (!global->HasSwitch("proxy-bypass-list"))
+                global->AppendSwitchWithValue("proxy-bypass-list", "<-loopback>");
+        }
+        // Diagnostics: LETHE_CEF_NETLOG=<path> dumps the Chromium net log
+        // (proxy config, socket errors) for offline inspection.
+        if (const char* netlog = getenv("LETHE_CEF_NETLOG")) {
+            if (!global->HasSwitch("log-net-log"))
+                global->AppendSwitchWithValue("log-net-log", netlog);
+        }
     }
     // The CEF sandbox needs a fully-Apple-signed Helper.app that has been
     // blessed by codesign --entitlements. Without that, Chromium's

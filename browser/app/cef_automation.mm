@@ -77,6 +77,32 @@ void LetheCefAutomation::Next() {
     Stop(failures_ ? 1 : 0);
 }
 
+void LetheCefAutomation::LoadWhenReady(const std::string& url, int attempt) {
+    if (!browser_) return;
+    // CefFrame::LoadURL is unreliable in this CEF build: it is silently
+    // dropped whenever the frame's browser-info handshake is still in
+    // flight, and occasionally even after the first commit. Navigation via
+    // the renderer (ExecuteJavaScript location.assign) goes through the
+    // frame loader and always lands, so drive the e2e that way. The
+    // shipping address bar keeps LoadURL + a retry.
+    if (attempt < 50 && delegate_ && delegate_.client &&
+        !delegate_.client->IsFirstLoadDone()) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC),
+                       dispatch_get_main_queue(),
+                       ^{ this->LoadWhenReady(url, attempt + 1); });
+        return;
+    }
+    std::string escaped;
+    escaped.reserve(url.size() * 2);
+    for (char c : url) {
+        if (c == '\\' || c == '\'') escaped.push_back('\\');
+        escaped.push_back(c);
+    }
+    browser_->GetMainFrame()->ExecuteJavaScript(
+        "location.assign('" + escaped + "');", "", 0);
+    ScheduleNext();
+}
+
 void LetheCefAutomation::RunLine(const std::string& line) {
     auto sp = line.find(' ');
     std::string cmd = sp == std::string::npos ? line : line.substr(0, sp);
@@ -84,8 +110,11 @@ void LetheCefAutomation::RunLine(const std::string& line) {
     while (!arg.empty() && arg.front() == ' ') arg.erase(arg.begin());
 
     if (cmd == "load" || cmd == "type-address" || cmd == "type") {
-        if (browser_) browser_->GetMainFrame()->LoadURL(arg);
-        ScheduleNext();
+        if (browser_) {
+            LoadWhenReady(arg, 0);
+        } else {
+            ScheduleNext();
+        }
     } else if (cmd == "wait") {
         double ms = arg.empty() ? 20000.0 : std::atof(arg.c_str());
         WaitForLoad(ms, false);

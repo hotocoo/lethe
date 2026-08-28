@@ -1,0 +1,144 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 151.0.7922.175",
+  "run": 1,
+  "startedAt": "2026-08-28T12:07:45.452Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "pageload"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/"
+  ],
+  "startupMs": 1294.048625,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 934.9000000953674,
+      "dcl": 948.4000000953674,
+      "load": 948.8000000715256,
+      "fcp": 1000,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 618,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": 76.30000007152557,
+      "dcl": 177.80000007152557,
+      "load": 440.39999997615814,
+      "fcp": 468,
+      "resources": 9,
+      "opaqueResources": 0,
+      "bytes": 1296332,
+      "domNodes": 242
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "ttfb": 100.5,
+      "dcl": 191.29999995231628,
+      "load": 260.39999997615814,
+      "fcp": 248,
+      "resources": 36,
+      "opaqueResources": 1,
+      "bytes": 476669,
+      "domNodes": 4171
+    },
+    {
+      "url": "https://github.com/",
+      "ttfb": 105.69999992847443,
+      "dcl": 737.7999999523163,
+      "load": 740.6999999284744,
+      "fcp": 708,
+      "resources": 141,
+      "opaqueResources": 2,
+      "bytes": 3759155,
+      "domNodes": 1782
+    }
+  ],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 1294.053875,
+      "rssMb": 1001.3125,
+      "processes": 9,
+      "cpuSec": 1.02,
+      "breakdown": [
+        {
+          "pid": 48065,
+          "rssMb": 229.2,
+          "cpuSec": 0.58,
+          "name": "Google"
+        },
+        {
+          "pid": 48071,
+          "rssMb": 137.6,
+          "cpuSec": 0.15,
+          "name": "Google"
+        },
+        {
+          "pid": 48072,
+          "rssMb": 93.7,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 48073,
+          "rssMb": 78.8,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 48075,
+          "rssMb": 126.4,
+          "cpuSec": 0.07,
+          "name": "Google"
+        },
+        {
+          "pid": 48077,
+          "rssMb": 118.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 48080,
+          "rssMb": 99,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 48081,
+          "rssMb": 116.2,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 48083,
+          "rssMb": 1.7,
+          "cpuSec": 0,
+          "name": "Google"
+        }
+      ]
+    }
+  ]
+}

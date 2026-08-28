@@ -27,9 +27,27 @@
 
 class CefBrowserClient : public CefClient,
                          public CefRequestHandler,
+                         public CefResourceRequestHandler,
                          public CefLifeSpanHandler,
                          public CefLoadHandler {
  public:
+    // CefBrowserProcessHandler: CEF used to run with a null handler here,
+    // which silently disabled OnContextInitialized / OnBeforeChildProcessLaunch.
+    // OnBeforeChildProcessLaunch is the last browser-side hook before the
+    // child exec - logging the child command line there is how we can tell
+    // "renderer launch attempted, exec failed" apart from "never attempted".
+    class AppBrowserProcessHandler : public CefBrowserProcessHandler {
+     public:
+        explicit AppBrowserProcessHandler(const lethe::ShellContext* ctx)
+            : ctx_(ctx) {}
+        void OnContextInitialized() override;
+        void OnBeforeChildProcessLaunch(
+            CefRefPtr<CefCommandLine> command_line) override;
+     private:
+        const lethe::ShellContext* ctx_ = nullptr;
+        IMPLEMENT_REFCOUNTING(AppBrowserProcessHandler);
+    };
+
     // CefApp implementation that injects the policy proxy into Chromium's
     // net stack before any process starts. This is what binds CEF to the
     // shared ShellBootstrap (and therefore to the same DoH, HSTS, private-
@@ -42,6 +60,9 @@ class CefBrowserClient : public CefClient,
             const CefString& process_type,
             CefRefPtr<CefCommandLine> command_line) override;
         CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {
+            if (!browser_process_handler_) {
+                browser_process_handler_ = new AppBrowserProcessHandler(ctx_);
+            }
             return browser_process_handler_;
         }
         CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
@@ -62,6 +83,32 @@ class CefBrowserClient : public CefClient,
 
     // CefClient
     CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+    CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        CefRefPtr<CefRequest> request,
+        bool is_navigation,
+        bool is_download,
+        const CefString& request_initiator,
+        bool& disable_default_handling) override {
+        (void)browser; (void)frame; (void)request; (void)is_navigation;
+        (void)is_download; (void)request_initiator;
+        disable_default_handling = false;
+        return this;
+    }
+
+    // CefResourceRequestHandler - stamp the per-launch proxy token onto
+    // every request. Chromium strips Proxy-Authorization out of CONNECT
+    // tunnel requests (it belongs to the auth system, whose CEF routing
+    // never fires for the tunnel in this build), but it forwards custom
+    // X- headers onto the tunnel, so the policy proxy accepts
+    // X-Lethe-Proxy-Auth as the credential. The header terminates at the
+    // proxy: CONNECT tunnels end there and plain-HTTP requests are
+    // re-fetched internally, so the token never leaves loopback.
+    ReturnValue OnBeforeResourceLoad(CefRefPtr<CefBrowser> browser,
+                                     CefRefPtr<CefFrame> frame,
+                                     CefRefPtr<CefRequest> request,
+                                     CefRefPtr<CefCallback> callback) override;
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
     CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
 
@@ -71,6 +118,18 @@ class CefBrowserClient : public CefClient,
                         CefRefPtr<CefRequest> request,
                         bool user_gesture,
                         bool is_redirect) override;
+
+    // CefRequestHandler - answer the policy proxy's 407 challenge with the
+    // per-launch token. The proxy is the only network path Chromium has, so
+    // without this every real page fails with ERR_INVALID_AUTH_CREDENTIALS.
+    bool GetAuthCredentials(CefRefPtr<CefBrowser> browser,
+                            const CefString& origin_url,
+                            bool isProxy,
+                            const CefString& host,
+                            int port,
+                            const CefString& realm,
+                            const CefString& scheme,
+                            CefRefPtr<CefAuthCallback> callback) override;
 
     // CefLifeSpanHandler - one NSWindow per top-level browser, single
     // process model: subsequent windows also reuse this client.
@@ -103,6 +162,10 @@ class CefBrowserClient : public CefClient,
     std::string NextEvalId();
 
     bool IsMainLoading() const { return main_loading_; }
+    // True once any main-frame navigation has committed (OnLoadEnd). CEF
+    // silently drops CefFrame::LoadURL issued before the renderer's first
+    // frame commit, so the e2e driver waits for this before the first load.
+    bool IsFirstLoadDone() const { return first_load_done_; }
     CefRefPtr<CefBrowser> GetBrowser() const { return browser_; }
     void SetPendingQuit(bool q) { quit_when_loaded_ = q; }
 
@@ -110,6 +173,8 @@ class CefBrowserClient : public CefClient,
     const lethe::ShellContext* ctx_ = nullptr;
     CefRefPtr<CefBrowser> browser_;
     std::atomic<bool> main_loading_{false};
+    std::atomic<bool> first_load_done_{false};
+    std::string proxy_auth_header_;
     bool quit_when_loaded_ = false;
     int browser_count_ = 0;
 
