@@ -12,17 +12,23 @@ const char kCspMeta[] =
     "<meta http-equiv=\"Content-Security-Policy\" "
     "content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:\">";
 
+// The "Lethe Quiet" style for internal pages: mirrors src/ui/mac/
+// LetheDesign.h (ink on paper, hairlines, one cold accent). Keep in sync.
 const char kBaseStyle[] =
     ":root{color-scheme:light dark}"
     "body{margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',"
-    "Roboto,Helvetica,Arial,sans-serif;background:#f7f7f8;color:#1c1c1e}"
-    "@media(prefers-color-scheme:dark){body{background:#121214;color:#e6e6e8}}"
+    "Roboto,Helvetica,Arial,sans-serif;background:#fafafa;color:#1b1e21}"
+    "@media(prefers-color-scheme:dark){body{background:#16181a;color:#dcdfe2}}"
     "main{max-width:720px;margin:0 auto;padding:72px 32px}"
-    "h1{font-size:28px;margin:0 0 12px;letter-spacing:-.01em}"
-    "p{margin:0 0 12px}.url{word-break:break-all;opacity:.7;font-size:13px}"
-    ".reason{padding:12px 16px;border-radius:8px;background:rgba(200,40,40,.08);"
-    "border:1px solid rgba(200,40,40,.25)}"
-    ".hint{opacity:.7;font-size:13px;margin-top:24px}";
+    "h1{font-size:26px;font-weight:600;margin:0 0 12px;letter-spacing:-.01em}"
+    "p{margin:0 0 12px}.url{word-break:break-all;opacity:.6;font-size:13px}"
+    "a{color:#295770;text-decoration:none}"
+    "@media(prefers-color-scheme:dark){a{color:#8cbad0}}"
+    "a:hover{text-decoration:underline}"
+    "hr{border:0;border-top:1px solid rgba(128,128,128,.25);margin:20px 0}"
+    ".reason{padding:12px 16px;background:rgba(200,40,40,.06);"
+    "border-left:2px solid rgba(200,40,40,.55)}"
+    ".hint{opacity:.6;font-size:13px;margin-top:24px}";
 
 std::string page(const std::string& title, const std::string& extraStyle,
                  const std::string& body) {
@@ -122,21 +128,21 @@ std::string renderReaderPage(const std::string& url,
 std::string renderNewTabPage(const std::vector<SpeedDialItem>& recent,
                                      const std::vector<SpeedDialItem>& bookmarks) {
     const char kStyle[] =
-        "main{text-align:center;padding:48px 24px 24px}"
-        "h1{font-size:40px;font-weight:600;letter-spacing:-.02em;margin:0 0 4px}"
-        ".sub{opacity:.55;margin:0 0 32px}"
+        "main{text-align:center;padding:64px 32px 24px}"
+        "h1{font-size:34px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px}"
+        ".sub{opacity:.55;margin:0 0 40px}"
         "kbd{font:inherit;padding:1px 6px;border-radius:5px;"
         "border:1px solid rgba(128,128,128,.4)}"
-        "h2{font-size:13px;font-weight:600;color:#666;text-transform:uppercase;"
-        "letter-spacing:.06em;margin:24px 0 12px;text-align:left}"
-        ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));"
-        "gap:12px;text-align:left}"
-        ".tile{display:block;padding:12px 14px;border-radius:10px;"
-        "background:rgba(127,127,127,.08);text-decoration:none;color:inherit}"
-        ".tile:hover{background:rgba(127,127,127,.18)}"
+        "h2{font-size:12px;font-weight:600;opacity:.55;text-transform:uppercase;"
+        "letter-spacing:.08em;margin:28px 0 10px;text-align:left}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));"
+        "gap:4px 12px;text-align:left}"
+        ".tile{display:block;padding:8px 10px;border-radius:6px;"
+        "text-decoration:none;color:inherit}"
+        ".tile:hover{background:rgba(127,127,127,.10)}"
         ".tile .t{font-weight:500;font-size:14px;display:block;"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
-        ".tile .u{font-size:11px;opacity:.55;display:block;margin-top:2px;"
+        ".tile .u{font-size:11px;opacity:.5;display:block;margin-top:1px;"
         "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
         "font-family:ui-monospace,Menlo,monospace}"
         ".empty{opacity:.5;font-style:italic;text-align:left}";

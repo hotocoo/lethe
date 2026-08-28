@@ -10,6 +10,8 @@
 #import "ui/mac/LetheDownloads.h"
 #import "ui/mac/LethePermissions.h"
 #import "ui/mac/LethePreferences.h"
+#import "ui/mac/LetheSettings.h"
+#import "ui/mac/LetheDesign.h"
 #import <objc/runtime.h>
 
 #include <string>
@@ -21,11 +23,36 @@
 static void* const kObserverContext = (void*)&kObserverContext;
 static NSString* const kTabbingIdentifier = @"org.aletheia.lethe.browser";
 static NSString* const kOblivionTabbingIdentifier = @"org.aletheia.lethe.oblivion";
-static const CGFloat kChromeHeight = 44.0;
+
+// "Lethe Quiet" stylesheet for internal pages: mirrors
+// src/ui/mac/LetheDesign.h and src/renderer/page_templates.cc.
+static NSString* const kQuietPageStyle =
+    @"<style>"
+    @":root{color-scheme:light dark}"
+    @"body{font:15px/1.6 -apple-system,system-ui,sans-serif;max-width:720px;"
+    @"margin:0 auto;padding:56px 32px;color:#1b1e21;background:#fafafa}"
+    @"@media(prefers-color-scheme:dark){body{background:#16181a;color:#dcdfe2}}"
+    @"h1{font-size:26px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}"
+    @"h2{font-size:12px;font-weight:600;opacity:.55;text-transform:uppercase;"
+    @"letter-spacing:.08em;margin:24px 0 6px}"
+    @"p.sub{opacity:.6;margin:0 0 28px}"
+    @"ul{list-style:none;padding:0;margin:0}"
+    @"li{padding:12px 2px;border-bottom:1px solid rgba(128,128,128,.22)}"
+    @"li a{color:#295770;text-decoration:none;font-weight:500;font-size:15px}"
+    @"@media(prefers-color-scheme:dark){li a{color:#8cbad0}}"
+    @"li a:hover{text-decoration:underline}"
+    @".u{opacity:.55;font-size:12px;font-family:ui-monospace,Menlo,monospace;"
+    @"word-break:break-all;margin-right:8px}"
+    @".t{opacity:.45;font-size:11px}.empty{opacity:.55;font-style:italic}"
+    @".rm{margin-left:auto;background:none;border:none;padding:2px 6px;"
+    @"color:#b3261e;cursor:pointer;font-size:12px}"
+    @".rm:hover{text-decoration:underline}"
+    @"</style>";
 
 @interface BrowserWindowController () <WKNavigationDelegate, WKUIDelegate,
                                        WKDownloadDelegate, NSWindowDelegate,
-                                       NSTextFieldDelegate, WKScriptMessageHandler> {
+                                       NSTextFieldDelegate, WKScriptMessageHandler,
+                                       NSToolbarDelegate> {
     NSString* httpsUpgradedFrom_;   // http URL being tried as https (HTTPS-first)
     BOOL oblivion_;
     WKWebsiteDataStore* dataStore_;
@@ -39,6 +66,10 @@ static const CGFloat kChromeHeight = 44.0;
     NSButton* reloadButton_;
     NSButton* readerButton_;
     NSButton* bookmarkButton_;
+    NSButton* settingsButton_;
+    NSView* addressPill_;
+    NSToolbarItem* addressItem_;
+    NSLayoutConstraint* addressPillWidth_;
     NSProgressIndicator* progress_;
     NSView* findBar_;
     NSTextField* findField_;
@@ -109,6 +140,13 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
         }
         window.minSize = NSMakeSize(480, 320);
         window.delegate = self;
+        // "Lethe Quiet": the page is the title. The chrome strip is the
+        // window's compact unified toolbar; no title text is drawn and the
+        // titlebar surface is the same paper as the strip, so the chrome
+        // reads as a single flat row.
+        window.titleVisibility = NSWindowTitleHidden;
+        window.titlebarAppearsTransparent = YES;
+        window.toolbarStyle = NSWindowToolbarStyleUnifiedCompact;
         [window center];
         [window setFrameAutosaveName:@"LetheBrowserWindow"];
 
@@ -169,27 +207,142 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
 - (NSButton*)chromeButtonWithSymbol:(NSString*)symbol
                               label:(NSString*)label
                              action:(SEL)action {
-    NSImage* img = [NSImage imageWithSystemSymbolName:symbol
-                             accessibilityDescription:label];
-    NSButton* b = [NSButton buttonWithImage:img target:self action:action];
-    b.bezelStyle = NSBezelStyleTexturedRounded;
-    b.bordered = NO;
-    b.toolTip = label;
-    b.imageScaling = NSImageScaleProportionallyDown;
-    [b.widthAnchor constraintEqualToConstant:30].active = YES;
-    [b.heightAnchor constraintEqualToConstant:28].active = YES;
-    return b;
+    return LetheGhostButton(symbol, label, action, self);
+}
+
+#pragma mark Lethe Quiet toolbar (NSToolbarDelegate)
+
+static NSString* const kLetheToolbarBack = @"LetheToolbarBack";
+static NSString* const kLetheToolbarForward = @"LetheToolbarForward";
+static NSString* const kLetheToolbarReload = @"LetheToolbarReload";
+static NSString* const kLetheToolbarAddress = @"LetheToolbarAddress";
+static NSString* const kLetheToolbarReader = @"LetheToolbarReader";
+static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
+static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
+
+- (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
+     itemForItemIdentifier:(NSToolbarItemIdentifier)identifier
+ willBeInsertedIntoToolbar:(BOOL)flag {
+    (void)toolbar; (void)flag;
+    NSToolbarItem* item = [[NSToolbarItem alloc]
+        initWithItemIdentifier:identifier];
+    if ([identifier isEqualToString:kLetheToolbarAddress]) {
+        item.view = [self makeAddressPill];
+        addressItem_ = item;
+    } else if ([identifier isEqualToString:kLetheToolbarBack]) {
+        item.view = backButton_;
+        item.label = @"Back";
+        item.bordered = YES;
+    } else if ([identifier isEqualToString:kLetheToolbarForward]) {
+        item.view = forwardButton_;
+        item.label = @"Forward";
+        item.bordered = YES;
+    } else if ([identifier isEqualToString:kLetheToolbarReload]) {
+        item.view = reloadButton_;
+        item.label = @"Reload";
+        item.bordered = YES;
+    } else if ([identifier isEqualToString:kLetheToolbarReader]) {
+        item.view = readerButton_;
+        item.label = @"Reader View";
+        item.bordered = YES;
+    } else if ([identifier isEqualToString:kLetheToolbarBookmark]) {
+        item.view = bookmarkButton_;
+        item.label = @"Bookmark";
+        item.bordered = YES;
+    } else if ([identifier isEqualToString:kLetheToolbarSettings]) {
+        item.view = settingsButton_;
+        item.label = @"Settings";
+        item.bordered = YES;
+    } else {
+        return nil;
+    }
+    return item;
+}
+
+- (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:
+    (NSToolbar *)toolbar {
+    (void)toolbar;
+    return @[ kLetheToolbarBack, kLetheToolbarForward, kLetheToolbarReload,
+              NSToolbarFlexibleSpaceItemIdentifier, kLetheToolbarAddress,
+              kLetheToolbarReader, kLetheToolbarBookmark, kLetheToolbarSettings ];
+}
+
+- (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:
+    (NSToolbar *)toolbar {
+    (void)toolbar;
+    return [self toolbarAllowedItemIdentifiers:toolbar];
+}
+
+// The address pill: hairline-bordered rounded field on the paper
+// background. The lock glyph and the field are its only contents.
+- (NSView*)makeAddressPill {
+    NSView* pill = [[NSView alloc] initWithFrame:NSZeroRect];
+    pill.wantsLayer = YES;
+    pill.layer.cornerRadius = kLethePillRadius;
+    pill.layer.borderWidth = kLetheHairline;
+    [pill.heightAnchor constraintEqualToConstant:kLetheGhostSize].active = YES;
+    [pill.widthAnchor constraintGreaterThanOrEqualToConstant:220].active = YES;
+    // The pill tracks the toolbar width: cheap, deterministic resize layout
+    // (no autolayout dance inside NSToolbar, which does not expand custom
+    // views on its own).
+    addressPillWidth_ = [pill.widthAnchor constraintEqualToConstant:280];
+    addressPillWidth_.priority = NSLayoutPriorityDefaultHigh;
+    addressPillWidth_.active = YES;
+
+    lockIcon_ = [[NSImageView alloc] initWithFrame:NSZeroRect];
+    lockIcon_.image = [NSImage imageWithSystemSymbolName:@"globe"
+                                accessibilityDescription:@"Connection"];
+    lockIcon_.contentTintColor = [NSColor secondaryLabelColor];
+    lockIcon_.translatesAutoresizingMaskIntoConstraints = NO;
+    [lockIcon_.widthAnchor constraintEqualToConstant:16].active = YES;
+    [pill addSubview:lockIcon_];
+
+    addressField_ = LetheAddressField();
+    addressField_.delegate = self;
+    addressField_.target = self;
+    addressField_.action = @selector(addressEntered:);
+    addressField_.translatesAutoresizingMaskIntoConstraints = NO;
+    [pill addSubview:addressField_];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [lockIcon_.leadingAnchor constraintEqualToAnchor:pill.leadingAnchor
+                                                constant:8],
+        [lockIcon_.centerYAnchor constraintEqualToAnchor:pill.centerYAnchor],
+        [addressField_.leadingAnchor
+            constraintEqualToAnchor:lockIcon_.trailingAnchor constant:6],
+        [addressField_.trailingAnchor
+            constraintEqualToAnchor:pill.trailingAnchor constant:-8],
+        [addressField_.centerYAnchor constraintEqualToAnchor:pill.centerYAnchor],
+        [addressField_.heightAnchor
+            constraintGreaterThanOrEqualToConstant:18],
+    ]];
+    addressPill_ = pill;
+    return pill;
+}
+
+- (void)windowDidResize:(NSNotification*)notification {
+    (void)notification;
+    [self layoutAddressPill];
+}
+
+// Keep the pill wide: window width minus the fixed edges (traffic lights,
+// nav buttons, reader, bookmark, spacing). The toolbar centers the flexible
+// space around it.
+- (void)layoutAddressPill {
+    if (!addressPillWidth_ || !self.window) return;
+    const CGFloat w = self.window.contentView.bounds.size.width;
+    // Traffic lights ~70 + back/fwd/reload ~96 + reader/bookmark/settings
+    // ~100 + gaps.
+    CGFloat pill = w - 316.0;
+    if (pill < 220) pill = 220;
+    addressPillWidth_.constant = pill;
 }
 
 - (void)buildChrome {
     NSView* content = self.window.contentView;
-    content.wantsLayer = YES;
 
-    // --- Toolbar row -----------------------------------------------------
-    NSView* chrome = [[NSView alloc] initWithFrame:NSZeroRect];
-    chrome.translatesAutoresizingMaskIntoConstraints = NO;
-    [content addSubview:chrome];
-
+    // Ghost buttons first: the toolbar delegate asks for their views the
+    // moment the toolbar is attached to the window.
     backButton_ = [self chromeButtonWithSymbol:@"chevron.left" label:@"Back"
                                         action:@selector(goBack:)];
     forwardButton_ = [self chromeButtonWithSymbol:@"chevron.right" label:@"Forward"
@@ -198,51 +351,27 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
                                           action:@selector(reloadOrStop:)];
     readerButton_ = [self chromeButtonWithSymbol:@"doc.plaintext" label:@"Reader View"
                                           action:@selector(toggleReader:)];
-
     bookmarkButton_ = [self chromeButtonWithSymbol:@"bookmark" label:@"Bookmark"
                                               action:@selector(toggleBookmark:)];
+    settingsButton_ = [self chromeButtonWithSymbol:@"gearshape" label:@"Settings"
+                                            action:@selector(showSettings:)];
 
-    lockIcon_ = [[NSImageView alloc] initWithFrame:NSZeroRect];
-    lockIcon_.image = [NSImage imageWithSystemSymbolName:@"globe"
-                                accessibilityDescription:@"Connection"];
-    lockIcon_.contentTintColor = [NSColor secondaryLabelColor];
-    [lockIcon_.widthAnchor constraintEqualToConstant:18].active = YES;
-
-    addressField_ = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    addressField_.placeholderString = @"Search or enter address";
-    addressField_.bezelStyle = NSTextFieldRoundedBezel;
-    addressField_.font = [NSFont systemFontOfSize:14];
-    addressField_.delegate = self;
-    addressField_.target = self;
-    addressField_.action = @selector(addressEntered:);
-    addressField_.cell.usesSingleLineMode = YES;
-    addressField_.cell.scrollable = YES;
-    addressField_.cell.lineBreakMode = NSLineBreakByTruncatingTail;
-    [addressField_ setContentHuggingPriority:NSLayoutPriorityDefaultLow - 1
-                              forOrientation:NSLayoutConstraintOrientationHorizontal];
-
-    NSStackView* row = [NSStackView stackViewWithViews:@[
-        backButton_, forwardButton_, reloadButton_, lockIcon_, addressField_, readerButton_, bookmarkButton_ ]];
-    row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    row.spacing = 6;
-    row.alignment = NSLayoutAttributeCenterY;
-    row.edgeInsets = NSEdgeInsetsMake(0, 8, 0, 8);
-    row.translatesAutoresizingMaskIntoConstraints = NO;
-    [chrome addSubview:row];
-
-    NSBox* separator = [[NSBox alloc] initWithFrame:NSZeroRect];
-    separator.boxType = NSBoxSeparator;
-    separator.translatesAutoresizingMaskIntoConstraints = NO;
-    [chrome addSubview:separator];
+    // --- Toolbar (Lethe Quiet: one flat row, ghost buttons, one pill) ----
+    NSToolbar* toolbar = [[NSToolbar alloc]
+        initWithIdentifier:@"org.aletheia.lethe.chrome"];
+    toolbar.delegate = self;
+    toolbar.displayMode = NSToolbarDisplayModeIconOnly;
+    toolbar.allowsUserCustomization = NO;
+    toolbar.autosavesConfiguration = NO;
+    self.window.toolbar = toolbar;
 
     // --- Find bar (collapsed until ⌘F) -----------------------------------
     findBar_ = [[NSView alloc] initWithFrame:NSZeroRect];
     findBar_.translatesAutoresizingMaskIntoConstraints = NO;
     findBar_.hidden = YES;
     [content addSubview:findBar_];
-    findField_ = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    findField_ = LetheAddressField();
     findField_.placeholderString = @"Find in page";
-    findField_.bezelStyle = NSTextFieldRoundedBezel;
     findField_.delegate = self;
     findField_.target = self;
     findField_.action = @selector(findNext:);
@@ -264,9 +393,7 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     findRow.edgeInsets = NSEdgeInsetsMake(0, 8, 0, 8);
     findRow.translatesAutoresizingMaskIntoConstraints = NO;
     [findBar_ addSubview:findRow];
-    NSBox* findSep = [[NSBox alloc] initWithFrame:NSZeroRect];
-    findSep.boxType = NSBoxSeparator;
-    findSep.translatesAutoresizingMaskIntoConstraints = NO;
+    NSView* findSep = LetheHairlineView();
     [findBar_ addSubview:findSep];
 
     // --- Content ---------------------------------------------------------
@@ -283,26 +410,20 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     progress_.hidden = YES;
     [content addSubview:progress_];
 
-    NSDictionary* v = @{ @"chrome": chrome, @"row": row, @"sep": separator,
-                         @"find": findBar_, @"findRow": findRow, @"findSep": findSep,
+    NSDictionary* v = @{ @"find": findBar_, @"findRow": findRow,
+                         @"findSep": findSep,
                          @"web": webView_, @"progress": progress_ };
     NSMutableArray<NSLayoutConstraint*>* cs = [NSMutableArray array];
-    [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
-        @"H:|[chrome]|" options:0 metrics:nil views:v]];
     [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
         @"H:|[find]|" options:0 metrics:nil views:v]];
     [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
         @"H:|[web]|" options:0 metrics:nil views:v]];
     [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
         @"H:|[progress]|" options:0 metrics:nil views:v]];
+    // With a unified toolbar the contentView already starts below it; the
+    // collapsed find bar sits between the toolbar and the page.
     [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
-        @"V:|[chrome(==h)][find][web]|" options:0 metrics:@{ @"h": @(kChromeHeight) } views:v]];
-    [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
-        @"H:|[row]|" options:0 metrics:nil views:v]];
-    [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
-        @"V:|[row][sep(1)]|" options:0 metrics:nil views:v]];
-    [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
-        @"H:|[sep]|" options:0 metrics:nil views:v]];
+        @"V:|[find][web]|" options:0 metrics:nil views:v]];
     [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
         @"H:|[findRow]|" options:0 metrics:nil views:v]];
     [cs addObjectsFromArray:[NSLayoutConstraint constraintsWithVisualFormat:
@@ -315,6 +436,13 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     [NSLayoutConstraint activateConstraints:cs];
 
     [self updateNavigationButtons];
+    [self layoutAddressPill];
+}
+
+// Toolbar gear: opens the unified Settings window (same as Cmd+,).
+- (void)showSettings:(id)sender {
+    (void)sender;
+    [[LetheSettings shared] show];
 }
 
 #pragma mark - Observation
@@ -460,7 +588,7 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     }
     NSString* body = all.count ? [NSString stringWithFormat:@"<ul>%@</ul>", rows]
                                 : @"<p class=\"empty\">No bookmarks yet. Press Cmd+D to bookmark the current page.</p>";
-    NSString* html = [NSString stringWithFormat:@"\n        <!doctype html><meta charset=\"utf-8\">\n        <title>Bookmarks</title>\n        <style>\n          body{font:14px -apple-system,system-ui,sans-serif;margin:32px;max-width:780px;color:#222;background:#fafafa}\n          h1{margin:0 0 8px;font-size:22px;font-weight:600}\n          p.sub{color:#666;margin:0 0 24px}\n          ul{list-style:none;padding:0;margin:0}\n          li{padding:14px 16px;margin:6px 0;background:#fff;border:1px solid #e5e5e5;border-radius:8px}\n          li a{color:#0a66c2;text-decoration:none;font-weight:500;font-size:15px}\n          li a:hover{text-decoration:underline}\n          .u{color:#666;font-size:12px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}\n          .rm{float:right;background:none;border:1px solid #ccc;border-radius:6px;padding:4px 10px;\n              color:#c0392b;cursor:pointer;font-size:12px}\n          .rm:hover{background:#fee}\n          .empty{color:#666;font-style:italic}\n        </style>\n        <h1>Bookmarks</h1>\n        <p class=\"sub\">%lu saved. Cmd+D toggles the bookmark on the current page.</p>\n        %@\n        <script>\n        document.addEventListener('click', function(e){\n          if (e.target.classList.contains('rm')) {\n            const u = e.target.getAttribute('data-url');\n            (window.webkit.messageHandlers[%@] || {postMessage:function(){}}).postMessage({op:\"remove\", url:u});\n          }\n        });\n        </script>\n      ", (unsigned long)all.count, body, messageHandlerNames_.firstObject ?: @"bookmarks"];
+    NSString* html = [NSString stringWithFormat:@"\n        <!doctype html><meta charset=\"utf-8\">\n        <title>Bookmarks</title>\n        <style>\n          :root{color-scheme:light dark}\n          body{font:15px/1.6 -apple-system,system-ui,sans-serif;max-width:720px;margin:0 auto;padding:56px 32px;color:#1b1e21;background:#fafafa}\n          @media(prefers-color-scheme:dark){body{background:#16181a;color:#dcdfe2}}\n          h1{font-size:26px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}\n          p.sub{opacity:.6;margin:0 0 28px}\n          ul{list-style:none;padding:0;margin:0}\n          li{padding:12px 2px;border-bottom:1px solid rgba(128,128,128,.22)}\n          li a{color:#295770;text-decoration:none;font-weight:500;font-size:15px}\n          @media(prefers-color-scheme:dark){li a{color:#8cbad0}}\n          li a:hover{text-decoration:underline}\n          .u{opacity:.55;font-size:12px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}\n          .rm{float:right;background:none;border:none;padding:2px 6px;color:#b3261e;cursor:pointer;font-size:12px}\n          .rm:hover{text-decoration:underline}\n          .empty{opacity:.55;font-style:italic}\n        </style>\n        <h1>Bookmarks</h1>\n        <p class=\"sub\">%lu saved. Cmd+D toggles the bookmark on the current page.</p>\n        %@\n        <script>\n        document.addEventListener('click', function(e){\n          if (e.target.classList.contains('rm')) {\n            const u = e.target.getAttribute('data-url');\n            (window.webkit.messageHandlers[%@] || {postMessage:function(){}}).postMessage({op:\"remove\", url:u});\n          }\n        });\n        </script>\n      ", (unsigned long)all.count, body, messageHandlerNames_.firstObject ?: @"bookmarks"];
     internalPageUrl_ = @"lethe://bookmarks";
     [webView_ loadHTMLString:html baseURL:nil];
     [self updateTitle];
@@ -492,14 +620,9 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     if (lastDay) [rows appendString:@"</ul>"];
     NSString* body = entries.count ? rows : @"<p class=\"empty\">No history yet.</p>";
     NSString* html = [NSString stringWithFormat:@"<!doctype html><meta charset=\"utf-8\"><title>History</title>"
-        @"<style>body{font:14px -apple-system,system-ui,sans-serif;margin:32px;max-width:780px;color:#222;background:#fafafa}"
-        @"h1{margin:0 0 16px;font-size:22px}h2{margin:24px 0 6px;font-size:13px;color:#666;font-weight:600;text-transform:uppercase}"
-        @"ul{list-style:none;padding:0;margin:0}li{padding:8px 12px;margin:2px 0;background:#fff;border:1px solid #e5e5e5;border-radius:6px}"
-        @"li a{color:#0a66c2;text-decoration:none;font-weight:500}li a:hover{text-decoration:underline}"
-        @".u{color:#666;font-size:11px;font-family:ui-monospace,Menlo,monospace;word-break:break-all;margin-right:8px}"
-        @".t{color:#999;font-size:11px}.empty{color:#666;font-style:italic}</style>"
+        @"%@"
         @"<h1>History</h1><p class=\"empty\" style=\"margin:0 0 8px\">%lu entries. \\u2318Y opens this page.</p>%@",
-        (unsigned long)entries.count, body];
+        kQuietPageStyle, (unsigned long)entries.count, body];
     internalPageUrl_ = @"lethe://history";
     [webView_ loadHTMLString:html baseURL:nil];
     [self updateTitle];
@@ -526,19 +649,14 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     }
     NSString* body = keys.count ? [NSString stringWithFormat:@"<ul>%@</ul>", rows] : @"<p class=\"empty\">No sites have stored permissions yet.</p>";
     NSString* html = [NSString stringWithFormat:@"<!doctype html><meta charset=\"utf-8\"><title>Site Permissions</title>"
-        @"<style>body{font:14px -apple-system,system-ui,sans-serif;margin:32px;max-width:780px;color:#222;background:#fafafa}"
-        @"h1{margin:0 0 8px;font-size:22px}h1+p{color:#666;margin:0 0 24px}"
-        @"ul{list-style:none;padding:0;margin:0}"
-        @"li{padding:10px 12px;margin:2px 0;background:#fff;border:1px solid #e5e5e5;border-radius:6px;display:flex;align-items:center;gap:10px}"
-        @".h{font-weight:600;min-width:140px}.t{color:#666;font-size:12px;min-width:80px}"
-        @".s.Allowed{color:#0a7a3a}.s.Blocked{color:#a04020}"
-        @".rm{margin-left:auto;background:none;border:1px solid #ccc;border-radius:6px;padding:3px 10px;color:#c0392b;cursor:pointer;font-size:12px}"
-        @".rm:hover{background:#fee}.empty{color:#666;font-style:italic}</style>"
+        @"%@"
+        @"<style>.h{font-weight:600;min-width:140px}"
+        @".s.Allowed{color:#0a7a3a}.s.Blocked{color:#a04020}</style>"
         @"<h1>Site Permissions</h1><p>Allow or block camera, microphone, and location per site. The browser prompts the first time; tick 'Remember' to persist.</p>%@"
         @"<script>document.addEventListener('click',function(e){"
         @"if(e.target.classList.contains('rm')){var u=e.target.getAttribute('data-host'),t=e.target.getAttribute('data-type');"
         @"(window.webkit.messageHandlers[%@]||{postMessage:function(){}}).postMessage({op:'clear',host:u,type:t});}"
-        @"});</script>", body, messageHandlerNames_.lastObject ?: @"perms"];
+        @"});</script>", kQuietPageStyle, body, messageHandlerNames_.lastObject ?: @"perms"];
     internalPageUrl_ = @"lethe://permissions";
     [webView_ loadHTMLString:html baseURL:nil];
     [self updateTitle];
