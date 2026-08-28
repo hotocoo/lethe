@@ -4,6 +4,7 @@
 #import "ui/mac/LetheBookmarks.h"
 #import "ui/mac/LetheHistory.h"
 #import "ui/mac/LethePreferences.h"
+#import "ui/mac/LetheSession.h"
 #import <Network/Network.h>
 #import <objc/runtime.h>
 
@@ -105,8 +106,13 @@
 }
 
 - (void)openInitialWindow {
-    NSString* initial = ctx_->cfg.initialUrl.empty()
-        ? nil : @(ctx_->cfg.initialUrl.c_str());
+    // Restore last session (unless an explicit initial URL or e2e script was given).
+    NSArray<NSDictionary*>* saved = @[];
+    if (ctx_->cfg.initialUrl.empty() && ctx_->e2eScript.empty()) {
+        saved = [[LetheSession shared] load];
+    }
+    NSString* initial = saved.count ? saved.firstObject[@"url"]
+        : (ctx_->cfg.initialUrl.empty() ? nil : @(ctx_->cfg.initialUrl.c_str()));
     BrowserWindowController* c = [self openWindowWithURL:initial];
     // Chrome-style: the tab strip is always there, even with one tab.
     if (c.window.tabGroup && !c.window.tabGroup.tabBarVisible) {
@@ -144,6 +150,15 @@
 
 - (void)applicationWillTerminate:(NSNotification*)note {
     (void)note;
+    // Persist the active tab URL of every visible window for restore-on-launch.
+    NSMutableArray<NSDictionary*>* snap = [NSMutableArray array];
+    for (BrowserWindowController* c in [controllers_ copy]) {
+        NSString* url = c.webView.URL.absoluteString;
+        if (url.length && [url hasPrefix:@"http"]) {
+            [snap addObject:@{ @"url": url, @"title": c.webView.title ?: url }];
+        }
+    }
+    [[LetheSession shared] saveWindows:snap];
     for (BrowserWindowController* c in [controllers_ copy]) {
         [c.window close];
     }
@@ -564,6 +579,7 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     const NSEventModifierFlags cmd = NSEventModifierFlagCommand;
     const NSEventModifierFlags cmdShift = cmd | NSEventModifierFlagShift;
     const NSEventModifierFlags cmdCtrl = cmd | NSEventModifierFlagControl;
+    const NSEventModifierFlags cmdAlt = cmd | NSEventModifierFlagOption;
     const NSEventModifierFlags ctrl = NSEventModifierFlagControl;
 
     NSMenu* app = addSubmenu(bar, @"Lethe");
@@ -590,6 +606,7 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     addItem(file, @"Close Window", @selector(closeWholeWindow:), @"w", cmdShift);
     [file addItem:[NSMenuItem separatorItem]];
     addItem(file, @"Downloads", @selector(openDownloadsFolder:), @"j", cmdShift);
+    addItem(file, @"Reveal Downloads Folder", @selector(revealDownloads:), @"", 0);
     [file addItem:[NSMenuItem separatorItem]];
     addItem(file, @"Print…", @selector(printPage:), @"p", cmd);
 
@@ -617,6 +634,8 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     addItem(view, @"Stop", @selector(stopLoading:), @".", cmd);
     [view addItem:[NSMenuItem separatorItem]];
     addItem(view, @"Reader View", @selector(toggleReader:), @"r", cmdShift);
+    [view addItem:[NSMenuItem separatorItem]];
+    addItem(view, @"Show Web Inspector", @selector(showWebInspector:), @"i", cmdAlt);
     [view addItem:[NSMenuItem separatorItem]];
     addItem(view, @"Actual Size", @selector(zoomActual:), @"0", cmd);
     addItem(view, @"Zoom In", @selector(zoomIn:), @"=", cmd);

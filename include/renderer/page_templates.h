@@ -29,8 +29,11 @@ std::string renderErrorPage(const std::string& url, const std::string& message,
 std::string renderReaderPage(const std::string& url,
                              const std::vector<HtmlBlock>& blocks);
 
-// Start page shown in a fresh tab.
-std::string renderNewTabPage();
+// Start page shown in a fresh tab. Each list is (title, url) pairs;
+// an empty list omits the section.
+struct SpeedDialItem { std::string title; std::string url; };
+std::string renderNewTabPage(const std::vector<SpeedDialItem>& recent = {},
+                             const std::vector<SpeedDialItem>& bookmarks = {});
 
 } // namespace lethe
 

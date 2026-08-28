@@ -119,15 +119,55 @@ std::string renderReaderPage(const std::string& url,
     return page(title, kReaderStyle, body);
 }
 
-std::string renderNewTabPage() {
+std::string renderNewTabPage(const std::vector<SpeedDialItem>& recent,
+                                     const std::vector<SpeedDialItem>& bookmarks) {
     const char kStyle[] =
-        "main{text-align:center;padding-top:22vh}"
-        "h1{font-size:44px;font-weight:600;letter-spacing:-.02em}"
-        ".sub{opacity:.6}kbd{font:inherit;padding:1px 6px;border-radius:5px;"
-        "border:1px solid rgba(128,128,128,.4)}";
+        "main{text-align:center;padding:48px 24px 24px}"
+        "h1{font-size:40px;font-weight:600;letter-spacing:-.02em;margin:0 0 4px}"
+        ".sub{opacity:.55;margin:0 0 32px}"
+        "kbd{font:inherit;padding:1px 6px;border-radius:5px;"
+        "border:1px solid rgba(128,128,128,.4)}"
+        "h2{font-size:13px;font-weight:600;color:#666;text-transform:uppercase;"
+        "letter-spacing:.06em;margin:24px 0 12px;text-align:left}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));"
+        "gap:12px;text-align:left}"
+        ".tile{display:block;padding:12px 14px;border-radius:10px;"
+        "background:rgba(127,127,127,.08);text-decoration:none;color:inherit}"
+        ".tile:hover{background:rgba(127,127,127,.18)}"
+        ".tile .t{font-weight:500;font-size:14px;display:block;"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+        ".tile .u{font-size:11px;opacity:.55;display:block;margin-top:2px;"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+        "font-family:ui-monospace,Menlo,monospace}"
+        ".empty{opacity:.5;font-style:italic;text-align:left}";
     std::string body = "<h1>Lethe</h1>";
     body += "<p class=\"sub\">Private by default. Type a URL or search in the "
             "address bar (<kbd>⌘L</kbd>).</p>";
+    auto esc = [](const std::string& s) {
+        std::string out; out.reserve(s.size());
+        for (char c : s) {
+            switch (c) { case '<': out += "&lt;"; break;
+                          case '>': out += "&gt;"; break;
+                          case '&': out += "&amp;"; break;
+                          case '"': out += "&quot;"; break;
+                          default: out += c; }
+        }
+        return out;
+    };
+    auto tiles = [&](const std::vector<SpeedDialItem>& items, const char* heading) {
+        std::string out = "<h2>"; out += heading; out += "</h2>";
+        if (items.empty()) { out += "<p class=\"empty\">Nothing here yet.</p>"; return out; }
+        out += "<div class=\"grid\">";
+        for (const auto& it : items) {
+            out += "<a class=\"tile\" href=\"" + esc(it.url) + "\">"
+                   "<span class=\"t\">" + esc(it.title) + "</span>"
+                   "<span class=\"u\">" + esc(it.url) + "</span></a>";
+        }
+        out += "</div>";
+        return out;
+    };
+    body += tiles(bookmarks, "Bookmarks");
+    body += tiles(recent, "Recent");
     return page("New Tab", kStyle, body);
 }
 

@@ -7,8 +7,11 @@
 #import "ui/mac/LetheShell.h"
 #import "ui/mac/LetheBookmarks.h"
 #import "ui/mac/LetheHistory.h"
+#import "ui/mac/LetheDownloads.h"
+#import <objc/runtime.h>
 
 #include <string>
+#include <vector>
 
 #include "browser/url_input.h"
 #include "renderer/page_templates.h"
@@ -51,6 +54,8 @@ static const CGFloat kChromeHeight = 44.0;
 @end
 
 @implementation BrowserWindowController
+
+static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
 
 @synthesize webView = webView_;
 @synthesize addressField = addressField_;
@@ -383,7 +388,21 @@ static const CGFloat kChromeHeight = 44.0;
 - (void)showNewTabPage {
     internalPageUrl_ = @"";
     readerActive_ = NO;
-    [webView_ loadHTMLString:@(lethe::renderNewTabPage().c_str()) baseURL:nil];
+    std::vector<lethe::SpeedDialItem> bm;
+    NSArray<LetheBookmark*>* allB = [[LetheBookmarks shared] all];
+    NSUInteger n = MIN((NSUInteger)8, allB.count);
+    for (NSUInteger i = 0; i < n; i++) {
+        bm.push_back({std::string(allB[i].title.UTF8String ?: ""),
+                     std::string(allB[i].url.UTF8String ?: "")});
+    }
+    std::vector<lethe::SpeedDialItem> rc;
+    NSArray<LetheHistoryEntry*>* allH = [[LetheHistory shared] allEntries];
+    NSUInteger m = MIN((NSUInteger)8, allH.count);
+    for (NSUInteger i = 0; i < m; i++) {
+        rc.push_back({std::string(allH[i].title.UTF8String ?: ""),
+                     std::string(allH[i].url.UTF8String ?: "")});
+    }
+    [webView_ loadHTMLString:@(lethe::renderNewTabPage(rc, bm).c_str()) baseURL:nil];
     [self updateTitle];
     [self updateAddress];
     [self focusAddressBar:nil];
@@ -550,9 +569,25 @@ static const CGFloat kChromeHeight = 44.0;
 
 - (void)openDownloadsFolder:(id)sender {
     (void)sender;
+    [[LetheDownloadsController shared] showPanel];
+}
+
+- (void)revealDownloads:(id)sender {
+    (void)sender;
     NSURL* dir = [[NSFileManager defaultManager] URLsForDirectory:NSDownloadsDirectory
                                                         inDomains:NSUserDomainMask].firstObject;
     if (dir) [[NSWorkspace sharedWorkspace] openURL:dir];
+}
+
+- (void)showWebInspector:(id)sender {
+    (void)sender;
+    SEL sel = NSSelectorFromString(@"_openInspector");
+    if ([webView_ respondsToSelector:sel]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [webView_ performSelector:sel];
+        #pragma clang diagnostic pop
+    }
 }
 
 - (void)printPage:(id)sender {
@@ -960,6 +995,14 @@ static const CGFloat kChromeHeight = 44.0;
 - (void)trackDownload:(WKDownload*)download {
     download.delegate = self;
     [downloads_ addObject:download];
+    LetheDownloadItem* item = [[LetheDownloadItem alloc] init];
+    item.filename = download.originalRequest.URL.lastPathComponent ?: @"download";
+    item.sourceURL = download.originalRequest.URL.absoluteString;
+    item.bytesReceived = 0;
+    item.bytesExpected = -1;
+    item.state = LetheDownloadStateRunning;
+    objc_setAssociatedObject(download, kLetheDownloadItemKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [[LetheDownloadsController shared] addItem:item];
     NSLog(@"[lethe] download started: %@", download.originalRequest.URL.absoluteString);
 }
 
@@ -982,13 +1025,26 @@ static const CGFloat kChromeHeight = 44.0;
             : [NSString stringWithFormat:@"%@ (%d)", base, i];
         dest = [dir URLByAppendingPathComponent:candidate];
     }
+    LetheDownloadItem* item = objc_getAssociatedObject(download, kLetheDownloadItemKey);
+    if (item) { item.destination = dest; item.filename = dest.lastPathComponent; [[LetheDownloadsController shared] updateItem:item]; }
     handler(dest);
 }
 
 - (void)downloadDidFinish:(WKDownload*)download {
     [downloads_ removeObject:download];
+    LetheDownloadItem* item = objc_getAssociatedObject(download, kLetheDownloadItemKey);
+    if (item) { item.state = LetheDownloadStateFinished; item.bytesReceived = item.bytesExpected > 0 ? item.bytesExpected : item.bytesReceived; [[LetheDownloadsController shared] updateItem:item]; }
     NSLog(@"[lethe] download finished: %@", download.originalRequest.URL.absoluteString);
     [NSApp requestUserAttention:NSInformationalRequest];
+}
+
+- (void)download:(WKDownload*)download
+   didWriteData:(NSData*)data
+ totalBytesWritten:(int64_t)totalBytesWritten
+ totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite {
+    (void)data;
+    LetheDownloadItem* item = objc_getAssociatedObject(download, kLetheDownloadItemKey);
+    if (item) { item.bytesReceived = totalBytesWritten; item.bytesExpected = totalBytesExpectedToWrite; [[LetheDownloadsController shared] updateItem:item]; }
 }
 
 - (void)download:(WKDownload*)download didFailWithError:(NSError*)error resumeData:(NSData*)resumeData {
