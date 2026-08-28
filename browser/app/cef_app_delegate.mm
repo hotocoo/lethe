@@ -30,6 +30,8 @@
     lethe::ShellContext* _ctx;
     CefRefPtr<CefBrowserClient::App> _cefApp;
     CefRefPtr<CefBrowserClient> _client;
+    int _argc;
+    char** _argv;
 }
 
 @synthesize context = _ctx;
@@ -37,11 +39,15 @@
 
 - (instancetype)initWithContext:(lethe::ShellContext*)ctx
                            app:(CefRefPtr<CefBrowserClient::App>)cefApp
-                        client:(CefRefPtr<CefBrowserClient>)client {
+                        client:(CefRefPtr<CefBrowserClient>)client
+                          argc:(int)argc
+                          argv:(char**)argv {
     if ((self = [super init])) {
         _ctx = ctx;
         _cefApp = cefApp;
         _client = client;
+        _argc = argc;
+        _argv = argv;
     }
     return self;
 }
@@ -50,8 +56,24 @@
     (void)notification;
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
-    CefMainArgs args(0, nullptr);  // CefExecuteProcess handled in main()
+    CefMainArgs args(_argc, _argv);  // plumbed from main(); carries --disable-process-singleton etc.
     CefSettings settings;
+    // macOS ignores CefMainArgs argc/argv (CEF reads the process args from
+    // NSProcessInfo). Force the singleton off + sandbox off on the global
+    // CefCommandLine so CefInitialize picks them up before Chromium boots.
+    CefRefPtr<CefCommandLine> global = CefCommandLine::GetGlobalCommandLine();
+    if (global) {
+        if (!global->HasSwitch("disable-process-singleton"))
+            global->AppendSwitch("disable-process-singleton");
+        if (!global->HasSwitch("disable-default-apps"))
+            global->AppendSwitch("disable-default-apps");
+        if (!global->HasSwitch("no-sandbox"))
+            global->AppendSwitch("no-sandbox");
+        if (!global->HasSwitch("disable-dev-shm-usage"))
+            global->AppendSwitch("disable-dev-shm-usage");
+        if (!global->HasSwitch("disable-gpu-sandbox"))
+            global->AppendSwitch("disable-gpu-sandbox");
+    }
     // The CEF sandbox needs a fully-Apple-signed Helper.app that has been
     // blessed by codesign --entitlements. Without that, Chromium's
     // InitProcessSingleton path fails to find DIR_USER_DATA and aborts at

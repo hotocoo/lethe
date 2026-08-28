@@ -158,9 +158,31 @@ void LetheCefAutomation::EvalAndPrint(const std::string& code) {
             return;
         }
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC),
-                       dispatch_get_main_queue(), ^{ this->Next(); });
+                       dispatch_get_main_queue(), ^{ this->EvalAndPrintPoll(id, deadline); });
     };
     tick();
+}
+
+void LetheCefAutomation::EvalAndPrintPoll(const std::string& id,
+                                          std::chrono::steady_clock::time_point deadline) {
+    // Same body as the tick lambda, exposed as a method so we can re-enter
+    // it without a captured lambda (the previous version captured `this` and
+    // called `this->Next()` which advanced the script line, racing the eval
+    // result and skipping the result handler entirely).
+    if (!delegate_ || !delegate_.client) { Fail("client gone"); return; }
+    std::string out;
+    if (delegate_.client->TryTakeEvalResult(id, &out)) {
+        std::cout << "[e2e] result " << out << std::endl;
+        std::cout.flush();
+        ScheduleNext();
+        return;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+        Fail("print-js: no reply after 5 s");
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{ this->EvalAndPrintPoll(id, deadline); });
 }
 
 void LetheCefAutomation::WaitForLoad(double ms, bool soft) {

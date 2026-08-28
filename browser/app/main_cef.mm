@@ -26,6 +26,10 @@
 #include "app/shell_bootstrap.h"
 
 int main(int argc, char** argv) {
+    // newArgv MUST outlive boot.init and the CEF main loop. The earlier
+    // scope-block died before boot.init was called and argv[3] then
+    // pointed to freed memory, which made _platform_strlen SIGSEGV.
+    std::vector<char*> newArgv;
     // Step 0: pin a writable user data dir BEFORE CEF/Chromium ever
     // touch path_service. The macOS Chromium build resolves
     // DIR_USER_DATA on first access; if it is not registered yet
@@ -41,20 +45,23 @@ int main(int argc, char** argv) {
         [[NSFileManager defaultManager] createDirectoryAtPath:root
             withIntermediateDirectories:YES attributes:nil error:nil];
         setenv("CHROME_USER_DATA_DIR", [root UTF8String] ?: "", 1);
+        // The shared Seatbelt profile (applied by the engine in
+        // ShellBootstrap::init) denies file writes outside its allowlist.
+        // Chromium needs to write its SingletonLock and per-profile caches
+        // into this dir, so hand it to the profile builder.
+        setenv("LETHE_SANDBOX_EXTRA_WRITE_DIRS", [root UTF8String] ?: "", 1);
     }
     // Force the singleton off in argv. The macOS Seatbelt sandbox
     // blocks the singleton lock write; OnBeforeCommandLineProcessing
     // runs too late to take effect for this check.
-    {
-        std::vector<char*> newArgv(argv, argv + argc);
-        newArgv.push_back(const_cast<char*>("--disable-process-singleton"));
-        newArgv.push_back(const_cast<char*>("--disable-default-apps"));
-        newArgv.push_back(const_cast<char*>("--no-sandbox"));
-        newArgv.push_back(const_cast<char*>("--disable-dev-shm-usage"));
-        newArgv.push_back(const_cast<char*>("--disable-gpu-sandbox"));
-        argv = newArgv.data();
-        argc = static_cast<int>(newArgv.size());
-    }
+    newArgv.assign(argv, argv + argc);
+    newArgv.push_back(const_cast<char*>("--disable-process-singleton"));
+    newArgv.push_back(const_cast<char*>("--disable-default-apps"));
+    newArgv.push_back(const_cast<char*>("--no-sandbox"));
+    newArgv.push_back(const_cast<char*>("--disable-dev-shm-usage"));
+    newArgv.push_back(const_cast<char*>("--disable-gpu-sandbox"));
+    argv = newArgv.data();
+    argc = static_cast<int>(newArgv.size());
     // Step 1: parse argv, start the engine, start the policy proxy. This
     // populates ShellContext with the DoH pool, the policy proxy, and the
     // per-launch auth token we need to inject into CEF's net stack.
@@ -85,7 +92,8 @@ int main(int argc, char** argv) {
         NSApplication* app = [NSApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
         LetheCefAppDelegate* delegate = [[LetheCefAppDelegate alloc]
-            initWithContext:&boot.ctx app:cefApp client:client];
+            initWithContext:&boot.ctx app:cefApp client:client
+                       argc:argc argv:argv];
         app.delegate = delegate;
         [app run];
     }

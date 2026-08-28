@@ -16,10 +16,22 @@
 #include "include/cef_app.h"
 #include "include/cef_base.h"
 
-// Minimal CefApp: the helper does no custom work, it just hands off to
-// CefExecuteProcess which dispatches to the right sub-process entry point.
+#include "app/cef_render_handler.h"
+
+// The helper process hosts the renderer (and GPU / network / utility).
+// The renderer needs the LetheCefRenderHandler so it can answer the
+// browser process's "lethe:eval" messages (the e2e + bench eval path).
+// Without it the renderer never replies and print-js times out.
 class LetheHelperApp : public CefApp {
+ public:
+    CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
+        if (!render_process_handler_) {
+            render_process_handler_ = new LetheCefRenderHandler();
+        }
+        return render_process_handler_;
+    }
  private:
+    CefRefPtr<CefRenderProcessHandler> render_process_handler_;
     IMPLEMENT_REFCOUNTING(LetheHelperApp);
 };
 

@@ -8,6 +8,7 @@
 #define LETHE_BROWSER_APP_CEF_AUTOMATION_H
 
 #import <Cocoa/Cocoa.h>
+#include <chrono>
 
 #include <memory>
 #include <string>
@@ -33,6 +34,8 @@ class LetheCefAutomation {
     void Next();
     void RunLine(const std::string& line);
     void EvalAndPrint(const std::string& code);
+    void EvalAndPrintPoll(const std::string& id,
+                          std::chrono::steady_clock::time_point deadline);
     void WaitForLoad(double ms, bool soft);
     void WaitJs(double ms, const std::string& code);
     void ScheduleNext();

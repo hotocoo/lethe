@@ -316,12 +316,17 @@ if(BUILD_UI AND APPLE)
         # calls CefExecuteProcess. We build it as a console executable (no
         # bundle) and copy it into the main .app's Frameworks/ as a sibling
         # .app via a post-build step.
-        add_executable(lethe-cef-helper browser/app/lethe_cef_helper.mm)
-        set_source_files_properties(browser/app/lethe_cef_helper.mm
+        add_executable(lethe-cef-helper
+            browser/app/lethe_cef_helper.mm
+            browser/app/cef_render_handler.mm)
+        set_source_files_properties(
+            browser/app/lethe_cef_helper.mm
+            browser/app/cef_render_handler.mm
             PROPERTIES LANGUAGE OBJCXX)
         target_compile_options(lethe-cef-helper PRIVATE
             -fobjc-arc -Wno-deprecated-declarations)
         target_include_directories(lethe-cef-helper PRIVATE
+            ${CMAKE_SOURCE_DIR}/browser
             ${CEF_ROOT} ${CEF_ROOT}/include)
         target_link_libraries(lethe-cef-helper PRIVATE
             "${CEF_LIB}" "${CEF_WRAPPER_LIB}" ${COCOA_FRAMEWORK})

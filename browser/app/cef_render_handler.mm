@@ -121,6 +121,8 @@ bool LetheCefRenderHandler::OnProcessMessageReceived(
     CefString code = args->GetString(0);
     CefString reqId = args->GetString(1);
     CefRefPtr<CefV8Context> ctx = frame ? frame->GetV8Context() : nullptr;
+    std::cerr << "[render] lethe:eval reqId=" << reqId.ToString()
+              << " ctx=" << (ctx ? "yes" : "NO") << std::endl;
     CefString result;
     if (ctx) {
         ctx->Enter();

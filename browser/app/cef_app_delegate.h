@@ -17,7 +17,9 @@
 @interface LetheCefAppDelegate : NSObject <NSApplicationDelegate>
 - (instancetype)initWithContext:(lethe::ShellContext*)ctx
                            app:(CefRefPtr<CefBrowserClient::App>)cefApp
-                        client:(CefRefPtr<CefBrowserClient>)client;
+                        client:(CefRefPtr<CefBrowserClient>)client
+                          argc:(int)argc
+                          argv:(char**)argv;
 // CEF initialisation is a one-shot global; we run it in applicationDidFinishLaunching
 // after the AppKit activation policy is set so the first window can win focus.
 - (void)applicationDidFinishLaunching:(NSNotification*)notification;
