@@ -6,6 +6,7 @@
 #import "ui/mac/LethePreferences.h"
 #import "ui/mac/LetheSession.h"
 #import "ui/mac/LethePermissions.h"
+#import "ui/mac/LetheTabSearch.h"
 #import <Network/Network.h>
 #import <objc/runtime.h>
 
@@ -22,6 +23,7 @@
     NSMutableSet<NSString*>* httpAllowedHosts_;
     WKUserContentController* userContent_;   // shared: one rule list, every tab
     NSUInteger trackerRuleCount_;
+    WKContentRuleList* trackerRuleList_;
     BOOL proxyApplied_;
     LetheAutomation* automation_;
 }
@@ -71,6 +73,7 @@
         LetheAppDelegate* self = weakSelf;
         if (!self) return;
         [[self userContentController] addContentRuleList:rules];
+        self->trackerRuleList_ = rules;
         self->trackerRuleCount_ = count;
         std::cout << "[lethe] tracker protection: " << count << " third-party rules ("
                   << how.UTF8String << ")" << std::endl;
@@ -126,6 +129,8 @@
         automation_ = auto_;
         [auto_ start];
     }
+    // Apply saved preferences to the just-opened window (UA, etc.).
+    [self applyPreferences];
 }
 
 - (NSArray<BrowserWindowController*>*)controllers { return [controllers_ copy]; }
@@ -169,12 +174,15 @@
 #pragma mark - WebKit configuration
 
 - (WKWebsiteDataStore*)dataStore {
+    // Persistent cookies now live in preferences (CLI flag still wins at
+    // launch; runtime toggles take effect for new webViews).
+    BOOL wantPersistent = [[LethePreferences shared] persistentCookies] || ctx_->persistent;
     if (!dataStore_) {
-        dataStore_ = ctx_->persistent
+        dataStore_ = wantPersistent
             ? [WKWebsiteDataStore defaultDataStore]
             : [WKWebsiteDataStore nonPersistentDataStore];
         std::cout << "[lethe] site data store: "
-                  << (ctx_->persistent ? "persistent" : "ephemeral (incognito)")
+                  << (wantPersistent ? "persistent" : "ephemeral (incognito)")
                   << std::endl;
     }
     if (!proxyApplied_ && ctx_->proxyPort > 0) {
@@ -589,6 +597,11 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     [win makeKeyAndOrderFront:nil];
 }
 
+- (void)showTabSearch:(id)sender {
+    (void)sender;
+    [[LetheTabSearch shared] show];
+}
+
 - (void)prefsToggle:(NSButton*)sender {
     LethePreferences* prefs = [LethePreferences shared];
     switch (sender.tag) {
@@ -598,6 +611,71 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
         case 3: prefs.stealthUA = (sender.state == NSControlStateValueOn); break;
     }
     [prefs save];
+    [self applyPreferences];
+    // The persistent cookies toggle affects the WKWebsiteDataStore used
+    // at webView creation time, so it needs a relaunch to take effect.
+    if (sender.tag == 2) {
+        NSAlert* a = [[NSAlert alloc] init];
+        a.messageText = @"Restart Lethe to apply";
+        a.informativeText = @"Persistent cookies are decided when a window opens. New windows will use this setting immediately; close existing windows or relaunch for them to pick it up too.";
+        [a runModal];
+    }
+}
+
+// Apply the current preferences to the running engine. Persistent cookies
+// requires a restart (WKWebView's data store is fixed at creation time),
+// so we alert the user; everything else is live.
+- (void)applyPreferences {
+    LethePreferences* prefs = [LethePreferences shared];
+    // Tracker blocking: remove the currently-installed list (if any) and
+    // optionally install a fresh one.
+    WKUserContentController* uc = [self userContentController];
+    if (trackerRuleList_) {
+        [uc removeContentRuleList:trackerRuleList_];
+        trackerRuleList_ = nil;
+    }
+    if (prefs.trackerBlocking) {
+        const lethe::TrackerBlocklist& list = lethe::builtinTrackerBlocklist();
+        NSString* ident = @(lethe::trackerRulesIdentifier(list).c_str());
+        WKContentRuleListStore* store = [WKContentRuleListStore defaultStore];
+        [store lookUpContentRuleListForIdentifier:ident
+                                completionHandler:^(WKContentRuleList* found, NSError* err) {
+            (void)err;
+            if (found) {
+                [uc addContentRuleList:found];
+                self->trackerRuleList_ = found;
+                return;
+            }
+            NSString* json = @(lethe::trackerContentRulesJson(list).c_str());
+            [store compileContentRuleListForIdentifier:ident
+                                encodedContentRuleList:json
+                                     completionHandler:^(WKContentRuleList* compiled, NSError* e) {
+                (void)e;
+                if (compiled) {
+                    [uc addContentRuleList:compiled];
+                    self->trackerRuleList_ = compiled;
+                }
+            }];
+        }];
+        trackerRuleCount_ = list.domains.size() + list.pathPatterns.size();
+    } else {
+        trackerRuleCount_ = 0;
+    }
+    // Stealth UA: push to every existing webView (tab/window).
+    NSString* ua = (prefs.stealthUA) ? @(lethe::stealthUserAgentString())
+                                     : @"";
+    for (BrowserWindowController* c in [controllers_ copy]) {
+        if (c.webView) c.webView.customUserAgent = ua.length ? ua : nil;
+    }
+    // HTTPS-first: the policy gate reads ctx_->httpsFirst; we update it
+    // directly. Active navigations already in flight won't roll back.
+    ctx_->httpsFirst = prefs.httpsFirst;
+    // Persistent cookies: data store is fixed at webView creation time.
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    BOOL want = prefs.persistentCookies;
+    if ([defaults boolForKey:@"LETHE_PERSISTENT_HINT"] != want) {
+        [defaults setBool:want forKey:@"LETHE_PERSISTENT_HINT"];
+    }
 }
 - (void)buildMenuBar {
     NSMenu* bar = [[NSMenu alloc] init];
@@ -659,6 +737,8 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     addItem(view, @"Stop", @selector(stopLoading:), @".", cmd);
     [view addItem:[NSMenuItem separatorItem]];
     addItem(view, @"Reader View", @selector(toggleReader:), @"r", cmdShift);
+    [view addItem:[NSMenuItem separatorItem]];
+    addItem(view, @"Find in Tabs…", @selector(showTabSearch:), @"\\", cmd);
     [view addItem:[NSMenuItem separatorItem]];
     addItem(view, @"Show Web Inspector", @selector(showWebInspector:), @"i", cmdAlt);
     [view addItem:[NSMenuItem separatorItem]];

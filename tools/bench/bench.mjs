@@ -197,11 +197,11 @@ async function runLethe(steps, { noProxy }) {
   const bin = LETHE_BIN;
   const argv = ['--e2e-script', scriptPath, ...EXTRA_ARGS];
   if (noProxy) argv.push('--no-proxy');
-  // MotionMark is animation-driven: WebKit suspends requestAnimationFrame
-  // for occluded windows, so the run must keep the window frontmost. Other
-  // suites are fine in the background and must not steal focus.
+  // Chrome activates itself on launch and so runs every suite as the
+  // frontmost app; WebKit throttles timers and suspends requestAnimationFrame
+  // for occluded windows. Same footing for Lethe: keep it frontmost too.
   const env = { ...process.env, ...EXTRA_ENV };
-  if (SUITES.includes('motionmark')) env.LETHE_KEEP_FRONT = '1';
+  if (env.LETHE_KEEP_FRONT === undefined) env.LETHE_KEEP_FRONT = '1';
   const child = spawn(bin, argv, { stdio: ['ignore', 'pipe', 'pipe'], env });
   const pid = child.pid;
   const isOurs = r => r.pid === pid ||
