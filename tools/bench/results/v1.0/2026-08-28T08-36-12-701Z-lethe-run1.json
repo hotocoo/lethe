@@ -1,0 +1,114 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-08-28T08:36:12.701Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "pageload"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international"
+  ],
+  "startupMs": 198.678,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 2,
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 913,
+      "dcl": 927,
+      "load": 928,
+      "fcp": 929,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 636,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": null,
+      "dcl": 109,
+      "load": 1220,
+      "fcp": 297,
+      "resources": 8,
+      "opaqueResources": 0,
+      "bytes": 1293061,
+      "domNodes": 242
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 201,
+      "dcl": 1537,
+      "load": null,
+      "fcp": 223,
+      "resources": 97,
+      "opaqueResources": 97,
+      "bytes": 65125,
+      "domNodes": 1455
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "ttfb": 10597,
+      "dcl": null,
+      "load": null,
+      "fcp": 10737,
+      "resources": 2,
+      "opaqueResources": 2,
+      "bytes": 142285,
+      "domNodes": 5074
+    }
+  ],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 545.826917,
+      "rssMb": 192.046875,
+      "processes": 4,
+      "cpuSec": 0.34,
+      "breakdown": [
+        {
+          "pid": 73298,
+          "rssMb": 113.3,
+          "cpuSec": 0.21,
+          "name": "lethe"
+        },
+        {
+          "pid": 73299,
+          "rssMb": 15,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 73300,
+          "rssMb": 32.5,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 73301,
+          "rssMb": 31.2,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-08-28T08:07:49.308Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "youtube4k"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 199.149458,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 4: wait-js '(function(){ var v = document.querySelector('video'); if (!v) return ''; v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function(){}); return v.readyState >= 1 ? 'ready' : ''; })()' still falsy after 30000 ms ()",
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 547.907375,
+      "rssMb": 191.21875,
+      "processes": 4,
+      "cpuSec": 0.34,
+      "breakdown": [
+        {
+          "pid": 64064,
+          "rssMb": 113.2,
+          "cpuSec": 0.22,
+          "name": "lethe"
+        },
+        {
+          "pid": 64065,
+          "rssMb": 14,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 64066,
+          "rssMb": 33.4,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 64067,
+          "rssMb": 30.7,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "Lethe Browser v0.1.1 (system WebKit)",
+    "[lethe] Applying macOS sandbox (Seatbelt)...",
+    "[lethe] Seatbelt profile active (file writes limited to temp, ~/Downloads and Lethe's own Library subtrees)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN initialized (disabled by default)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] worker pool: 16 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:63214 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:63214 (subresource enforcement on)",
+    "[e2e] start: 12 lines",
+    "[e2e] keep-front: on",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab https://www.youtube.com/watch?v=Ba5_jnu_6Jo",
+    "[e2e] > try-wait 60000",
+    "[e2e] > wait-js 30000 (function(){ var v = document.querySelector('video'); if (!v) return ''; v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function(){}); return v.readyState >= 1 ? 'ready' : ''; })()",
+    "[e2e] FAIL line 4: wait-js '(function(){ var v = document.querySelector('video'); if (!v) return ''; v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function(){}); return v.readyState >= 1 ? 'ready' : ''; })()' still falsy after 30000 ms ()",
+    "[e2e] failure screenshot: /var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/lethe-e2e-failure.png",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}
