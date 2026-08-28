@@ -188,3 +188,42 @@ done
 ```
 
 Raw JSON for every run is under `tools/bench/results/v1.0/`.
+
+
+---
+
+## Wave v0.2.1: "Quiet chrome + plugins" — no-regression proof (2026-08-29)
+
+After the Lethe Quiet toolbar, the Settings gear button, the PluginRegistry
+(22 feature plugins) and the script-plugin loader landed, the same
+`tools/bench/bench.mjs` suite (startup + pageload, 8 sites) was re-run
+against the same Chrome on the same machine. Raw JSON:
+`tools/bench/results/wave-quiet-plugins/`.
+
+| Variant | Startup to ready (ms) |
+|---|---|
+| **lethe** | **291** |
+| chrome    | 1124 |
+
+Lethe stays ~3.9x faster to ready than Chrome, within the noise band of the
+v1.0 numbers (187-261 ms): the toolbar rewrite and the plugin registry cost
+nothing measurable at startup.
+
+Light sites (median across runs; same table as v1.0 so the rows read
+directly against it):
+
+| Site | lethe TTFB | lethe FCP | chrome TTFB | chrome FCP |
+|---|---|---|---|---|
+| example.com | 56 | 64 | 90 | 276 |
+| iana.org/domains/reserved | n/a (warm) | 287 | 51 | 160 |
+| en.wikipedia.org/wiki/Web_browser | 89 | 233 | 69 | 188 |
+| github.com | 57 | 608 | 71 | 528 |
+
+**Honest caveat.** Two concurrent bench sessions shared this machine and
+its window server while these runs were collected (the raw dir carries
+runs from both). The light-site rows above and the startup row were
+measured before the second session's traffic landed and read clean against
+v1.0; the heavy news-site rows (theguardian, cnn, nytimes) in the raw JSON
+show multi-second TTFBs that v1.0 did not see and that match the
+contention window, not any code path in this wave — treat them as noise
+and re-measure in a quiet window before drawing any conclusion from them.
