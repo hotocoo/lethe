@@ -15,6 +15,7 @@ if(WIN32)
 endif()
 option(BUILD_UI "Build the GUI application" ON)
 option(USE_FULLWEB "Embed the platform web engine for full-web mode" ON)
+option(LETHE_WITH_CEF "Build the CEF (Chromium / Blink) shell alongside the WebKit one" OFF)
 
 # Built-in tracker protection list -> embedded string constant. Edit
 # browser/blocklist/trackers.txt; the binary picks it up on rebuild.
@@ -210,6 +211,153 @@ if(BUILD_UI AND APPLE)
     target_link_libraries(lethe PRIVATE lethe_core
         ${COCOA_FRAMEWORK} ${WEBKIT_FRAMEWORK} ${NETWORK_FRAMEWORK})
     install(TARGETS lethe BUNDLE DESTINATION .)
+
+    if(LETHE_WITH_CEF)
+        # CEF (Chromium / Blink) shell. Sibling app bundle to the WebKit
+        # lethe.app. The build is gated on third_party/cef/ being populated
+        # (the binary distribution from cefbuilds.com). When this option
+        # is on, the configured tree compiles main_cef.mm and links against
+        # the CEF framework in place.
+        set(CEF_ROOT "${CMAKE_SOURCE_DIR}/third_party/cef" CACHE PATH
+            "Path to the CEF binary distribution root (e.g. third_party/cef)")
+        if(NOT EXISTS "${CEF_ROOT}/include/cef_version.h")
+            message(FATAL_ERROR
+                "LETHE_WITH_CEF=ON but ${CEF_ROOT}/include/cef_version.h is missing. "
+                "Drop the CEF binary distribution (Chromium Embedded Framework.framework, "
+                "include/, libcef_dll/) into third_party/cef/ and re-configure.")
+        endif()
+        message(STATUS "[lethe-cef] CEF root: ${CEF_ROOT}")
+        # The CEF framework's Headers/ live inside the .framework bundle.
+        # We use a SYMBOLIC include path so #include "include/cef_*.h" works
+        # from C++ sources (CEF headers are authored with that prefix).
+        add_executable(lethe-cef MACOSX_BUNDLE
+            browser/app/main_cef.mm
+            browser/app/cef_app_delegate.mm
+            browser/app/cef_browser_client.mm
+            browser/app/cef_automation.mm
+            browser/app/cef_render_handler.mm
+            browser/app/shell_bootstrap.cc
+        )
+        set_source_files_properties(
+            browser/app/main_cef.mm
+            browser/app/cef_app_delegate.mm
+            browser/app/cef_browser_client.mm
+            browser/app/cef_automation.mm
+            browser/app/cef_render_handler.mm
+            PROPERTIES LANGUAGE OBJCXX)
+        target_compile_options(lethe-cef PRIVATE -fobjc-arc -Wno-deprecated-declarations)
+        set_target_properties(lethe-cef PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/browser/app/Info.plist.in"
+            MACOSX_BUNDLE_BUNDLE_NAME "Lethe (CEF)"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "org.aletheia.lethe.cef"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+            OUTPUT_NAME "lethe-cef"
+        )
+        target_include_directories(lethe-cef PRIVATE
+            ${CMAKE_SOURCE_DIR}/include
+            ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/browser
+            ${CEF_ROOT}                          # so "include/cef_*.h" works
+            ${CEF_ROOT}/include
+        )
+        # libcef_dll is provided as a static lib via the CEF binary dist.
+        # Some distros ship it at libcef_dll/libcef_dll.a; newer ones at
+        # Release/libcef_dll.a. Try both.
+        find_library(CEF_LIB NAMES cef HINTS "${CEF_ROOT}/Release")
+        if(NOT CEF_LIB)
+            find_library(CEF_LIB NAMES cef_dll HINTS "${CEF_ROOT}/libcef_dll")
+        endif()
+        if(NOT CEF_LIB)
+            # Newer CEF builds ship a single dylib (Chromium Embedded Framework)
+            # and no static lib. The framework itself is the link target.
+            find_library(CEF_LIB
+                NAMES "Chromium Embedded Framework"
+                HINTS "${CEF_ROOT}/Release"
+                NO_DEFAULT_PATH)
+        endif()
+        if(NOT CEF_LIB)
+            message(FATAL_ERROR
+                "Could not find a CEF library. Looked for libcef.dylib, "
+                "libcef_dll.a, and Chromium Embedded Framework.framework "
+                "under ${CEF_ROOT}.")
+        endif()
+        # The C++ wrapper glue: this is the static archive that resolves the
+        # CefRefPtr / CefString / CefV8Value / CefBrowser symbols the headers
+        # forward-declare. Built by the CEF binary dist under build/.
+        find_library(CEF_WRAPPER_LIB
+            NAMES libcef_dll_wrapper cef_dll_wrapper
+            HINTS "${CEF_ROOT}/build/libcef_dll_wrapper"
+                  "${CEF_ROOT}/libcef_dll"
+            NO_DEFAULT_PATH)
+        if(NOT CEF_WRAPPER_LIB)
+            message(FATAL_ERROR
+                "Could not find libcef_dll_wrapper.a. Build the CEF wrapper "
+                "(cmake --build ${CEF_ROOT}/build --target libcef_dll_wrapper) "
+                "or pass CEF_WRAPPER_LIB=... to this configure step.")
+        endif()
+        message(STATUS "[lethe-cef] CEF library:    ${CEF_LIB}")
+        message(STATUS "[lethe-cef] CEF wrapper lib: ${CEF_WRAPPER_LIB}")
+        target_link_libraries(lethe-cef PRIVATE
+            lethe_core
+            ${COCOA_FRAMEWORK} ${NETWORK_FRAMEWORK}
+            "${CEF_LIB}"
+            "${CEF_WRAPPER_LIB}")
+        # The CEF framework's other dylibs (libEGL, libGLESv2, etc.) live in
+        # Release/Chromium Embedded Framework.framework/Libraries/; rpath
+        # gets them from the framework's standard @rpath.
+        set_target_properties(lethe-cef PROPERTIES
+            BUILD_RPATH "${CEF_ROOT}/Release/Chromium Embedded Framework.framework/Libraries")
+
+        # ---- CEF Helper (subprocess binary) ----------------------------------
+        # Chromium's multi-process model spawns one Helper per renderer / GPU
+        # / network / utility process. The Helper is a tiny binary that just
+        # calls CefExecuteProcess. We build it as a console executable (no
+        # bundle) and copy it into the main .app's Frameworks/ as a sibling
+        # .app via a post-build step.
+        add_executable(lethe-cef-helper browser/app/lethe_cef_helper.mm)
+        set_source_files_properties(browser/app/lethe_cef_helper.mm
+            PROPERTIES LANGUAGE OBJCXX)
+        target_compile_options(lethe-cef-helper PRIVATE
+            -fobjc-arc -Wno-deprecated-declarations)
+        target_include_directories(lethe-cef-helper PRIVATE
+            ${CEF_ROOT} ${CEF_ROOT}/include)
+        target_link_libraries(lethe-cef-helper PRIVATE
+            "${CEF_LIB}" "${CEF_WRAPPER_LIB}" ${COCOA_FRAMEWORK})
+        set_target_properties(lethe-cef-helper PROPERTIES
+            OUTPUT_NAME "lethe_cef_helper")
+
+        # Post-build: copy the CEF framework + Helper .app into the bundle so
+        # @executable_path/../Frameworks/ resolves at runtime. The framework
+        # must live in BOTH the main bundle's Frameworks/ (so the browser
+        # process finds it at @executable_path/../Frameworks/...) AND the
+        # Helper.app's adjacent Frameworks/ (so the helper binary finds it
+        # at @executable_path/../../Frameworks/...).
+        add_custom_command(TARGET lethe-cef POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CEF_ROOT}/Release/Chromium Embedded Framework.framework"
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Chromium Embedded Framework.framework"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/MacOS"
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "$<TARGET_FILE:lethe-cef-helper>"
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/MacOS/lethe_cef_helper"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/Frameworks"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Chromium Embedded Framework.framework"
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/Frameworks/Chromium Embedded Framework.framework"
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_SOURCE_DIR}/browser/app/Info_helper.plist.in"
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/Info.plist"
+            COMMAND ${CMAKE_COMMAND} -E echo
+                "Bundled CEF framework + Helper into $<TARGET_BUNDLE_DIR:lethe-cef>"
+            VERBATIM)
+        install(TARGETS lethe-cef BUNDLE DESTINATION .)
+    endif()
 elseif(BUILD_UI)
     # Linux: GTK3 shell; WebKitGTK engine when its dev package is present,
     # otherwise the Cairo reader viewport renders extracted text only.
