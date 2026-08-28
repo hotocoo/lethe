@@ -9,6 +9,7 @@
 #import "ui/mac/LetheHistory.h"
 #import "ui/mac/LetheDownloads.h"
 #import "ui/mac/LethePermissions.h"
+#import "ui/mac/LethePreferences.h"
 #import <objc/runtime.h>
 
 #include <string>
@@ -116,8 +117,10 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
         webView_.UIDelegate = self;
         webView_.allowsBackForwardNavigationGestures = YES;
         webView_.allowsMagnification = YES;
-        if (oblivion_ || ctx_->cfg.userAgentMode == "stealth") {
-            // Oblivion always presents the fixed low-entropy profile.
+        if (oblivion_ || ctx_->cfg.userAgentMode == "stealth"
+            || [[LethePreferences shared] stealthUA]) {
+            // Oblivion and stealth mode (CLI or Preferences) present the
+            // fixed low-entropy profile.
             webView_.customUserAgent = @(lethe::stealthUserAgentString());
         }
         [webView_.configuration.userContentController addScriptMessageHandler:self name:@"bookmarks"];
@@ -790,6 +793,13 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     if (control == findField_ && command == @selector(insertNewline:) &&
         ([NSEvent modifierFlags] & NSEventModifierFlagShift)) {
         [self findWithBackwards:YES];
+        return YES;
+    }
+    if (control == addressField_ && command == @selector(insertNewline:)) {
+        // NSTextField does not always fire its action on Return when the
+        // cell is configured for single-line / scrollable / truncating
+        // mode. Handle the key here so Enter reliably submits the address.
+        [self addressEntered:nil];
         return YES;
     }
     return NO;
