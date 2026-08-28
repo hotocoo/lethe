@@ -35,13 +35,36 @@ engine family as Chrome).
 - **The renderer subprocess does not launch.** CEF spawns the GPU,
   network, and storage Helper processes, but never a
   `--type=renderer` process. Every navigation (even
-  `about:blank`) is reported as `ERR_ABORTED (-3)`, and the
-  `lethe:eval` round-trip times out (no renderer to reply). The CEF
-  log shows no renderer-launch attempt or error, which points at a
-  CEF/Chromium process-launch configuration issue rather than a
-  Lethe bug. This blocks:
+  `about:blank` and `data:` URLs) is reported as
+  `ERR_ABORTED (-3)`, and the `lethe:eval` round-trip times out
+  (no renderer to reply). This blocks:
   - **G2** (`lethe-cef --e2e-script ...` loading example.com)
   - **H1** (a bench run that includes `lethe-cef` as a third browser)
+
+### Round 2 investigation findings
+
+- **Not a crash.** No renderer crash reports are generated. The
+  renderer process simply never appears in the process list (verified
+  by continuous monitoring over 10 s).
+- **Not a network issue.** `data:text/html` URLs also abort with
+  `ERR_ABORTED`, so it is not the policy proxy or DNS.
+- **Not a missing resource.** The ICU data (`icudtl.dat`) and the
+  CEF framework are present in both the main bundle and the Helper
+  bundle. The GPU / network / storage Helpers launch fine using the
+  same Helper binary and framework.
+- **CEF verbose logging is silent.** `--enable-logging=stderr --v=2`
+  produces no renderer-launch lines, suggesting the browser process
+  is not even attempting to launch a renderer (or the attempt is
+  failing before logging).
+- **Hypothesis.** The navigation is being aborted before the
+  RenderFrameHost requests a renderer. Possible causes to investigate:
+  1. A race in `CreateBrowserSync` where the initial navigation is
+     cancelled before the renderer is attached.
+  2. A CEF/Chromium process-launch configuration issue (e.g., a
+     missing switch or an incorrect subprocess path for the renderer
+     specifically).
+  3. A conflict between Lethe's Seatbelt sandbox and the renderer
+     launch (less likely, since other Helpers launch fine).
 
 ## Next steps (for a later round)
 
