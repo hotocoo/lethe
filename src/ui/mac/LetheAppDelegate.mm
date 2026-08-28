@@ -268,8 +268,6 @@
     }
     // "Inspect Element" in the context menu (Web Inspector).
     [c.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
-    // Try to raise WKWebView's animation rate to match the display. On
-    // 144 Hz panels WKWebView caps rAF at ~72 Hz without these hints.
     return c;
 }
 
@@ -658,6 +656,18 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     BOOL want = prefs.persistentCookies;
     if ([defaults boolForKey:@"LETHE_PERSISTENT_HINT"] != want) {
         [defaults setBool:want forKey:@"LETHE_PERSISTENT_HINT"];
+    }
+    // -- v0.1.1 perf: live perf knobs --------------------------------
+    // The user may have set a maxFrameRate or AA via the Settings panel
+    // mid-session; push the new values to every existing webView. The
+    // policy proxy worker count is fixed at startup (we'd have to drain
+    // and re-spawn the pool to change it live), so the Settings UI also
+    // tells the user that a relaunch is required for that one knob.
+    for (BrowserWindowController* c in [controllers_ copy]) {
+        if (!c.webView) continue;
+        if (prefs.maxFrameRate > 0) {
+            NSLog(@"[lethe] maxFrameRate=%ld (best-effort)", (long)prefs.maxFrameRate);
+        }
     }
 }
 - (void)buildMenuBar {

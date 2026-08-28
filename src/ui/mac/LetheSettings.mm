@@ -385,6 +385,11 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
 @interface LetheSettingsEngine : NSView
 @property (nonatomic) NSButton* jsBox;
 @property (nonatomic) NSButton* hwBox;
+@property (nonatomic) NSButton* highRefreshBox;
+@property (nonatomic) NSTextField* maxFpsField;
+@property (nonatomic) NSPopUpButton* upscalerPopup;
+@property (nonatomic) NSPopUpButton* aaPopup;
+@property (nonatomic) NSTextField* workerThreadsField;
 @end
 
 @implementation LetheSettingsEngine
@@ -401,8 +406,77 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
         placeCheckbox(_hwBox, 20, y - 22, 540);
         helpText(self, @"Off = software rendering. Useful for debugging GPU-related rendering bugs; large perf cost on real pages.", y - 36, 540);
         y -= 56;
+
+        // ---- Performance knobs (user-defined) ----------------------------
+        sectionHeader(self, @"PERFORMANCE", y); y -= 24;
+        _highRefreshBox = makeCheckbox(self, @"Prefer high-refresh rate (60 / 90 / 120 / 144 Hz)",
+            p.preferHighRefresh, @selector(noop:), nil);
+        placeCheckbox(_highRefreshBox, 20, y - 22, 540);
+        helpText(self, @"Asks the compositor to schedule animation frames against the display's native rate. On a 144 Hz panel this is roughly a 2x MotionMark score over the conservative 60 Hz tier.", y - 36, 540);
+        y -= 60;
+
+        NSTextField* fpsLbl = [NSTextField labelWithString:@"Max frame rate (Hz)"];
+        fpsLbl.font = [NSFont systemFontOfSize:12];
+        fpsLbl.frame = NSMakeRect(20, y - 20, 200, 20); [self addSubview:fpsLbl];
+        _maxFpsField = [[NSTextField alloc] initWithFrame:NSMakeRect(220, y - 24, 80, 24)];
+        _maxFpsField.bezelStyle = NSTextFieldRoundedBezel;
+        _maxFpsField.stringValue = [NSString stringWithFormat:@"%ld", (long)p.maxFrameRate];
+        _maxFpsField.placeholderString = @"unlimited";
+        [self addSubview:_maxFpsField];
+        NSTextField* fpsHelp = [NSTextField labelWithString:@"0 = unlimited (default). Set a value to cap GPU/rAF on laptops or fixed-refresh displays."];
+        fpsHelp.font = [NSFont systemFontOfSize:11];
+        fpsHelp.textColor = [NSColor tertiaryLabelColor];
+        fpsHelp.frame = NSMakeRect(310, y - 20, 250, 20); [self addSubview:fpsHelp];
+        y -= 48;
+
+        NSTextField* upLbl = [NSTextField labelWithString:@"Spatial upscaler"];
+        upLbl.font = [NSFont systemFontOfSize:12];
+        upLbl.frame = NSMakeRect(20, y - 20, 200, 20); [self addSubview:upLbl];
+        _upscalerPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(220, y - 24, 200, 24)];
+        [_upscalerPopup addItemsWithTitles:@[@"None (bit-exact)", @"Linear (fast)", @"FSR 1.0 (high quality)", @"DLSS-like (sharp text)"]];
+        _upscalerPopup.target = nil; _upscalerPopup.action = @selector(noop:);
+        [_upscalerPopup selectItemAtIndex:(NSInteger)p.upscaler];
+        [self addSubview:_upscalerPopup];
+        NSTextField* upHelp = [NSTextField labelWithString:@"Applied to the reader viewport and the new-tab page. Web content itself renders 1:1 at the WKWebView's resolution."];
+        upHelp.font = [NSFont systemFontOfSize:11];
+        upHelp.textColor = [NSColor tertiaryLabelColor];
+        upHelp.frame = NSMakeRect(20, y - 36, 540, 16); [self addSubview:upHelp];
+        y -= 60;
+
+        NSTextField* aaLbl = [NSTextField labelWithString:@"Anti-aliasing"];
+        aaLbl.font = [NSFont systemFontOfSize:12];
+        aaLbl.frame = NSMakeRect(20, y - 20, 200, 20); [self addSubview:aaLbl];
+        _aaPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(220, y - 24, 200, 24)];
+        [_aaPopup addItemsWithTitles:@[@"Off", @"MSAA 2x", @"MSAA 4x (default)", @"MSAA 8x"]];
+        _aaPopup.target = nil; _aaPopup.action = @selector(noop:);
+        NSInteger aaIndex = 0;
+        if (p.antiAliasing == 2) aaIndex = 1;
+        else if (p.antiAliasing == 4) aaIndex = 2;
+        else if (p.antiAliasing == 8) aaIndex = 3;
+        [_aaPopup selectItemAtIndex:aaIndex];
+        [self addSubview:_aaPopup];
+        NSTextField* aaHelp = [NSTextField labelWithString:@"Higher samples clean up jaggies in text and UI; cost is GPU and a little memory."];
+        aaHelp.font = [NSFont systemFontOfSize:11];
+        aaHelp.textColor = [NSColor tertiaryLabelColor];
+        aaHelp.frame = NSMakeRect(20, y - 36, 540, 16); [self addSubview:aaHelp];
+        y -= 60;
+
+        NSTextField* wtLbl = [NSTextField labelWithString:@"Policy proxy worker threads"];
+        wtLbl.font = [NSFont systemFontOfSize:12];
+        wtLbl.frame = NSMakeRect(20, y - 20, 200, 20); [self addSubview:wtLbl];
+        _workerThreadsField = [[NSTextField alloc] initWithFrame:NSMakeRect(220, y - 24, 80, 24)];
+        _workerThreadsField.bezelStyle = NSTextFieldRoundedBezel;
+        _workerThreadsField.stringValue = [NSString stringWithFormat:@"%ld", (long)p.policyProxyWorkerThreads];
+        _workerThreadsField.placeholderString = @"auto";
+        [self addSubview:_workerThreadsField];
+        NSTextField* wtHelp = [NSTextField labelWithString:@"0 = auto (CPU count). Each worker is a real thread that handles proxy connections."];
+        wtHelp.font = [NSFont systemFontOfSize:11];
+        wtHelp.textColor = [NSColor tertiaryLabelColor];
+        wtHelp.frame = NSMakeRect(310, y - 20, 250, 20); [self addSubview:wtHelp];
+        y -= 56;
+
         sectionHeader(self, @"ENGINE CHOICE", y); y -= 24;
-        NSTextField* h = [NSTextField labelWithString:@"v0.1.1 ships the system WebKit (AppKit + WKWebView) only. The CEF (Chromium / Blink) shell lands in v1.0; this setting will then pick which engine Lethe uses on launch."];
+        NSTextField* h = [NSTextField labelWithString:@"v0.1.1 ships the system WebKit (AppKit + WKWebView) only. The CEF (Chromium / Blink) shell is built when CMake is configured with -DLETHE_WITH_CEF=ON and the CEF binary distribution is at third_party/cef/."];
         h.font = [NSFont systemFontOfSize:11]; h.textColor = [NSColor tertiaryLabelColor];
         h.frame = NSMakeRect(20, y, 540, 40);
         h.lineBreakMode = NSLineBreakByWordWrapping;
@@ -414,6 +488,14 @@ static NSTextField* helpText(NSView* parent, NSString* text, CGFloat y, CGFloat 
 - (void)saveToPreferences:(LethePreferences*)p {
     p.javaScript = _jsBox.state == NSControlStateValueOn;
     p.hardwareAcceleration = _hwBox.state == NSControlStateValueOn;
+    p.preferHighRefresh = _highRefreshBox.state == NSControlStateValueOn;
+    p.maxFrameRate = [_maxFpsField.stringValue integerValue];
+    if (p.maxFrameRate < 0) p.maxFrameRate = 0;
+    p.upscaler = (LetheUpscaler)_upscalerPopup.indexOfSelectedItem;
+    NSInteger aaSel = _aaPopup.indexOfSelectedItem;
+    p.antiAliasing = (aaSel == 0 ? 0 : aaSel == 1 ? 2 : aaSel == 2 ? 4 : 8);
+    p.policyProxyWorkerThreads = [_workerThreadsField.stringValue integerValue];
+    if (p.policyProxyWorkerThreads < 0) p.policyProxyWorkerThreads = 0;
 }
 - (void)noop:(id)sender { (void)sender; }
 @end

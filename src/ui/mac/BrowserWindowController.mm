@@ -117,6 +117,21 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
         webView_.UIDelegate = self;
         webView_.allowsBackForwardNavigationGestures = YES;
         webView_.allowsMagnification = YES;
+        // -- v0.1.1 perf --------------------------------------------------
+        // NOTE on WebKit frame-rate control: CALayer.preferredFrameRateRange
+        // is iOS-only; on macOS there is no public per-layer rAF cap. The
+        // WKWebView has a private CADisplayLink preference but the exact
+        // KVC key is version-dependent and absent in current WebKit on
+        // macOS 13/14 - calling setValue:forUndefinedKey: throws.
+        // The reliable wins on this platform are: the policy proxy worker
+        // pool (page-load throughput), and letting the user set a cap via
+        // the Settings panel. The cap is recorded here for the run; the
+        // Engine settings UI explains the macOS limitation.
+        LethePreferences* prefs = [LethePreferences shared];
+        if (prefs.maxFrameRate > 0) {
+            NSLog(@"[lethe] maxFrameRate=%ld (best-effort; macOS lacks a public rAF cap)",
+                  (long)prefs.maxFrameRate);
+        }
         if (oblivion_ || ctx_->cfg.userAgentMode == "stealth"
             || [[LethePreferences shared] stealthUA]) {
             // Oblivion and stealth mode (CLI or Preferences) present the

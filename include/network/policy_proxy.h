@@ -2,7 +2,10 @@
 #define LETHE_NETWORK_POLICY_PROXY_H
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -29,7 +32,7 @@ public:
     struct Options {
         // Prototype TLS configuration cloned into per-connection clients.
         TLSConfig tls;
-        // DoH provider URL applied to forwarding clients ("" inherits
+        // DoH provider URL applied to forwarding clients (\"\" inherits
         // none, i.e. resolution stays system-level - avoid in prod).
         std::string dohProvider;
         // Shared DoH answer cache. When null the proxy creates its own so
@@ -62,6 +65,10 @@ public:
         // could ride Lethe's VPN tunnel and policy identity. Empty = off
         // (tests / engines that cannot send proxy credentials).
         std::string authToken;
+        // Worker threads in the connection-handling pool. 0 = auto
+        // (std::thread::hardware_concurrency, with a sane floor). The
+        // accept thread is separate and always single.
+        size_t workerThreads = 0;
     };
 
     // 32 random bytes as hex (OpenSSL RAND_bytes); "" if the CSPRNG fails.
@@ -87,6 +94,7 @@ public:
 private:
     void acceptLoop();
     void serveConnection(int clientFd);
+    void workerLoop();
     HttpClient::PolicyDialConfig dialConfig() const;
 
     // One forwarding HttpClient per proxied request chain (cheap relative
@@ -98,6 +106,18 @@ private:
     std::atomic<int> port_{0};
     std::atomic<bool> running_{false};
     std::thread acceptThread_;
+
+    // Fixed-size worker pool: accept() pushes a fresh client fd, workers
+    // pop and serve. The previous design detached a fresh std::thread per
+    // connection, which costs ~100 µs of syscall + an 8 MiB stack per
+    // page load subresource. With a page that issues 50+ subresources in
+    // parallel, that thrashed the scheduler and inflated TTFB.
+    std::vector<std::thread> workers_;
+    std::deque<int> queue_;
+    std::mutex queue_mtx_;
+    std::condition_variable queue_cv_;
+    size_t workerCount_ = 0;
+
     std::string lastError_;
 
     // Refuse absurd request sizes before allocating.

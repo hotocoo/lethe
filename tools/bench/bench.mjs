@@ -46,7 +46,7 @@ const SPEEDOMETER_URL = 'https://browserbench.org/Speedometer3.1/?startAutomatic
 const SPEEDOMETER_TIMEOUT = 12 * 60 * 1000;
 const JETSTREAM_URL = 'https://browserbench.org/JetStream2.2/';
 const JETSTREAM_TIMEOUT = 20 * 60 * 1000;
-const MOTIONMARK_URL = 'https://browserbench.org/MotionMark1.3.1/';
+const MOTIONMARK_URL = 'https://browserbench.org/MotionMark1.3.2/';
 const MOTIONMARK_TIMEOUT = 15 * 60 * 1000;
 // Blender's Big Buck Bunny (public, stable id), played muted for 20 s.
 const YOUTUBE_URL = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';

@@ -1,8 +1,16 @@
 // main_mac.mm - Lethe on macOS with the system WebKit (AppKit + WKWebView).
 //
-// Alternative shell kept for the engine comparison (LETHE_MAC_ENGINE=webkit);
-// the default macOS build is the Chromium/Blink shell in main_cef.mm.
-// Bootstrap (engine, DoH pool, policy proxy) is shared: shell_bootstrap.cc.
+// Default shell for v0.1.1 (LETHE_ENGINE=webkit). The CEF (Chromium /
+// Blink) shell lives in main_cef.mm. Bootstrap (engine, DoH pool, policy
+// proxy) is shared: shell_bootstrap.cc.
+//
+// Order of operations:
+//   1. Load LethePreferences (JSON in ~/Library/Application Support/Lethe/).
+//      It is read here so we can apply user-defined perf knobs (worker
+//      pool size) BEFORE the policy proxy starts; runtime changes to
+//      these knobs require a relaunch and the Settings UI surfaces that.
+//   2. ShellBootstrap::init: engine, DoH, proxy.
+//   3. AppKit + CefApp + CefRunMessageLoop.
 
 #import <Cocoa/Cocoa.h>
 
@@ -10,8 +18,20 @@
 
 #include "app/shell_bootstrap.h"
 #include "ui/mac/LetheShell.h"
+#include "ui/mac/LethePreferences.h"
 
 int main(int argc, char** argv) {
+    // Load the user's preferences before bootstrap so we can apply the
+    // user-defined worker-pool size to the policy proxy at start time.
+    LethePreferences* prefs = [LethePreferences shared];
+    if (prefs.policyProxyWorkerThreads > 0) {
+        // The bootstrap reads this env var; see shell_bootstrap.cc. We set
+        // it here so a changed Settings value takes effect on next launch.
+        setenv("LETHE_PROXY_WORKER_THREADS",
+               [[NSString stringWithFormat:@"%ld",
+                   (long)prefs.policyProxyWorkerThreads] UTF8String], 1);
+    }
+
     lethe::ShellBootstrap boot;
     const int rc = boot.init(argc, argv, "system WebKit");
     if (rc >= 0) return rc;

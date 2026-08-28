@@ -121,6 +121,15 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
         po.disableDohResolverPool = !usePool;
         po.privateNet.isolatePrivateNetworks = cfg.isolatePrivateNetworks;
         for (const auto& h : cfg.privateNetworkAllowedHosts) po.privateNet.allowedHosts.insert(h);
+        // -- v0.1.1 perf: user-defined worker count ----------------------
+        // Read from env var (set by the macOS shell from LethePreferences
+        // before bootstrap runs). 0 = auto, otherwise literal pool size.
+        // Changing this at runtime requires a relaunch; the Settings UI
+        // surfaces that explicitly.
+        if (const char* wt = std::getenv("LETHE_PROXY_WORKER_THREADS")) {
+            const int n = std::atoi(wt);
+            if (n > 0) po.workerThreads = static_cast<size_t>(n);
+        }
         po.vpnTunnel = engine.vpnTunnel();
         po.udpTransport = engine.vpnTransport();
         po.relayHost = cfg.vpnConfig.endpointHost;

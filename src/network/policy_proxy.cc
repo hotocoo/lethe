@@ -170,6 +170,25 @@ bool PolicyProxyServer::start(const Options& options) {
             return c;
         });
     }
+    // -- v0.1.1 perf: fixed worker pool --------------------------------
+    // The previous design detached a fresh std::thread per connection. With
+    // a busy page (50+ parallel subresources) the cost of a pthread + an
+    // 8 MiB stack per request dominated TTFB. A small pool sized to the
+    // box's hardware_concurrency keeps the cache hot and avoids the churn.
+    workerCount_ = opts_.workerThreads;
+    if (workerCount_ == 0) {
+        unsigned hc = std::thread::hardware_concurrency();
+        workerCount_ = hc == 0 ? 8 : (hc < 4 ? 4 : hc);
+    }
+    // Cap at a sane number: each worker is a real thread. Past ~32 the
+    // scheduler itself becomes the bottleneck.
+    if (workerCount_ > 32) workerCount_ = 32;
+    workers_.reserve(workerCount_);
+    for (size_t i = 0; i < workerCount_; ++i) {
+        workers_.emplace_back([this] { workerLoop(); });
+    }
+    std::cout << "[lethe-proxy] worker pool: " << workerCount_ << " threads"
+              << std::endl;
     running_ = true;
     acceptThread_ = std::thread([this] { acceptLoop(); });
     return true;
@@ -183,13 +202,42 @@ void PolicyProxyServer::stop() {
         listenFd_ = -1;
     }
     if (acceptThread_.joinable()) acceptThread_.join();
+    // Wake all workers and tell them to drain. A sentinel -1 fd tells them
+    // to exit once the queue is empty (we still close any real fds the
+    // workers were handling).
+    {
+        std::lock_guard<std::mutex> lk(queue_mtx_);
+        running_.store(false);
+        for (size_t i = 0; i < workers_.size(); ++i) queue_.push_back(-1);
+    }
+    queue_cv_.notify_all();
+    for (auto& t : workers_) if (t.joinable()) t.join();
+    workers_.clear();
 }
 
 void PolicyProxyServer::acceptLoop() {
     while (running_) {
         int fd = ::accept(listenFd_, nullptr, nullptr);
         if (fd < 0) break;
-        std::thread([this, fd] { serveConnection(fd); }).detach();
+        {
+            std::lock_guard<std::mutex> lk(queue_mtx_);
+            queue_.push_back(fd);
+        }
+        queue_cv_.notify_one();
+    }
+}
+
+void PolicyProxyServer::workerLoop() {
+    for (;;) {
+        int fd;
+        {
+            std::unique_lock<std::mutex> lk(queue_mtx_);
+            queue_cv_.wait(lk, [&] { return !queue_.empty(); });
+            fd = queue_.front();
+            queue_.pop_front();
+        }
+        if (fd == -1) return;  // sentinel: shutdown
+        serveConnection(fd);
     }
 }
 

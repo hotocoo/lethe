@@ -54,6 +54,16 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         _customSearchURL = @"";
         _language = @"en";
 
+        // Performance. Defaults: unlimited frame rate, high-refresh on,
+        // no upscaler, 4x MSAA. Power users with a 240 Hz display can
+        // let the engine pick up that rate automatically; users on a 60 Hz
+        // external monitor can cap the cap and let the GPU cool down.
+        _maxFrameRate = 0;             // 0 = unlimited (let the display drive)
+        _preferHighRefresh = YES;      // ask the compositor for the panel rate
+        _upscaler = LetheUpscalerNone; // bit-exact, no spatial upscale
+        _antiAliasing = 4;             // MSAA 4x
+        _policyProxyWorkerThreads = 0; // 0 = auto (hardware_concurrency)
+
         // Privacy of Lethe itself.
         _telemetry = NO;
         _crashReports = NO;
@@ -106,6 +116,16 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         _theme = (LetheTheme)[v integerValue];
     if ((v = dict[@"searchEngine"]) && [v respondsToSelector:@selector(integerValue)])
         _searchEngine = (LetheSearchEngine)[v integerValue];
+    if ((v = dict[@"maxFrameRate"]) && [v respondsToSelector:@selector(integerValue)])
+        _maxFrameRate = [v integerValue];
+    if ((v = dict[@"preferHighRefresh"]) && [v respondsToSelector:@selector(boolValue)])
+        _preferHighRefresh = [v boolValue];
+    if ((v = dict[@"upscaler"]) && [v respondsToSelector:@selector(integerValue)])
+        _upscaler = (LetheUpscaler)[v integerValue];
+    if ((v = dict[@"antiAliasing"]) && [v respondsToSelector:@selector(integerValue)])
+        _antiAliasing = [v integerValue];
+    if ((v = dict[@"policyProxyWorkerThreads"]) && [v respondsToSelector:@selector(integerValue)])
+        _policyProxyWorkerThreads = [v integerValue];
 }
 
 - (void)save {
@@ -128,6 +148,11 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
     [d setObject:_language ?: @"en" forKey:@"language"];
     [d setObject:@(_theme) forKey:@"theme"];
     [d setObject:@(_searchEngine) forKey:@"searchEngine"];
+    [d setObject:@(_maxFrameRate) forKey:@"maxFrameRate"];
+    [d setObject:@(_preferHighRefresh) forKey:@"preferHighRefresh"];
+    [d setObject:@(_upscaler) forKey:@"upscaler"];
+    [d setObject:@(_antiAliasing) forKey:@"antiAliasing"];
+    [d setObject:@(_policyProxyWorkerThreads) forKey:@"policyProxyWorkerThreads"];
     [d writeToFile:_path atomically:YES];
     [[NSNotificationCenter defaultCenter]
         postNotificationName:LethePreferencesDidChangeNotification object:self];

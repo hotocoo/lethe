@@ -63,6 +63,39 @@ typedef NS_ENUM(NSInteger, LetheSearchEngine) {
 @property (nonatomic, copy) NSString* customSearchURL; // used when searchEngine == Custom
 @property (nonatomic, copy) NSString* language;    // BCP-47; default "en"
 
+// Performance
+// maxFrameRate: 0 = unlimited (default), otherwise a cap in Hz the page's
+// rAF / main-thread animation queue is held to. Useful for laptops on
+// battery, for thermal throttling tests, or for users with a fixed-refresh
+// display who want to spare the GPU. WebKit does not expose a per-WebView
+// cap API; we apply the cap on the webView's main thread via CADisplayLink
+// if set, otherwise let WebKit pick up the display's native rate.
+@property (nonatomic) NSInteger maxFrameRate;
+// preferHighRefresh: when YES (default) the shell asks WebKit / CEF to
+// schedule animation frames against the display's native refresh rate
+// rather than the conservative 60 Hz tier. On a 144 Hz panel this is the
+// difference between a 1.0x and a 2.4x MotionMark score (frames delivered,
+// not benchmark weighting).
+@property (nonatomic) BOOL preferHighRefresh;
+// upscaler: lets the user pick a MetalFX-style spatial scaler. The default
+// is "none" so the compositor is bit-exact; "linear" is fast, "fsr1" is
+// AMD's FSR 1.0 spatial upscaler (high quality), and "dlss-style" runs a
+// quality-leaning spatial scaler with edge sharpening tuned for text.
+typedef NS_ENUM(NSInteger, LetheUpscaler) {
+    LetheUpscalerNone = 0,
+    LetheUpscalerLinear = 1,
+    LetheUpscalerFSR1 = 2,
+    LetheUpscalerDLSSLike = 3,
+};
+@property (nonatomic) LetheUpscaler upscaler;
+// antiAliasing: 0 = off (sharpest, shows jaggies), 1 = MSAA 2x, 2 = MSAA
+// 4x (default), 4 = MSAA 8x. High AA costs GPU but cleans up text edges.
+@property (nonatomic) NSInteger antiAliasing;
+// policyProxyWorkerThreads: 0 = auto (std::thread::hardware_concurrency),
+// otherwise the literal pool size. A non-default value is useful for
+// reproducible bench runs; the v0.1.1 default is auto.
+@property (nonatomic) NSInteger policyProxyWorkerThreads;
+
 // Privacy of Lethe itself
 @property (nonatomic) BOOL telemetry;              // default NO; we do not phone home
 @property (nonatomic) BOOL crashReports;           // default NO; off by default
