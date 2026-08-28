@@ -11,3 +11,6 @@ cmake-build-*/
 build-linux/
 packages/
 dist/
+
+# Prebuilt Chromium Embedded Framework (fetch with scripts/fetch_cef.sh)
+third_party/cef/

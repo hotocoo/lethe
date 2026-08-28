@@ -194,7 +194,7 @@ void E2eDriver::pollJs(const std::string& code, gint64 deadlineUs, double timeou
             fail("wait-js '" + code + "' still falsy after " + std::to_string((int)timeoutMs) + " ms (" + r + ")");
             return;
         }
-        timeout(250, [this, code, deadlineUs, timeoutMs]() { pollJs(code, deadlineUs, timeoutMs); });
+        timeout(500, [this, code, deadlineUs, timeoutMs]() { pollJs(code, deadlineUs, timeoutMs); });
     });
 }
 

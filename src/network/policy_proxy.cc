@@ -8,6 +8,7 @@
 #include <cstring>
 #include <iostream>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
@@ -207,6 +208,10 @@ HttpClient::PolicyDialConfig PolicyProxyServer::dialConfig() const {
 }
 
 void PolicyProxyServer::serveConnection(int clientFd) {
+    // Loopback leg of the tunnel: engine <-> proxy. Small TLS records must
+    // not sit in Nagle's buffer waiting for an ACK.
+    int nodelay = 1;
+    ::setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
     std::string head, method, target;
     // Engines (CFNetwork, libsoup) do not remember proxy credentials across
     // connections: every new connection opens with an unauthenticated

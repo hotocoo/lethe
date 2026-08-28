@@ -4,7 +4,9 @@
 // serial queue. Policy checks (DoH round-trip) never run on the main
 // thread, so a slow resolver cannot freeze the UI.
 
-#import "ui/mac/LetheShell.h"
+#import "ui/mac/LethePolicyGate.h"
+
+#include "network/http_client.h"
 
 #include <memory>
 #include <string>

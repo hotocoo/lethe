@@ -27,6 +27,7 @@
 #include <sstream>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <zlib.h>
@@ -879,6 +880,11 @@ bool HttpClient::openTcp(const std::string& target, int port) {
     ::freeaddrinfo(res);
 
     if (connectedFd < 0) return false;
+    // TLS records and HTTP/2 frames are small writes; with Nagle on, each
+    // one waits for the peer's (delayed) ACK - ~100 ms stalls per request
+    // through the proxy tunnel. Browsers disable Nagle; so do we.
+    int nodelay = 1;
+    ::setsockopt(connectedFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
     socketFd_ = connectedFd;
     return true;
 }
