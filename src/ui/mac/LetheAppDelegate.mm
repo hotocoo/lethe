@@ -92,6 +92,10 @@
 
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
     (void)note;
+    // A binary launched from the command line (benchmarks, e2e) can start
+    // without a regular activation policy; force it so the window can win
+    // focus and WebKit keeps requestAnimationFrame running.
+    [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [self buildMenuBar];
     [self prepareTrackerProtection:^{ [self openInitialWindow]; }];
 }

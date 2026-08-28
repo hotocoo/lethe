@@ -197,7 +197,12 @@ async function runLethe(steps, { noProxy }) {
   const bin = LETHE_BIN;
   const argv = ['--e2e-script', scriptPath, ...EXTRA_ARGS];
   if (noProxy) argv.push('--no-proxy');
-  const child = spawn(bin, argv, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...EXTRA_ENV } });
+  // MotionMark is animation-driven: WebKit suspends requestAnimationFrame
+  // for occluded windows, so the run must keep the window frontmost. Other
+  // suites are fine in the background and must not steal focus.
+  const env = { ...process.env, ...EXTRA_ENV };
+  if (SUITES.includes('motionmark')) env.LETHE_KEEP_FRONT = '1';
+  const child = spawn(bin, argv, { stdio: ['ignore', 'pipe', 'pipe'], env });
   const pid = child.pid;
   const isOurs = r => r.pid === pid ||
     (!before.has(r.pid) && /com\.apple\.WebKit\.(WebContent|Networking|GPU)/.test(r.cmd));

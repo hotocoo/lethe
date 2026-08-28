@@ -60,9 +60,41 @@
     return self;
 }
 
+// Keep the browser frontmost while a script runs. WebKit suspends
+// requestAnimationFrame (and reports document.visibilityState "hidden")
+// for occluded windows, which hangs animation-driven benchmarks such as
+// MotionMark; a window launched from the command line does not reliably
+// win activation on its own, so we re-assert it. Only when another app is
+// in front, so an interactive user looking at Lethe is never fought.
+- (void)keepFront {
+    if (![NSApp isActive]) {
+        // Modern, LaunchServices-backed activation. The legacy
+        // activateIgnoringOtherApps: is unreliable for a binary launched
+        // from the command line, which is how benchmarks drive us.
+        [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+        [NSApp activateIgnoringOtherApps:YES];
+    }
+    BrowserWindowController* c = (current_ && current_.window) ? current_ : app_.controllers.lastObject;
+    if (c && c.window) [c.window makeKeyAndOrderFront:nil];
+}
+
 - (void)start {
     current_ = app_.controllers.firstObject;
     std::cout << "[e2e] start: " << lines_.count << " lines" << std::endl;
+    // Re-assert frontmost every 2 s for the life of the script, but only
+    // when asked: animation benchmarks (MotionMark) need it, and it must
+    // not steal focus from an interactive user during ordinary runs.
+    const char* keepFront = getenv("LETHE_KEEP_FRONT");
+    if (keepFront && keepFront[0] && keepFront[0] != '0') {
+        dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,
+                                                          0, 0, dispatch_get_main_queue());
+        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0),
+                                  2 * NSEC_PER_SEC, 200 * NSEC_PER_MSEC);
+        __weak LetheAutomation* weakSelf = self;
+        dispatch_source_set_event_handler(timer, ^{ [weakSelf keepFront]; });
+        dispatch_resume(timer);
+        std::cout << "[e2e] keep-front: on" << std::endl;
+    }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC),
                    dispatch_get_main_queue(), ^{ [self next]; });
 }
