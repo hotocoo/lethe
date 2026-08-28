@@ -7,6 +7,7 @@
 #import "ui/mac/LetheSession.h"
 #import "ui/mac/LethePermissions.h"
 #import "ui/mac/LetheTabSearch.h"
+#import "ui/mac/LetheSettings.h"
 #import <Network/Network.h>
 #import <objc/runtime.h>
 
@@ -39,8 +40,34 @@
         gate_ = [[LethePolicyGate alloc] initWithContext:*ctx];
         controllers_ = [NSMutableArray array];
         proxyApplied_ = NO;
+        // Whenever the unified Settings window saves (Cmd+Enter or Save
+        // button), [LethePreferences save] posts this. We need to repush
+        // the runtime knobs to the live engine; that's exactly what
+        // applyPreferences does for tracker rules, UA and https-first.
+        // The persistent-cookies case additionally fires its own alert.
+        [[NSNotificationCenter defaultCenter] addObserver:self
+            selector:@selector(preferencesChanged:)
+            name:LethePreferencesDidChangeNotification object:nil];
     }
     return self;
+}
+
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+
+- (void)preferencesChanged:(NSNotification*)note {
+    (void)note;
+    [self applyPreferences];
+    // Persistent cookies is a per-process choice: the WKWebsiteDataStore
+    // is fixed at webView creation time. Tell the user it needs a relaunch.
+    static BOOL lastPersistent = NO;
+    LethePreferences* p = [LethePreferences shared];
+    if (p.persistentCookies != lastPersistent) {
+        lastPersistent = p.persistentCookies;
+        NSAlert* a = [[NSAlert alloc] init];
+        a.messageText = @"Restart Lethe to apply";
+        a.informativeText = @"Persistent cookies are decided when a window opens. New windows will use this setting immediately; close existing windows or relaunch for them to pick it up too.";
+        [a runModal];
+    }
 }
 
 - (lethe::ShellContext*)context { return ctx_; }
@@ -560,41 +587,9 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
 
 - (void)showPreferences:(id)sender {
     (void)sender;
-    LethePreferences* prefs = [LethePreferences shared];
-    NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 460, 280)
-                                                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
-                                                  backing:NSBackingStoreBuffered defer:NO];
-    win.title = @"Preferences";
-    NSView* v = win.contentView;
-    int y = 240;
-    NSDictionary* labels = @{
-        @"trackerBlocking": @"Block third-party trackers (built-in curated list)",
-        @"httpsFirst": @"Upgrade http:// → https:// first",
-        @"persistentCookies": @"Keep cookies/site data between launches",
-        @"stealthUA": @"Stealth user agent (fixed low-entropy profile)",
-    };
-    NSArray* keys = @[@"trackerBlocking", @"httpsFirst", @"persistentCookies", @"stealthUA"];
-    for (NSString* key in keys) {
-        NSButton* cb = [NSButton buttonWithTitle:labels[key] target:self action:@selector(prefsToggle:)];
-        cb.buttonType = NSSwitchButton;
-        cb.frame = NSMakeRect(20, y, 420, 22);
-        if ([key isEqualToString:@"trackerBlocking"]) cb.state = prefs.trackerBlocking ? NSControlStateValueOn : NSControlStateValueOff;
-        if ([key isEqualToString:@"httpsFirst"]) cb.state = prefs.httpsFirst ? NSControlStateValueOn : NSControlStateValueOff;
-        if ([key isEqualToString:@"persistentCookies"]) cb.state = prefs.persistentCookies ? NSControlStateValueOn : NSControlStateValueOff;
-        if ([key isEqualToString:@"stealthUA"]) cb.state = prefs.stealthUA ? NSControlStateValueOn : NSControlStateValueOff;
-        cb.tag = [keys indexOfObject:key];
-        [v addSubview:cb];
-        y -= 36;
-    }
-    NSTextField* note = [NSTextField labelWithString:@"Changes apply to new windows and pages. Some require restarting Lethe to take effect."];
-    note.font = [NSFont systemFontOfSize:11];
-    note.textColor = [NSColor secondaryLabelColor];
-    note.frame = NSMakeRect(20, 20, 420, 40);
-    note.lineBreakMode = NSLineBreakByWordWrapping;
-    note.maximumNumberOfLines = 2;
-    [v addSubview:note];
-    [win center];
-    [win makeKeyAndOrderFront:nil];
+    // The unified Settings window (sidebar + categories) replaces the old
+    // four-checkbox dialog. Cmd+, (Preferences…) is still bound here.
+    [[LetheSettings shared] show];
 }
 
 - (void)showTabSearch:(id)sender {
@@ -603,23 +598,11 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
 }
 
 - (void)prefsToggle:(NSButton*)sender {
-    LethePreferences* prefs = [LethePreferences shared];
-    switch (sender.tag) {
-        case 0: prefs.trackerBlocking = (sender.state == NSControlStateValueOn); break;
-        case 1: prefs.httpsFirst = (sender.state == NSControlStateValueOn); break;
-        case 2: prefs.persistentCookies = (sender.state == NSControlStateValueOn); break;
-        case 3: prefs.stealthUA = (sender.state == NSControlStateValueOn); break;
-    }
-    [prefs save];
-    [self applyPreferences];
-    // The persistent cookies toggle affects the WKWebsiteDataStore used
-    // at webView creation time, so it needs a relaunch to take effect.
-    if (sender.tag == 2) {
-        NSAlert* a = [[NSAlert alloc] init];
-        a.messageText = @"Restart Lethe to apply";
-        a.informativeText = @"Persistent cookies are decided when a window opens. New windows will use this setting immediately; close existing windows or relaunch for them to pick it up too.";
-        [a runModal];
-    }
+    // Legacy: the old preferences dialog used this. The new LetheSettings
+    // window writes through [LethePreferences save] directly. Kept as a
+    // no-op so the old binary's menu wiring still resolves if a stale
+    // .nib is loaded.
+    (void)sender;
 }
 
 // Apply the current preferences to the running engine. Persistent cookies
