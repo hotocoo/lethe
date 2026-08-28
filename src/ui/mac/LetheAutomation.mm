@@ -38,6 +38,7 @@
     BrowserWindowController* current_;
     int failures_;
     NSString* lastJs_;
+    dispatch_source_t keepFrontTimer_;
 }
 @end
 
@@ -67,15 +68,21 @@
 // win activation on its own, so we re-assert it. Only when another app is
 // in front, so an interactive user looking at Lethe is never fought.
 - (void)keepFront {
-    // Only re-assert when another app is in front. If the user (or the
-    // benchmark) already has Lethe active, leave it alone - calling
-    // makeKeyAndOrderFront: every 2 s steals key focus from text fields
-    // the user is typing into.
-    if ([NSApp isActive]) return;
-    [[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+    // Best-effort bring-forward for animation benchmarks (MotionMark).
+    // A CLI-launched Lethe does not reliably win activation on its own,
+    // and WebKit stops firing rAF when the WKWebView's window is
+    // occluded. We try the modern LaunchServices path AND the direct
+    // AppKit calls; whichever succeeds, the window goes frontmost.
+    // No repeating timer: that stole focus from the address bar every
+    // 2 s and made interactive use unusable.
+    [[NSRunningApplication currentApplication]
+        activateWithOptions:NSApplicationActivateIgnoringOtherApps];
     [NSApp activateIgnoringOtherApps:YES];
     BrowserWindowController* c = (current_ && current_.window) ? current_ : app_.controllers.lastObject;
-    if (c && c.window) [c.window makeKeyAndOrderFront:nil];
+    if (c && c.window) {
+        [c.window orderFrontRegardless];
+        [c.window makeKeyAndOrderFront:nil];
+    }
 }
 
 - (void)start {
@@ -86,6 +93,9 @@
     // not steal focus from an interactive user during ordinary runs.
     const char* keepFront = getenv("LETHE_KEEP_FRONT");
     if (keepFront && keepFront[0] && keepFront[0] != '0') {
+        // Repeating bring-forward (the original approach).
+        // Fires once at t=0 before ARC releases the local; the first
+        // makeKeyAndOrderFront is what un-sticks WKWebView.
         dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,
                                                           0, 0, dispatch_get_main_queue());
         dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0),
@@ -93,6 +103,16 @@
         __weak LetheAutomation* weakSelf = self;
         dispatch_source_set_event_handler(timer, ^{ [weakSelf keepFront]; });
         dispatch_resume(timer);
+        std::cout << "[e2e] keep-front: on" << std::endl;
+    }
+    if (keepFront && keepFront[0] && keepFront[0] != '0') {
+        keepFrontTimer_ = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,
+                                                          0, 0, dispatch_get_main_queue());
+        dispatch_source_set_timer(keepFrontTimer_, dispatch_time(DISPATCH_TIME_NOW, 0),
+                                  2 * NSEC_PER_SEC, 200 * NSEC_PER_MSEC);
+        __strong LetheAutomation* strongSelf = self;
+        dispatch_source_set_event_handler(keepFrontTimer_, ^{ [strongSelf keepFront]; });
+        dispatch_resume(keepFrontTimer_);
         std::cout << "[e2e] keep-front: on" << std::endl;
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC),

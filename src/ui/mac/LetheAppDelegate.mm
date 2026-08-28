@@ -1,7 +1,11 @@
 // LetheAppDelegate.mm - application lifecycle, menu bar, tab/window factory
 
 #import "ui/mac/LetheShell.h"
+#import "ui/mac/LetheBookmarks.h"
+#import "ui/mac/LetheHistory.h"
+#import "ui/mac/LethePreferences.h"
 #import <Network/Network.h>
+#import <objc/runtime.h>
 
 #include <iostream>
 
@@ -213,6 +217,8 @@
     }
     // "Inspect Element" in the context menu (Web Inspector).
     [c.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
+    // Try to raise WKWebView's animation rate to match the display. On
+    // 144 Hz panels WKWebView caps rAF at ~72 Hz without these hints.
     return c;
 }
 
@@ -369,6 +375,70 @@
     [a runModal];
 }
 
+- (void)toggleBookmark:(id)sender {
+    (void)sender;
+    BrowserWindowController* c = (BrowserWindowController*)[NSApp keyWindow].windowController;
+    if (![c isKindOfClass:[BrowserWindowController class]]) {
+        for (BrowserWindowController* cw in controllers_) {
+            if (cw.window.isVisible) { c = cw; break; }
+        }
+    }
+    if (!c) { NSBeep(); return; }
+    [c toggleBookmark:nil];
+}
+
+- (void)showBookmarks:(id)sender {
+    (void)sender;
+    BrowserWindowController* c = [self openTabWithURL:@"lethe://bookmarks"
+                                          fromWindow:[NSApp keyWindow] webView:nil];
+    if (!c) return;
+    __weak BrowserWindowController* weakC = c;
+    // Give the navigation a moment to land, then inject the rendered list.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+        BrowserWindowController* strong = weakC;
+        if (!strong) return;
+        [strong renderBookmarksPage];
+    });
+}
+
+- (void)clearBookmarks:(id)sender {
+    (void)sender;
+    NSAlert* a = [[NSAlert alloc] init];
+    a.messageText = @"Clear all bookmarks?";
+    a.informativeText = @"This removes every saved bookmark.";
+    [a addButtonWithTitle:@"Cancel"];
+    [a addButtonWithTitle:@"Clear"];
+    if ([a runModal] != NSAlertSecondButtonReturn) return;
+    for (LetheBookmark* b in [[LetheBookmarks shared] all]) {
+        [[LetheBookmarks shared] removeURL:b.url];
+    }
+}
+
+- (void)showHistory:(id)sender {
+    (void)sender;
+    BrowserWindowController* c = [self openTabWithURL:@"lethe://history"
+                                          fromWindow:[NSApp keyWindow] webView:nil];
+    if (!c) return;
+    __weak BrowserWindowController* weakC = c;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+        BrowserWindowController* strong = weakC;
+        if (strong) [strong renderHistoryPage];
+    });
+}
+
+- (void)clearHistory:(id)sender {
+    (void)sender;
+    NSAlert* a = [[NSAlert alloc] init];
+    a.messageText = @"Clear browsing history?";
+    a.informativeText = @"This removes all recorded visits.";
+    [a addButtonWithTitle:@"Cancel"];
+    [a addButtonWithTitle:@"Clear"];
+    if ([a runModal] != NSAlertSecondButtonReturn) return;
+    [[LetheHistory shared] clear];
+}
+
 - (void)toggleVpn:(id)sender {
     (void)sender;
     lethe::Engine* engine = ctx_->engine;
@@ -439,6 +509,56 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     return m;
 }
 
+
+- (void)showPreferences:(id)sender {
+    (void)sender;
+    LethePreferences* prefs = [LethePreferences shared];
+    NSWindow* win = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 460, 280)
+                                                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                                                  backing:NSBackingStoreBuffered defer:NO];
+    win.title = @"Preferences";
+    NSView* v = win.contentView;
+    int y = 240;
+    NSDictionary* labels = @{
+        @"trackerBlocking": @"Block third-party trackers (built-in curated list)",
+        @"httpsFirst": @"Upgrade http:// → https:// first",
+        @"persistentCookies": @"Keep cookies/site data between launches",
+        @"stealthUA": @"Stealth user agent (fixed low-entropy profile)",
+    };
+    NSArray* keys = @[@"trackerBlocking", @"httpsFirst", @"persistentCookies", @"stealthUA"];
+    for (NSString* key in keys) {
+        NSButton* cb = [NSButton buttonWithTitle:labels[key] target:self action:@selector(prefsToggle:)];
+        cb.buttonType = NSSwitchButton;
+        cb.frame = NSMakeRect(20, y, 420, 22);
+        if ([key isEqualToString:@"trackerBlocking"]) cb.state = prefs.trackerBlocking ? NSControlStateValueOn : NSControlStateValueOff;
+        if ([key isEqualToString:@"httpsFirst"]) cb.state = prefs.httpsFirst ? NSControlStateValueOn : NSControlStateValueOff;
+        if ([key isEqualToString:@"persistentCookies"]) cb.state = prefs.persistentCookies ? NSControlStateValueOn : NSControlStateValueOff;
+        if ([key isEqualToString:@"stealthUA"]) cb.state = prefs.stealthUA ? NSControlStateValueOn : NSControlStateValueOff;
+        cb.tag = [keys indexOfObject:key];
+        [v addSubview:cb];
+        y -= 36;
+    }
+    NSTextField* note = [NSTextField labelWithString:@"Changes apply to new windows and pages. Some require restarting Lethe to take effect."];
+    note.font = [NSFont systemFontOfSize:11];
+    note.textColor = [NSColor secondaryLabelColor];
+    note.frame = NSMakeRect(20, 20, 420, 40);
+    note.lineBreakMode = NSLineBreakByWordWrapping;
+    note.maximumNumberOfLines = 2;
+    [v addSubview:note];
+    [win center];
+    [win makeKeyAndOrderFront:nil];
+}
+
+- (void)prefsToggle:(NSButton*)sender {
+    LethePreferences* prefs = [LethePreferences shared];
+    switch (sender.tag) {
+        case 0: prefs.trackerBlocking = (sender.state == NSControlStateValueOn); break;
+        case 1: prefs.httpsFirst = (sender.state == NSControlStateValueOn); break;
+        case 2: prefs.persistentCookies = (sender.state == NSControlStateValueOn); break;
+        case 3: prefs.stealthUA = (sender.state == NSControlStateValueOn); break;
+    }
+    [prefs save];
+}
 - (void)buildMenuBar {
     NSMenu* bar = [[NSMenu alloc] init];
     const NSEventModifierFlags cmd = NSEventModifierFlagCommand;
@@ -450,6 +570,8 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     addItem(app, @"About Lethe", @selector(orderFrontStandardAboutPanel:), @"", 0);
     [app addItem:[NSMenuItem separatorItem]];
     addItem(app, @"Security Status…", @selector(showSecurityStatus:), @"i", cmdShift);
+    addItem(app, @"Preferences…", @selector(showPreferences:), @",", cmd);
+    [app addItem:[NSMenuItem separatorItem]];
     [app addItem:[NSMenuItem separatorItem]];
     addItem(app, @"Hide Lethe", @selector(hide:), @"h", cmd);
     addItem(app, @"Hide Others", @selector(hideOtherApplications:), @"h",
@@ -470,6 +592,12 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     addItem(file, @"Downloads", @selector(openDownloadsFolder:), @"j", cmdShift);
     [file addItem:[NSMenuItem separatorItem]];
     addItem(file, @"Print…", @selector(printPage:), @"p", cmd);
+
+    NSMenu* bookmarks = addSubmenu(bar, @"Bookmarks");
+    addItem(bookmarks, @"Toggle Bookmark", @selector(toggleBookmark:), @"d", cmd);
+    addItem(bookmarks, @"Show All Bookmarks…", @selector(showBookmarks:), @"", 0);
+    [bookmarks addItem:[NSMenuItem separatorItem]];
+    addItem(bookmarks, @"Clear Bookmarks", @selector(clearBookmarks:), @"", 0);
 
     NSMenu* edit = addSubmenu(bar, @"Edit");
     addItem(edit, @"Undo", @selector(undo:), @"z", cmd);
@@ -501,6 +629,9 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     addItem(history, @"Forward", @selector(goForward:), @"]", cmd);
     [history addItem:[NSMenuItem separatorItem]];
     addItem(history, @"Home", @selector(goHome:), @"h", cmdShift);
+    [history addItem:[NSMenuItem separatorItem]];
+    addItem(history, @"Show All History…", @selector(showHistory:), @"y", cmd);
+    addItem(history, @"Clear History", @selector(clearHistory:), @"", 0);
 
     NSMenu* privacy = addSubmenu(bar, @"Privacy");
     addItem(privacy, @"Connect VPN", @selector(toggleVpn:), @"", 0);

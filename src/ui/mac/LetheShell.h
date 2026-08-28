@@ -23,45 +23,14 @@
 #include <memory>
 #include <string>
 
-#include "core/engine.h"
-#include "network/doh_resolver.h"
-#include "network/http_client.h"
-#include "network/tls_config.h"
 
-namespace lethe {
-
-struct ShellContext {
-    Engine* engine = nullptr;
-    Config cfg;
-    TLSConfig tls;
-    int proxyPort = 0;        // local PolicyProxyServer port (0 = none)
-    std::string proxyAuthToken;  // per-launch secret WebKit presents to the proxy
-    bool httpsFirst = true;   // upgrade top-level http:// to https:// first
-    bool trackerBlocking = true;  // built-in third-party tracker rules (WKContentRuleList)
-    std::shared_ptr<SharedDohCache> dohCache;  // shared by gate, reader, proxy
-    std::shared_ptr<SharedDohResolver> dohResolver;  // keep-alive pool, same sharing
-    bool persistent = false;  // false = ephemeral (incognito) data store
-    std::string homeUrl;      // "" = built-in new-tab page
-    std::function<void()> onTerminate;  // engine/proxy shutdown
-    std::string e2eScript;    // --e2e-script <file>: drive + assert, then exit
-};
-
-} // namespace lethe
+#include "browser/shell_context.h"
+#include "ui/mac/LethePolicyGate.h"
 
 @class LetheAppDelegate;
 @class BrowserWindowController;
 
-// Policy + reader fetches, off the main thread. One instance per app.
-@interface LethePolicyGate : NSObject
-- (instancetype)initWithContext:(const lethe::ShellContext&)ctx;
-// Completion runs on the main queue: "" when allowed, else the refusal.
-- (void)checkURL:(NSString*)url completion:(void (^)(NSString* reason))completion;
-// Fetches through lethe_core (DoH, HSTS, pins, cookies) and hands back the
-// extracted reader page HTML plus the final URL; error text on failure.
-- (void)fetchReaderForURL:(NSString*)url
-               completion:(void (^)(NSString* html, NSString* finalUrl,
-                                    NSString* error))completion;
-@end
+
 
 @interface BrowserWindowController : NSWindowController
 - (instancetype)initWithContext:(lethe::ShellContext*)ctx
@@ -84,6 +53,9 @@ struct ShellContext {
 - (void)focusAddressBar:(id)sender;
 - (void)addressEntered:(id)sender;
 - (void)toggleReader:(id)sender;
+- (void)toggleBookmark:(id)sender;
+- (void)renderBookmarksPage;
+- (void)renderHistoryPage;
 - (void)goBack:(id)sender;
 - (void)goForward:(id)sender;
 - (void)reloadPage:(id)sender;

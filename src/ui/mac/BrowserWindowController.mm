@@ -5,6 +5,8 @@
 // Window" come from AppKit and behave like every other Mac browser.
 
 #import "ui/mac/LetheShell.h"
+#import "ui/mac/LetheBookmarks.h"
+#import "ui/mac/LetheHistory.h"
 
 #include <string>
 
@@ -18,7 +20,7 @@ static const CGFloat kChromeHeight = 44.0;
 
 @interface BrowserWindowController () <WKNavigationDelegate, WKUIDelegate,
                                        WKDownloadDelegate, NSWindowDelegate,
-                                       NSTextFieldDelegate> {
+                                       NSTextFieldDelegate, WKScriptMessageHandler> {
     NSString* httpsUpgradedFrom_;   // http URL being tried as https (HTTPS-first)
     BOOL oblivion_;
     WKWebsiteDataStore* dataStore_;
@@ -31,6 +33,7 @@ static const CGFloat kChromeHeight = 44.0;
     NSButton* forwardButton_;
     NSButton* reloadButton_;
     NSButton* readerButton_;
+    NSButton* bookmarkButton_;
     NSProgressIndicator* progress_;
     NSView* findBar_;
     NSTextField* findField_;
@@ -111,6 +114,7 @@ static const CGFloat kChromeHeight = 44.0;
             // Oblivion always presents the fixed low-entropy profile.
             webView_.customUserAgent = @(lethe::stealthUserAgentString());
         }
+        [webView_.configuration.userContentController addScriptMessageHandler:self name:@"bookmarks"];
         [self buildChrome];
         [self startObserving];
     }
@@ -150,6 +154,9 @@ static const CGFloat kChromeHeight = 44.0;
     readerButton_ = [self chromeButtonWithSymbol:@"doc.plaintext" label:@"Reader View"
                                           action:@selector(toggleReader:)];
 
+    bookmarkButton_ = [self chromeButtonWithSymbol:@"bookmark" label:@"Bookmark"
+                                              action:@selector(toggleBookmark:)];
+
     lockIcon_ = [[NSImageView alloc] initWithFrame:NSZeroRect];
     lockIcon_.image = [NSImage imageWithSystemSymbolName:@"globe"
                                 accessibilityDescription:@"Connection"];
@@ -170,7 +177,7 @@ static const CGFloat kChromeHeight = 44.0;
                               forOrientation:NSLayoutConstraintOrientationHorizontal];
 
     NSStackView* row = [NSStackView stackViewWithViews:@[
-        backButton_, forwardButton_, reloadButton_, lockIcon_, addressField_, readerButton_ ]];
+        backButton_, forwardButton_, reloadButton_, lockIcon_, addressField_, readerButton_, bookmarkButton_ ]];
     row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     row.spacing = 6;
     row.alignment = NSLayoutAttributeCenterY;
@@ -334,6 +341,7 @@ static const CGFloat kChromeHeight = 44.0;
     if (addressEditing_) return;
     addressField_.stringValue = [self displayAddress];
     [self updateLockIcon];
+    [self refreshBookmarkIcon];
 }
 
 - (void)updateLockIcon {
@@ -381,6 +389,63 @@ static const CGFloat kChromeHeight = 44.0;
     [self focusAddressBar:nil];
 }
 
+- (void)renderBookmarksPage {
+    NSMutableString* rows = [NSMutableString string];
+    NSArray<LetheBookmark*>* all = [[LetheBookmarks shared] all];
+    for (LetheBookmark* b in all) {
+        NSString* esc = [b.title stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        esc = [esc stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
+        esc = [esc stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
+        NSString* urlEsc = [b.url stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
+        [rows appendFormat:@"\n          <li><a href=\"%@\">%@</a><br><span class=\"u\">%@</span>\n                       <button class=\"rm\" data-url=\"%@\">Remove</button></li>", urlEsc, esc, urlEsc, urlEsc];
+    }
+    NSString* body = all.count ? [NSString stringWithFormat:@"<ul>%@</ul>", rows]
+                                : @"<p class=\"empty\">No bookmarks yet. Press Cmd+D to bookmark the current page.</p>";
+    NSString* html = [NSString stringWithFormat:@"\n        <!doctype html><meta charset=\"utf-8\">\n        <title>Bookmarks</title>\n        <style>\n          body{font:14px -apple-system,system-ui,sans-serif;margin:32px;max-width:780px;color:#222;background:#fafafa}\n          h1{margin:0 0 8px;font-size:22px;font-weight:600}\n          p.sub{color:#666;margin:0 0 24px}\n          ul{list-style:none;padding:0;margin:0}\n          li{padding:14px 16px;margin:6px 0;background:#fff;border:1px solid #e5e5e5;border-radius:8px}\n          li a{color:#0a66c2;text-decoration:none;font-weight:500;font-size:15px}\n          li a:hover{text-decoration:underline}\n          .u{color:#666;font-size:12px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}\n          .rm{float:right;background:none;border:1px solid #ccc;border-radius:6px;padding:4px 10px;\n              color:#c0392b;cursor:pointer;font-size:12px}\n          .rm:hover{background:#fee}\n          .empty{color:#666;font-style:italic}\n        </style>\n        <h1>Bookmarks</h1>\n        <p class=\"sub\">%lu saved. Cmd+D toggles the bookmark on the current page.</p>\n        %@\n        <script>\n        document.addEventListener('click', function(e){\n          if (e.target.classList.contains('rm')) {\n            const u = e.target.getAttribute('data-url');\n            window.webkit.messageHandlers.bookmarks.postMessage({op:\"remove\", url:u});\n          }\n        });\n        </script>\n      ", (unsigned long)all.count, body];
+    internalPageUrl_ = @"lethe://bookmarks";
+    [webView_ loadHTMLString:html baseURL:nil];
+    [self updateTitle];
+    [self updateAddress];
+}
+
+
+- (void)renderHistoryPage {
+    NSArray<LetheHistoryEntry*>* entries = [[LetheHistory shared] allEntries];
+    NSDateFormatter* fmt = [[NSDateFormatter alloc] init];
+    fmt.dateStyle = NSDateFormatterShortStyle;
+    fmt.timeStyle = NSDateFormatterShortStyle;
+    NSMutableString* rows = [NSMutableString string];
+    NSString* lastDay = nil;
+    for (LetheHistoryEntry* h in entries) {
+        NSString* day = [fmt stringFromDate:h.visitedAt];
+        if (![day isEqualToString:lastDay]) {
+            if (lastDay) [rows appendString:@"</ul>"];
+            [rows appendFormat:@"<h2>%@</h2><ul>", day];
+            lastDay = day;
+        }
+        NSString* esc = [h.title stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        esc = [esc stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
+        esc = [esc stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
+        NSString* urlEsc = [h.url stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
+        NSString* time = [[NSDateFormatter localizedStringFromDate:h.visitedAt dateStyle:NSDateFormatterNoStyle timeStyle:NSDateFormatterShortStyle] stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
+        [rows appendFormat:@"<li><a href=\"%@\">%@</a><br><span class=\"u\">%@</span> <span class=\"t\">%@</span></li>", urlEsc, esc, urlEsc, time];
+    }
+    if (lastDay) [rows appendString:@"</ul>"];
+    NSString* body = entries.count ? rows : @"<p class=\"empty\">No history yet.</p>";
+    NSString* html = [NSString stringWithFormat:@"<!doctype html><meta charset=\"utf-8\"><title>History</title>"
+        @"<style>body{font:14px -apple-system,system-ui,sans-serif;margin:32px;max-width:780px;color:#222;background:#fafafa}"
+        @"h1{margin:0 0 16px;font-size:22px}h2{margin:24px 0 6px;font-size:13px;color:#666;font-weight:600;text-transform:uppercase}"
+        @"ul{list-style:none;padding:0;margin:0}li{padding:8px 12px;margin:2px 0;background:#fff;border:1px solid #e5e5e5;border-radius:6px}"
+        @"li a{color:#0a66c2;text-decoration:none;font-weight:500}li a:hover{text-decoration:underline}"
+        @".u{color:#666;font-size:11px;font-family:ui-monospace,Menlo,monospace;word-break:break-all;margin-right:8px}"
+        @".t{color:#999;font-size:11px}.empty{color:#666;font-style:italic}</style>"
+        @"<h1>History</h1><p class=\"empty\" style=\"margin:0 0 8px\">%lu entries. \\u2318Y opens this page.</p>%@",
+        (unsigned long)entries.count, body];
+    internalPageUrl_ = @"lethe://history";
+    [webView_ loadHTMLString:html baseURL:nil];
+    [self updateTitle];
+    [self updateAddress];
+}
 - (void)loadAddress:(NSString*)text {
     const std::string in = text.UTF8String ? text.UTF8String : "";
     const std::string normalized = lethe::normalizeAddressInput(in);
@@ -540,6 +605,27 @@ static const CGFloat kChromeHeight = 44.0;
         self->internalPageUrl_ = finalUrl ?: source;
         [self->webView_ loadHTMLString:html baseURL:[NSURL URLWithString:finalUrl ?: source]];
     }];
+}
+
+- (void)toggleBookmark:(id)sender {
+    (void)sender;
+    NSString* url = webView_.URL.absoluteString;
+    if (!url.length) { NSBeep(); return; }
+    NSString* title = webView_.title.length ? webView_.title : url;
+    BOOL added = [[LetheBookmarks shared] toggleURL:url title:title];
+    [self refreshBookmarkIcon];
+    NSString* symbol = added ? @"bookmark.fill" : @"bookmark";
+    NSImage* img = [NSImage imageWithSystemSymbolName:symbol
+                          accessibilityDescription:added ? @"Bookmarked" : @"Bookmark"];
+    bookmarkButton_.image = img;
+}
+
+- (void)refreshBookmarkIcon {
+    NSString* url = webView_.URL.absoluteString;
+    BOOL has = url.length && [[LetheBookmarks shared] containsURL:url];
+    NSString* symbol = has ? @"bookmark.fill" : @"bookmark";
+    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:symbol
+                              accessibilityDescription:has ? @"Bookmarked" : @"Bookmark"];
 }
 
 - (void)showFindBar:(id)sender {
@@ -759,6 +845,10 @@ static const CGFloat kChromeHeight = 44.0;
     httpsUpgradedFrom_ = nil;
     [self updateTitle];
     [self updateAddress];
+    NSString* url = webView_.URL.absoluteString;
+    if (url.length && [url hasPrefix:@"http"]) {
+        [[LetheHistory shared] recordVisit:url title:webView_.title ?: url];
+    }
 }
 
 - (void)handleLoadError:(NSError*)error {
@@ -1020,4 +1110,18 @@ static const CGFloat kChromeHeight = 44.0;
     [self stopObserving];
 }
 
+
+- (void)userContentController:(WKUserContentController *)uc
+ didReceiveScriptMessage:(WKScriptMessage *)msg {
+    if (![msg.name isEqualToString:@"bookmarks"]) return;
+    NSDictionary* body = [msg.body isKindOfClass:[NSDictionary class]] ? msg.body : nil;
+    NSString* op = body[@"op"];
+    NSString* url = body[@"url"];
+    if ([op isEqualToString:@"remove"] && url.length) {
+        [[LetheBookmarks shared] removeURL:url];
+        if ([internalPageUrl_ isEqualToString:@"lethe://bookmarks"]) {
+            [self renderBookmarksPage];
+        }
+    }
+}
 @end
