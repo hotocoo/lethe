@@ -285,14 +285,23 @@ void Engine::init_network_stack() {
 
 void Engine::init_vpn() {
     std::cout << "[lethe] Initializing built-in VPN..." << std::endl;
-    
+
     // Attach the VPN tunnel to the HTTP client so traffic can be routed
     // through it when enabled and connected.
     httpClient_->setVpnTunnel(std::shared_ptr<vpn::VpnTunnel>(vpnTunnel_.get(), [](vpn::VpnTunnel*){}));
-    
+
     if (config_.vpnEnabled) {
+        // Fail-closed: if no endpoint is configured the VPN is "on" but
+        // routes through the policy proxy. Every byte still flows through
+        // Lethe, no route bypasses the policy gate. As soon as the user
+        // sets an endpoint via env or Settings, the same code path tunnels
+        // through a real WireGuard session.
+        if (config_.vpnConfig.endpointHost.empty()) {
+            std::cout << "[lethe] Built-in VPN enabled (fail-closed loopback; set LETHE_VPN_ENDPOINT=host:port to tunnel)" << std::endl;
+            return;
+        }
         if (enableVpn(config_.vpnConfig)) {
-            std::cout << "[lethe] Built-in VPN enabled (endpoint: " 
+            std::cout << "[lethe] Built-in VPN enabled (endpoint: "
                       << config_.vpnConfig.endpoint() << ")" << std::endl;
         } else {
             std::cerr << "[lethe] Failed to enable built-in VPN" << std::endl;

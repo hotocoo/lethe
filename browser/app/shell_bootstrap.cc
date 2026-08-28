@@ -96,6 +96,25 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
     ctx.trackerBlocking = trackerBlock;
     if (trackerBlock && std::getenv("LETHE_TRACKER_BLOCK")) ctx.trackerBlocking = !envOff("LETHE_TRACKER_BLOCK");
     if (httpsFirst && std::getenv("LETHE_HTTPS_FIRST")) ctx.httpsFirst = !envOff("LETHE_HTTPS_FIRST");
+    // Built-in VPN: defaults ON. LETHE_VPN=0 to disable entirely; the
+    // fail-closed loopback tunnel keeps every byte on the policy path
+    // until a real endpoint is set via LETHE_VPN_ENDPOINT=host:port.
+    if (const char* v = std::getenv("LETHE_VPN")) {
+        if (envOff("LETHE_VPN")) cfg.vpnEnabled = false;
+        else cfg.vpnEnabled = true;
+        (void)v;
+    }
+    if (const char* ep = std::getenv("LETHE_VPN_ENDPOINT")) {
+        const std::string s = ep;
+        const auto colon = s.find(':');
+        if (colon != std::string::npos) {
+            cfg.vpnConfig.endpointHost = s.substr(0, colon);
+            cfg.vpnConfig.endpointPort = static_cast<uint16_t>(std::atoi(s.c_str() + colon + 1));
+        } else {
+            cfg.vpnConfig.endpointHost = s;
+            cfg.vpnConfig.endpointPort = 51820;
+        }
+    }
 
     if (!envOff("LETHE_DOH_SHARED_CACHE")) ctx.dohCache = std::make_shared<SharedDohCache>();
     const bool usePool = !envOff("LETHE_DOH_POOL");

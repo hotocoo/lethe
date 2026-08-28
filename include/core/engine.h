@@ -46,9 +46,15 @@ struct Config {
     // Additive to certificate verification; enforced on every hop.
     std::map<std::string, std::vector<std::string>> certPins;
 
-    // Built-in VPN
-    bool vpnEnabled = false;
-    vpn::VpnConfig vpnConfig;  // VPN configuration (used when vpnEnabled)
+    // Built-in VPN. vpnEnabled defaults to TRUE: the engine ships a
+    // fail-closed loopback tunnel (no external endpoint) so every byte
+    // routes through the policy path even before the user supplies a
+    // real WireGuard endpoint. Set LETHE_VPN=0 to disable entirely.
+    // No telemetry, no logging of destination hosts: the VPN's only
+    // job is to ensure there is no network code path that bypasses
+    // Lethe's policy gates.
+    bool vpnEnabled = true;
+    vpn::VpnConfig vpnConfig;  // endpoint/keys (used when vpnEnabled)
 };
 
 // Merge LETHE_* environment variables into \p cfg (see README):
