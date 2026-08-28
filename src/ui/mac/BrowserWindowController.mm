@@ -8,6 +8,7 @@
 #import "ui/mac/LetheBookmarks.h"
 #import "ui/mac/LetheHistory.h"
 #import "ui/mac/LetheDownloads.h"
+#import "ui/mac/LethePermissions.h"
 #import <objc/runtime.h>
 
 #include <string>
@@ -120,6 +121,7 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
             webView_.customUserAgent = @(lethe::stealthUserAgentString());
         }
         [webView_.configuration.userContentController addScriptMessageHandler:self name:@"bookmarks"];
+        [webView_.configuration.userContentController addScriptMessageHandler:self name:@"perms"];
         [self buildChrome];
         [self startObserving];
     }
@@ -465,6 +467,46 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     [self updateTitle];
     [self updateAddress];
 }
+
+- (void)renderPermissionsPage {
+    NSMutableString* rows = [NSMutableString string];
+    NSString* path = [[NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject stringByAppendingPathComponent:@"Lethe"] stringByAppendingPathComponent:@"permissions.json"];
+    NSDictionary* dict = [NSDictionary dictionaryWithContentsOfFile:path];
+    NSArray<NSString*>* keys = dict.allKeys;
+    keys = [keys sortedArrayUsingComparator:^NSComparisonResult(NSString* a, NSString* b) { return [a compare:b]; }];
+    for (NSString* k in keys) {
+        NSArray<NSString*>* parts = [k componentsSeparatedByString:@"|"];
+        if (parts.count != 2) continue;
+        NSString* host = parts[0];
+        NSString* type = parts[1];
+        NSInteger v = [dict[k] integerValue];
+        NSString* state = (v == LethePermissionAllow) ? @"Allowed" : @"Blocked";
+        NSString* escHost = [host stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        escHost = [escHost stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
+        escHost = [escHost stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
+        [rows appendFormat:@"<li><span class=\"h\">%@</span> <span class=\"t\">%@</span> <span class=\"s Allowed\">%@</span> <button class=\"rm\" data-host=\"%@\" data-type=\"%@\">Clear</button></li>", escHost, type, state, escHost, type];
+    }
+    NSString* body = keys.count ? [NSString stringWithFormat:@"<ul>%@</ul>", rows] : @"<p class=\"empty\">No sites have stored permissions yet.</p>";
+    NSString* html = [NSString stringWithFormat:@"<!doctype html><meta charset=\"utf-8\"><title>Site Permissions</title>"
+        @"<style>body{font:14px -apple-system,system-ui,sans-serif;margin:32px;max-width:780px;color:#222;background:#fafafa}"
+        @"h1{margin:0 0 8px;font-size:22px}h1+p{color:#666;margin:0 0 24px}"
+        @"ul{list-style:none;padding:0;margin:0}"
+        @"li{padding:10px 12px;margin:2px 0;background:#fff;border:1px solid #e5e5e5;border-radius:6px;display:flex;align-items:center;gap:10px}"
+        @".h{font-weight:600;min-width:140px}.t{color:#666;font-size:12px;min-width:80px}"
+        @".s.Allowed{color:#0a7a3a}.s.Blocked{color:#a04020}"
+        @".rm{margin-left:auto;background:none;border:1px solid #ccc;border-radius:6px;padding:3px 10px;color:#c0392b;cursor:pointer;font-size:12px}"
+        @".rm:hover{background:#fee}.empty{color:#666;font-style:italic}</style>"
+        @"<h1>Site Permissions</h1><p>Allow or block camera, microphone, and location per site. The browser prompts the first time; tick 'Remember' to persist.</p>%@"
+        @"<script>document.addEventListener('click',function(e){"
+        @"if(e.target.classList.contains('rm')){var u=e.target.getAttribute('data-host'),t=e.target.getAttribute('data-type');"
+        @"window.webkit.messageHandlers.perms.postMessage({op:'clear',host:u,type:t});}"
+        @"});</script>", body];
+    internalPageUrl_ = @"lethe://permissions";
+    [webView_ loadHTMLString:html baseURL:nil];
+    [self updateTitle];
+    [self updateAddress];
+}
+
 - (void)loadAddress:(NSString*)text {
     const std::string in = text.UTF8String ? text.UTF8String : "";
     const std::string normalized = lethe::normalizeAddressInput(in);
@@ -1070,6 +1112,36 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
     return c.webView;
 }
 
+- (void)webView:(WKWebView*)webView
+    requestMediaCapturePermissionForOrigin:(WKSecurityOrigin*)origin
+    initiatedByFrame:(WKFrameInfo*)frame
+                              type:(WKMediaCaptureType)type
+                   decisionHandler:(void (^)(WKPermissionDecision))decisionHandler {
+    (void)webView; (void)frame;
+    NSString* kind = @"camera";
+    if (type & WKMediaCaptureTypeMicrophone) kind = @"microphone";
+    if ((type & WKMediaCaptureTypeCamera) && (type & WKMediaCaptureTypeMicrophone)) kind = @"camera and microphone";
+    LethePermissionRequest* req = [[LethePermissionRequest alloc]
+        initWithHost:origin.host type:@"media" detail:kind];
+    [[LethePermissions shared] promptForRequest:req fromWindow:self.window remember:YES
+                                         allow:^(BOOL allow) {
+        decisionHandler(allow ? WKPermissionDecisionGrant : WKPermissionDecisionDeny);
+    }];
+}
+
+- (void)webView:(WKWebView*)webView
+    requestGeolocationPermissionForOrigin:(WKSecurityOrigin*)origin
+    initiatedByFrame:(WKFrameInfo*)frame
+                        decisionHandler:(void (^)(WKPermissionDecision))decisionHandler {
+    (void)webView; (void)frame;
+    LethePermissionRequest* req = [[LethePermissionRequest alloc]
+        initWithHost:origin.host type:@"geolocation" detail:@"location"];
+    [[LethePermissions shared] promptForRequest:req fromWindow:self.window remember:YES
+                                         allow:^(BOOL allow) {
+        decisionHandler(allow ? WKPermissionDecisionGrant : WKPermissionDecisionDeny);
+    }];
+}
+
 - (void)webViewDidClose:(WKWebView*)webView {
     (void)webView;
     [self.window performClose:nil];
@@ -1169,14 +1241,24 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
 
 - (void)userContentController:(WKUserContentController *)uc
  didReceiveScriptMessage:(WKScriptMessage *)msg {
-    if (![msg.name isEqualToString:@"bookmarks"]) return;
     NSDictionary* body = [msg.body isKindOfClass:[NSDictionary class]] ? msg.body : nil;
     NSString* op = body[@"op"];
-    NSString* url = body[@"url"];
-    if ([op isEqualToString:@"remove"] && url.length) {
-        [[LetheBookmarks shared] removeURL:url];
-        if ([internalPageUrl_ isEqualToString:@"lethe://bookmarks"]) {
-            [self renderBookmarksPage];
+    if ([msg.name isEqualToString:@"bookmarks"]) {
+        NSString* url = body[@"url"];
+        if ([op isEqualToString:@"remove"] && url.length) {
+            [[LetheBookmarks shared] removeURL:url];
+            if ([internalPageUrl_ isEqualToString:@"lethe://bookmarks"]) {
+                [self renderBookmarksPage];
+            }
+        }
+    } else if ([msg.name isEqualToString:@"perms"]) {
+        NSString* host = body[@"host"];
+        NSString* type = body[@"type"];
+        if ([op isEqualToString:@"clear"] && host.length && type.length) {
+            [[LethePermissions shared] clearforHost:host type:type];
+            if ([internalPageUrl_ isEqualToString:@"lethe://permissions"]) {
+                [self renderPermissionsPage];
+            }
         }
     }
 }

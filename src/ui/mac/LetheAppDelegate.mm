@@ -5,6 +5,7 @@
 #import "ui/mac/LetheHistory.h"
 #import "ui/mac/LethePreferences.h"
 #import "ui/mac/LetheSession.h"
+#import "ui/mac/LethePermissions.h"
 #import <Network/Network.h>
 #import <objc/runtime.h>
 
@@ -454,6 +455,30 @@
     [[LetheHistory shared] clear];
 }
 
+- (void)showPermissions:(id)sender {
+    (void)sender;
+    BrowserWindowController* c = [self openTabWithURL:@"lethe://permissions"
+                                          fromWindow:[NSApp keyWindow] webView:nil];
+    if (!c) return;
+    __weak BrowserWindowController* weakC = c;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC),
+                   dispatch_get_main_queue(), ^{
+        BrowserWindowController* strong = weakC;
+        if (strong) [strong renderPermissionsPage];
+    });
+}
+
+- (void)clearAllPermissions:(id)sender {
+    (void)sender;
+    NSAlert* a = [[NSAlert alloc] init];
+    a.messageText = @"Clear all site permissions?";
+    a.informativeText = @"Every site's allow/deny choice will be forgotten. Sites will be asked again.";
+    [a addButtonWithTitle:@"Cancel"];
+    [a addButtonWithTitle:@"Clear"];
+    if ([a runModal] != NSAlertSecondButtonReturn) return;
+    [[LethePermissions shared] clearAll];
+}
+
 - (void)toggleVpn:(id)sender {
     (void)sender;
     lethe::Engine* engine = ctx_->engine;
@@ -655,6 +680,9 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     NSMenu* privacy = addSubmenu(bar, @"Privacy");
     addItem(privacy, @"Connect VPN", @selector(toggleVpn:), @"", 0);
     addItem(privacy, @"Clear Browsing Data", @selector(clearBrowsingData:), @"", 0);
+    [privacy addItem:[NSMenuItem separatorItem]];
+    addItem(privacy, @"Site Permissions…", @selector(showPermissions:), @"", 0);
+    addItem(privacy, @"Clear All Permissions", @selector(clearAllPermissions:), @"", 0);
     [privacy addItem:[NSMenuItem separatorItem]];
     addItem(privacy, @"Security Status…", @selector(showSecurityStatus:), @"", 0);
 

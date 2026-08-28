@@ -56,6 +56,7 @@
 - (void)toggleBookmark:(id)sender;
 - (void)renderBookmarksPage;
 - (void)renderHistoryPage;
+- (void)renderPermissionsPage;
 - (void)goBack:(id)sender;
 - (void)goForward:(id)sender;
 - (void)reloadPage:(id)sender;
