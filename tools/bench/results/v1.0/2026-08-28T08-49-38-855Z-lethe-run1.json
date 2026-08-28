@@ -1,0 +1,152 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-08-28T08:49:38.855Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup",
+    "stress"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 184.509125,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": "",
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 532.3335830000001,
+      "rssMb": 190.421875,
+      "processes": 4,
+      "cpuSec": 0.33,
+      "breakdown": [
+        {
+          "pid": 78790,
+          "rssMb": 113.4,
+          "cpuSec": 0.21,
+          "name": "lethe"
+        },
+        {
+          "pid": 78791,
+          "rssMb": 14.2,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 78792,
+          "rssMb": 32.5,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 78793,
+          "rssMb": 30.4,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "stress:start",
+      "tMs": 6741.290333,
+      "rssMb": 462.578125,
+      "processes": 5,
+      "cpuSec": 1.6,
+      "breakdown": [
+        {
+          "pid": 78790,
+          "rssMb": 118.1,
+          "cpuSec": 0.37,
+          "name": "lethe"
+        },
+        {
+          "pid": 78791,
+          "rssMb": 14.2,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 78792,
+          "rssMb": 38,
+          "cpuSec": 0.09,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 78793,
+          "rssMb": 30.8,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 78810,
+          "rssMb": 261.6,
+          "cpuSec": 1.05,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "stress:end",
+      "tMs": 68426.684166,
+      "rssMb": 462.625,
+      "processes": 5,
+      "cpuSec": 1.78,
+      "breakdown": [
+        {
+          "pid": 78790,
+          "rssMb": 118.2,
+          "cpuSec": 0.54,
+          "name": "lethe"
+        },
+        {
+          "pid": 78791,
+          "rssMb": 14.1,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 78792,
+          "rssMb": 38,
+          "cpuSec": 0.1,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 78793,
+          "rssMb": 30.8,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 78810,
+          "rssMb": 261.6,
+          "cpuSec": 1.05,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ]
+}

@@ -82,6 +82,12 @@
         const char* src = [root UTF8String] ?: "";
         cef_string_from_utf8(src, strlen(src), &settings.root_cache_path);
     }
+    // Chromium's path_service also resolves DIR_USER_DATA from a few
+    // platform-specific env vars. The current macOS build reads
+    // CHROME_USER_DATA_DIR at first touch, before any settings kick in.
+    // Set it as a belt-and-suspenders alongside --user-data-dir so the
+    // helper processes find the same directory.
+    setenv("CHROME_USER_DATA_DIR", [root UTF8String] ?: "", 1);
     // The browser subprocess path. CEF spawns a Helper binary for every
     // renderer / GPU / network / utility process; we point it at the
     // helper.app we copied into the bundle.

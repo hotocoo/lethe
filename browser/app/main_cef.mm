@@ -26,6 +26,35 @@
 #include "app/shell_bootstrap.h"
 
 int main(int argc, char** argv) {
+    // Step 0: pin a writable user data dir BEFORE CEF/Chromium ever
+    // touch path_service. The macOS Chromium build resolves
+    // DIR_USER_DATA on first access; if it is not registered yet
+    // (CEF starts up before CefSettings.root_cache_path is wired
+    // through) chrome_main_delegate.cc:1566 NOTREACHEDs and the
+    // process aborts. The path here matches what the CefSettings
+    // builder uses so the helper processes all agree on the same
+    // location.
+    {
+        NSArray* dirs = NSSearchPathForDirectoriesInDomains(
+            NSApplicationSupportDirectory, NSUserDomainMask, YES);
+        NSString* root = [dirs.firstObject stringByAppendingPathComponent:@"Lethe CEF"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:root
+            withIntermediateDirectories:YES attributes:nil error:nil];
+        setenv("CHROME_USER_DATA_DIR", [root UTF8String] ?: "", 1);
+    }
+    // Force the singleton off in argv. The macOS Seatbelt sandbox
+    // blocks the singleton lock write; OnBeforeCommandLineProcessing
+    // runs too late to take effect for this check.
+    {
+        std::vector<char*> newArgv(argv, argv + argc);
+        newArgv.push_back(const_cast<char*>("--disable-process-singleton"));
+        newArgv.push_back(const_cast<char*>("--disable-default-apps"));
+        newArgv.push_back(const_cast<char*>("--no-sandbox"));
+        newArgv.push_back(const_cast<char*>("--disable-dev-shm-usage"));
+        newArgv.push_back(const_cast<char*>("--disable-gpu-sandbox"));
+        argv = newArgv.data();
+        argc = static_cast<int>(newArgv.size());
+    }
     // Step 1: parse argv, start the engine, start the policy proxy. This
     // populates ShellContext with the DoH pool, the policy proxy, and the
     // per-launch auth token we need to inject into CEF's net stack.

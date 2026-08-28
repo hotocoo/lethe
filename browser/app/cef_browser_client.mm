@@ -50,6 +50,11 @@ void CefBrowserClient::App::OnBeforeCommandLineProcessing(
     command_line->AppendSwitch("disable-translate");
     command_line->AppendSwitch("no-pings");
     command_line->AppendSwitch("no-first-run");
+    // No process singleton: Lethe launches are independent and the
+    // macOS Seatbelt sandbox does not allow writing the singleton
+    // lock into ~/Library/Application Support/.
+    command_line->AppendSwitch("disable-process-singleton");
+    command_line->AppendSwitch("disable-default-apps");
     command_line->AppendSwitchWithValue("disable-features",
         "InterestFeedContentSuggestions,LookalikeUrlNavigationThrottle,"
         "PrivacySandboxAdsAPIs,PrivacySandboxAttributionReporting,"
