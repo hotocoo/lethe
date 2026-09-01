@@ -541,7 +541,8 @@ bool HttpClient::refreshDohBootstrap() {
 // --- DoH answer cache -------------------------------------------------------
 
 void HttpClient::dohCacheStore(const std::string& host, const std::string& ip) {
-    if (sharedDoh_) { sharedDoh_->store(dohProvider_, host, ip); return; }
+    if (sharedDoh_) { sharedDoh_->store(dohProvider_, host, ip); }
+    if (persistentDoh_) { persistentDoh_->store(host, ip); }
     if (dohCacheTtl_.count() <= 0) return;
     // Bound the cache: drop expired entries first; if a pathological burst
     // still exceeds the cap, start over rather than grow without limit.
@@ -557,7 +558,17 @@ void HttpClient::dohCacheStore(const std::string& host, const std::string& ip) {
 }
 
 bool HttpClient::dohCacheLookup(const std::string& host, std::string& outIp) {
-    if (sharedDoh_) return sharedDoh_->lookup(dohProvider_, host, outIp);
+    if (sharedDoh_ && sharedDoh_->lookup(dohProvider_, host, outIp)) return true;
+    if (persistentDoh_ && persistentDoh_->lookup(host, outIp)) {
+        if (getenv("LETHE_DEBUG")) {
+            std::cout << "[lethe-http][doh] " << host << " -> " << outIp << " (persistent cache)" << std::endl;
+        }
+        // Promote to in-memory cache for faster subsequent lookups.
+        if (dohCacheTtl_.count() > 0) {
+            dohCache_[host] = DohEntry{outIp, std::chrono::steady_clock::now() + dohCacheTtl_};
+        }
+        return true;
+    }
     const auto now = std::chrono::steady_clock::now();
     auto it = dohCache_.find(host);
     if (it == dohCache_.end()) return false;

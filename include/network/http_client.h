@@ -8,6 +8,7 @@
 #include <memory>
 #include <cstdint>
 #include "network/doh_cache.h"
+#include "network/persistent_doh_cache.h"
 #include "network/tls_config.h"
 #include "network/vpn/vpn_tunnel.h"
 #include "security/cert_pinner.h"
@@ -148,6 +149,8 @@ public:
     // (see doh_resolver.h) instead of opening TCP + TLS to the provider from
     // this client. nullptr = resolve locally.
     void setSharedDohResolver(std::shared_ptr<SharedDohResolver> r) { sharedResolver_ = std::move(r); }
+    // Set the persistent DoH cache (disk-backed, survives restarts).
+    void setPersistentDohCache(std::shared_ptr<PersistentDohCache> c) { persistentDoh_ = std::move(c); }
     // Keep the provider connection open between queries. Only sensible for a
     // client dedicated to DoH (the pool members): the connection IS the
     // client's one socket.
@@ -426,6 +429,7 @@ private:
     std::map<std::string, DohEntry> dohCache_;
     std::shared_ptr<SharedDohCache> sharedDoh_;            // optional, process-wide
     std::shared_ptr<SharedDohResolver> sharedResolver_;    // optional, process-wide
+    std::shared_ptr<PersistentDohCache> persistentDoh_;    // optional, disk-backed
     bool dohKeepAlive_ = false;                            // pool members only
     std::string dohConnIp_;                                // provider IP the live socket is bound to
     static constexpr size_t kMaxDohCacheEntries = 256;

@@ -25,6 +25,7 @@ struct ShellContext {
     bool trackerBlocking = true;  // built-in third-party tracker rules
     std::shared_ptr<SharedDohCache> dohCache;        // shared by gate, reader, proxy
     std::shared_ptr<SharedDohResolver> dohResolver;  // keep-alive pool, same sharing
+    std::shared_ptr<PersistentDohCache> persistentDohCache;  // disk-backed, survives restarts
     bool persistent = false;      // false = ephemeral (incognito) data store
     std::string homeUrl;          // "" = built-in new-tab page
     std::function<void()> onTerminate;  // engine/proxy shutdown

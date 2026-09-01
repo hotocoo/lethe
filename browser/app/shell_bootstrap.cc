@@ -67,6 +67,9 @@ void loadPluginOverrides() {
 } // namespace
 
 int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
+    if (getenv("LETHE_DEBUG")) {
+        std::cout << "[lethe] ShellBootstrap::init called" << std::endl;
+    }
     Config& cfg = ctx.cfg;
     cfg.sandboxEnabled = true;
     cfg.incognitoMode = true;
@@ -182,17 +185,32 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
         && PluginRegistry::instance().enabled("doh-cache")) {
         ctx.dohCache = std::make_shared<SharedDohCache>();
     }
+    // Persistent DoH cache: disk-backed, survives restarts, reduces latency.
+    if (getenv("LETHE_DEBUG")) {
+        std::cout << "[lethe] Checking LETHE_DOH_PERSISTENT_CACHE: " << (envOff("LETHE_DOH_PERSISTENT_CACHE") ? "off" : "on") << std::endl;
+    }
+    if (!envOff("LETHE_DOH_PERSISTENT_CACHE")) {
+        const std::string cachePath =
+            std::string(getenv("HOME") ? getenv("HOME") : "/tmp") +
+            "/.lethe-doh-cache";
+        ctx.persistentDohCache = std::make_shared<PersistentDohCache>(cachePath);
+        if (getenv("LETHE_DEBUG")) {
+            std::cout << "[lethe] Persistent DoH cache initialized: " << cachePath << std::endl;
+        }
+    }
     const bool usePool = !envOff("LETHE_DOH_POOL")
         && PluginRegistry::instance().enabled("doh-pool");
     if (!cfg.dnsProvider.empty() && usePool) {
         const TLSConfig rtls = ctx.tls;
         const std::string provider = cfg.dnsProvider;
         auto cache = ctx.dohCache;
-        ctx.dohResolver = std::make_shared<SharedDohResolver>([rtls, provider, cache]() {
+        auto persistentCache = ctx.persistentDohCache;
+        ctx.dohResolver = std::make_shared<SharedDohResolver>([rtls, provider, cache, persistentCache]() {
             auto c = std::make_unique<HttpClient>();
             c->initialize(rtls);
             c->setDohProvider(provider);
             if (cache) c->setSharedDohCache(cache);
+            if (persistentCache) c->setPersistentDohCache(persistentCache);
             return c;
         });
     }
@@ -247,10 +265,20 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
 }
 
 void ShellBootstrap::shutdown() {
+    if (getenv("LETHE_DEBUG")) {
+        std::cout << "[lethe] ShellBootstrap::shutdown called" << std::endl;
+    }
     if (shutDown_) return;
     shutDown_ = true;
     proxy.stop();
     engine.shutdown();
+    // Save the persistent DoH cache to disk.
+    if (ctx.persistentDohCache) {
+        ctx.persistentDohCache->save();
+        if (getenv("LETHE_DEBUG")) {
+            std::cout << "[lethe] Persistent DoH cache saved: " << ctx.persistentDohCache->size() << " entries" << std::endl;
+        }
+    }
 }
 
 } // namespace lethe
