@@ -1,0 +1,97 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 152.0.7977.65",
+  "run": 2,
+  "startedAt": "2026-09-01T04:38:23.617Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 372.39995799999997,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 372.40558300000066,
+      "rssMb": 1021.078125,
+      "processes": 8,
+      "cpuSec": 0.81,
+      "breakdown": [
+        {
+          "pid": 84461,
+          "rssMb": 217.4,
+          "cpuSec": 0.39,
+          "name": "Google"
+        },
+        {
+          "pid": 84466,
+          "rssMb": 132.1,
+          "cpuSec": 0.12,
+          "name": "Google"
+        },
+        {
+          "pid": 84467,
+          "rssMb": 95.2,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 84468,
+          "rssMb": 78.9,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 84470,
+          "rssMb": 159,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 84472,
+          "rssMb": 119.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 84473,
+          "rssMb": 99.7,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 84474,
+          "rssMb": 119.3,
+          "cpuSec": 0.04,
+          "name": "Google"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-09-01T04:40:21.973Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "pageload"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/"
+  ],
+  "startupMs": 298.120625,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 387,
+      "dcl": 396,
+      "load": 397,
+      "fcp": 398,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 636,
+      "domNodes": 12
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": null,
+      "dcl": 94,
+      "load": 624,
+      "fcp": 161,
+      "resources": 8,
+      "opaqueResources": 0,
+      "bytes": 1293174,
+      "domNodes": 242
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "ttfb": 187,
+      "dcl": 441,
+      "load": 3536,
+      "fcp": 432,
+      "resources": 37,
+      "opaqueResources": 8,
+      "bytes": 444077,
+      "domNodes": 4185
+    },
+    {
+      "url": "https://github.com/",
+      "ttfb": 73,
+      "dcl": 950.0000000000001,
+      "load": 961,
+      "fcp": 579,
+      "resources": 140,
+      "opaqueResources": 139,
+      "bytes": 118508,
+      "domNodes": 1779
+    }
+  ],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 640.3684169999999,
+      "rssMb": 186.953125,
+      "processes": 4,
+      "cpuSec": 0.47,
+      "breakdown": [
+        {
+          "pid": 85314,
+          "rssMb": 111,
+          "cpuSec": 0.31,
+          "name": "lethe"
+        },
+        {
+          "pid": 85315,
+          "rssMb": 13.9,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 85316,
+          "rssMb": 31.4,
+          "cpuSec": 0.08,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 85317,
+          "rssMb": 30.6,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ]
+}
