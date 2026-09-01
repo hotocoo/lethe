@@ -197,7 +197,18 @@
     for (BrowserWindowController* c in [controllers_ copy]) {
         [c.window close];
     }
-    if (ctx_->onTerminate) ctx_->onTerminate();
+    // The heavy shutdown (stopping the policy proxy + joining its workers,
+    // tearing down the engine) can block for a while if live tunnels are
+    // open. Run it off the main thread so the app always quits promptly
+    // instead of hanging until force-quit. It is best-effort: if the process
+    // exits first, the OS reclaims the resources.
+    if (ctx_->onTerminate) {
+        auto hook = std::move(ctx_->onTerminate);
+        ctx_->onTerminate = nullptr;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            hook();
+        });
+    }
 }
 
 #pragma mark - WebKit configuration

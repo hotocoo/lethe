@@ -6,6 +6,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -105,7 +106,21 @@ private:
     int listenFd_ = -1;
     std::atomic<int> port_{0};
     std::atomic<bool> running_{false};
+    // Set on stop() so in-flight connection handlers (CONNECT splice loops,
+    // long reads) can notice shutdown and bail instead of holding a worker
+    // thread hostage - which is what made quit() hang on active tunnels.
+    std::atomic<bool> stopping_{false};
     std::thread acceptThread_;
+
+    // Every live client fd, so stop() can close them and unblock workers
+    // stuck in recv()/read(). Guarded by its own mutex (never held while
+    // doing socket I/O).
+    std::set<int> activeFds_;
+    std::mutex activeFds_mtx_;
+    void trackFd(int fd);
+    void untrackFd(int fd);
+    // True once stop() has begun; connection handlers poll this to exit.
+    bool isStopping() const { return stopping_.load(std::memory_order_relaxed); }
 
     // Fixed-size worker pool: accept() pushes a fresh client fd, workers
     // pop and serve. The previous design detached a fresh std::thread per

@@ -194,8 +194,31 @@ bool PolicyProxyServer::start(const Options& options) {
     return true;
 }
 
+void PolicyProxyServer::trackFd(int fd) {
+    std::lock_guard<std::mutex> lk(activeFds_mtx_);
+    activeFds_.insert(fd);
+}
+
+void PolicyProxyServer::untrackFd(int fd) {
+    std::lock_guard<std::mutex> lk(activeFds_mtx_);
+    activeFds_.erase(fd);
+}
+
 void PolicyProxyServer::stop() {
     if (!running_.exchange(false)) return;
+    // Tell in-flight handlers to bail and close their sockets so any worker
+    // stuck in recv()/read()/splice wakes up and returns to the pool. Without
+    // this, quit() blocks on the worker join for as long as a live tunnel
+    // stays open (the reported "only force-quit works" bug).
+    stopping_.store(true, std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lk(activeFds_mtx_);
+        for (int fd : activeFds_) {
+            ::shutdown(fd, SHUT_RDWR);
+            ::close(fd);
+        }
+        activeFds_.clear();
+    }
     if (listenFd_ >= 0) {
         ::shutdown(listenFd_, SHUT_RDWR);
         ::close(listenFd_);
@@ -256,6 +279,14 @@ HttpClient::PolicyDialConfig PolicyProxyServer::dialConfig() const {
 }
 
 void PolicyProxyServer::serveConnection(int clientFd) {
+    // RAII: keep this fd in the active set for its whole lifetime so stop()
+    // can close it and unblock us. Covers every return path below.
+    struct FdGuard {
+        PolicyProxyServer* self;
+        int fd;
+        ~FdGuard() { self->untrackFd(fd); }
+    } guard{this, clientFd};
+    trackFd(clientFd);
     // Loopback leg of the tunnel: engine <-> proxy. Small TLS records must
     // not sit in Nagle's buffer waiting for an ACK.
     int nodelay = 1;
@@ -349,7 +380,8 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         std::atomic<bool> done{false};
         std::thread up([&] {
             uint8_t buf[16384];
-            while (!done.load(std::memory_order_relaxed)) {
+            while (!done.load(std::memory_order_relaxed) &&
+                   !isStopping()) {
                 ssize_t r = ::recv(clientFd, buf, sizeof(buf), 0);
                 if (r <= 0) break;
                 if (!stream->write(buf, static_cast<size_t>(r))) break;
@@ -358,7 +390,7 @@ void PolicyProxyServer::serveConnection(int clientFd) {
             done.store(true, std::memory_order_relaxed);
         });
         uint8_t buf[16384];
-        while (!done.load(std::memory_order_relaxed)) {
+        while (!done.load(std::memory_order_relaxed) && !isStopping()) {
             ssize_t r = stream->read(buf, sizeof(buf), 30000);
             if (r <= 0) break;
             if (!sendAll(clientFd,
