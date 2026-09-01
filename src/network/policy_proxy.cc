@@ -372,8 +372,19 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         HttpClient::PolicyDialConfig rawCfg = cfg;
         rawCfg.rawTunnel = true;
         std::string err;
+        
+        // Timing instrumentation for LETHE_DEBUG
+        auto t0 = std::chrono::steady_clock::now();
         auto stream = HttpClient::dialPolicyChecked(rawCfg, "https", host,
                                                     port, err);
+        auto t1 = std::chrono::steady_clock::now();
+        if (getenv("LETHE_DEBUG")) {
+            std::cout << "[lethe-proxy] CONNECT " << host << ":" << port
+                      << " dialPolicyChecked: "
+                      << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count()
+                      << "ms" << std::endl;
+            std::cout.flush();
+        }
         if (!stream) {
             const std::string resp = forbiddenResponse(err);
             sendAll(clientFd, resp.data(), resp.size());

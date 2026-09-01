@@ -720,6 +720,7 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     // Secure DNS: when a DoH provider is configured, target hostnames are
     // resolved through it and the plaintext system resolver is never used.
     // Failure is fatal for the request (fail closed), never a silent leak.
+    auto t0 = std::chrono::steady_clock::now();
     std::string connectTarget = host;
     bool targetIsIp = false;
     std::string guardAddress; // destination address the isolation guard sees
@@ -804,6 +805,7 @@ bool HttpClient::connectToHost(const std::string& host, int port,
         return true; // plain HTTP: stream established lazily on first write
     }
 
+    auto t1 = std::chrono::steady_clock::now();
     if (!openTcp(connectTarget, port)) {
         if (lastConnectError_.empty()) {
             std::cerr << "[lethe-http] Connect failed to " << host << ":"
@@ -811,6 +813,7 @@ bool HttpClient::connectToHost(const std::string& host, int port,
         }
         return false;
     }
+    auto t2 = std::chrono::steady_clock::now();
 
     // Fresh connection: it becomes reusable only after a clean response
     // confirms both sides want keep-alive (finishResponse).
@@ -820,10 +823,23 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     connectionReusable_ = false;
     connectionReused_ = false;
 
+    bool result;
     if (scheme == "https") {
-        return startTls(host); // SNI + certificate name stay the real hostname.
+        result = startTls(host); // SNI + certificate name stay the real hostname.
+    } else {
+        result = true;
     }
-    return true;
+    auto t3 = std::chrono::steady_clock::now();
+    if (getenv("LETHE_DEBUG")) {
+        auto t_now = std::chrono::steady_clock::now();
+        std::cout << "[lethe-http] connectToHost " << host << ":"
+                  << " doh=" << std::chrono::duration_cast<std::chrono::milliseconds>(t_now - t0).count() << "ms"
+                  << " tcp=" << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << "ms"
+                  << " tls=" << std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count() << "ms"
+                  << std::endl;
+        std::cout.flush();
+    }
+    return result;
 }
 
 bool HttpClient::openTcp(const std::string& target, int port) {
@@ -2196,11 +2212,13 @@ PolicyStreamPtr HttpClient::dialPolicyChecked(const PolicyDialConfig& cfg,
         error = "Blocked: scheme not permitted (" + scheme + ")";
         return nullptr;
     }
+    auto t0 = std::chrono::steady_clock::now();
     auto cli = std::make_unique<HttpClient>();
     if (!cli->initialize(cfg.tls)) {
         error = "client init failed";
         return nullptr;
     }
+    auto t1 = std::chrono::steady_clock::now();
     if (!cfg.dohProvider.empty()) cli->setDohProvider(cfg.dohProvider);
     if (cfg.dohCache) cli->setSharedDohCache(cfg.dohCache);
     if (cfg.dohResolver) cli->setSharedDohResolver(cfg.dohResolver);
@@ -2215,6 +2233,7 @@ PolicyStreamPtr HttpClient::dialPolicyChecked(const PolicyDialConfig& cfg,
         cli->setVpnRelay(cfg.vpnUdp, cfg.relayEndpointHost,
                          cfg.relayEndpointPort);
     }
+    auto t2 = std::chrono::steady_clock::now();
 
     // connectToHost IS the policy pipeline: DoH resolution (fail-closed),
     // private-network scope check on the resolved address, VPN routing
@@ -2225,12 +2244,30 @@ PolicyStreamPtr HttpClient::dialPolicyChecked(const PolicyDialConfig& cfg,
     const std::string dialScheme =
         (cfg.rawTunnel && scheme == "https") ? "http" : scheme;
     if (!cli->connectToHost(host, port, dialScheme, cfg.timeout)) {
+        auto t3 = std::chrono::steady_clock::now();
+        if (getenv("LETHE_DEBUG")) {
+            std::cout << "[lethe-http] dialPolicyChecked " << host << ":"
+                      << " init=" << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << "ms"
+                      << " setup=" << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << "ms"
+                      << " connect=" << std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count() << "ms"
+                      << " (FAILED)" << std::endl;
+            std::cout.flush();
+        }
         error = cli->lastConnectError_.empty()
                     ? ("connect failed for " + host)
                     : cli->lastConnectError_;
         cli->closeConnection();
         cli->shutdown();
         return nullptr;
+    }
+    auto t3 = std::chrono::steady_clock::now();
+    if (getenv("LETHE_DEBUG")) {
+        std::cout << "[lethe-http] dialPolicyChecked " << host << ":"
+                  << " init=" << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << "ms"
+                  << " setup=" << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << "ms"
+                  << " connect=" << std::chrono::duration_cast<std::chrono::milliseconds>(t3 - t2).count() << "ms"
+                  << std::endl;
+        std::cout.flush();
     }
     if (!cfg.rawTunnel && scheme == "https" &&
         !cli->verifyCertificatePins(host)) {
