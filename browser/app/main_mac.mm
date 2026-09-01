@@ -21,6 +21,18 @@
 #include "ui/mac/LethePreferences.h"
 
 int main(int argc, char** argv) {
+    // Allow multiple instances via --new-instance flag.
+    // When set, we use a unique bundle identifier so macOS doesn't
+    // activate the existing instance instead of launching a new one.
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--new-instance") == 0) {
+            // Generate a unique suffix based on PID
+            NSString* uniqueId = [NSString stringWithFormat:@"org.aletheia.lethe.%d", (int)getpid()];
+            setenv("LETHE_UNIQUE_BUNDLE_ID", [uniqueId UTF8String] ?: "", 1);
+            break;
+        }
+    }
+
     // Load the user's preferences before bootstrap so we can apply the
     // user-defined worker-pool size to the policy proxy at start time.
     LethePreferences* prefs = [LethePreferences shared];

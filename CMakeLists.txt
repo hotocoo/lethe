@@ -206,8 +206,13 @@ if(BUILD_UI AND APPLE)
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.aletheia.lethe"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_ICON_FILE "lethe.icns"
         OUTPUT_NAME "lethe"
     )
+    # Bundle the app icon
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/browser/app/resources/lethe.icns"
+        PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+    target_sources(lethe PRIVATE "${CMAKE_SOURCE_DIR}/browser/app/resources/lethe.icns")
     target_include_directories(lethe PRIVATE
         ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/browser)
     target_link_libraries(lethe PRIVATE lethe_core
@@ -436,6 +441,36 @@ if(BUILD_UI AND APPLE)
                 VERBATIM)
         endif()
         install(TARGETS lethe-cef BUNDLE DESTINATION .)
+
+        # ---- CEF diagnosis probe --------------------------------------------
+        # Minimal windowless CEF host with zero Lethe code (no engine, no
+        # policy proxy, no sandbox, no NSApplication): navigates a URL and
+        # prints load end/error. Used to separate "CEF on this machine" from
+        # "the lethe-cef integration" when the browser-info handshake stalls.
+        # Compiled with the exact lethe-cef flags and dropped into the same
+        # bundle so Chromium's helper discovery applies unchanged.
+        add_executable(lethe-cef-probe tools/cef_probe.mm)
+        set_source_files_properties(tools/cef_probe.mm PROPERTIES LANGUAGE OBJCXX)
+        target_compile_options(lethe-cef-probe PRIVATE
+            -fobjc-arc -Wno-deprecated-declarations)
+        # LETHE_PROBE_WITH_BOOTSTRAP: also build the ShellBootstrap variant
+        # (variant E) so the probe can run the engine before CefInitialize
+        # and bisect engine-vs-CEF interactions.
+        target_compile_definitions(lethe-cef-probe PRIVATE
+            LETHE_PROBE_WITH_BOOTSTRAP)
+        target_include_directories(lethe-cef-probe PRIVATE
+            ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src
+            ${CMAKE_SOURCE_DIR}/browser
+            ${CEF_ROOT} ${CEF_ROOT}/include)
+        target_link_libraries(lethe-cef-probe PRIVATE
+            lethe_core ${COCOA_FRAMEWORK} "${CEF_LIB}" "${CEF_WRAPPER_LIB}")
+        add_custom_command(TARGET lethe-cef-probe POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "$<TARGET_FILE:lethe-cef-probe>"
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/MacOS/lethe-cef-probe"
+            COMMAND ${LETHE_CODESIGN} --force --sign -
+                "$<TARGET_BUNDLE_DIR:lethe-cef>"
+            VERBATIM)
     endif()
 elseif(BUILD_UI)
     # Linux: GTK3 shell; WebKitGTK engine when its dev package is present,

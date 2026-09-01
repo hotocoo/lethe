@@ -12,6 +12,8 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+	<key>CFBundleIconFile</key>
+	<string>lethe</string>
 	<key>CFBundleDisplayName</key>
 	<string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
 	<key>CFBundlePackageType</key>
@@ -27,6 +29,11 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+	<!-- Ephemeral browser: never restore windows or offer the "reopen
+	     after crash" prompt (that modal fires BEFORE didFinishLaunching
+	     and stalls unattended launches after a crash). -->
+	<key>NSDisablePersistence</key>
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
