@@ -28,6 +28,13 @@ class LetheCefAutomation {
     // command queue on the next event-loop tick.
     void OnResult(const std::string& text);
     void Stop(int exitCode);
+    // True once a script ran (even a failing one) - the app delegate tears
+    // CEF down right after the CEF loop returns instead of waiting for
+    // NSApplication termination.
+    bool hasRun() const { return hasRun_; }
+    // Exit code recorded by the last Stop(); the app delegate exits with it
+    // after CefShutdown so the bench harness sees pass/fail.
+    int exitCode() const { return exitCode_; }
 
  private:
     LetheCefAutomation() = default;
@@ -52,6 +59,8 @@ class LetheCefAutomation {
     std::string last_result_;
     bool have_result_ = false;
     bool waiting_ = false;
+    bool hasRun_ = false;
+    int exitCode_ = 0;
 };
 
 #endif  // LETHE_BROWSER_APP_CEF_AUTOMATION_H

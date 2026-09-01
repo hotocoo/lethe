@@ -28,13 +28,20 @@ CefBrowserClient::ReturnValue CefBrowserClient::OnBeforeResourceLoad(
         proxy_auth_header_ = lethe::PolicyProxyServer::basicCredentialFor(
             ctx_->proxyAuthToken);
     }
+    if (getenv("LETHE_DEBUG")) {
+        std::cout << "[lethe-cef] OnBeforeResourceLoad url="
+                  << request->GetURL().ToString()
+                  << " setting Proxy-Authorization" << std::endl;
+        std::cout.flush();
+    }
     // Pre-emptive proxy auth: Chromium uses a request-level
     // Proxy-Authorization header directly on the CONNECT tunnel, so the
     // policy proxy authenticates on first contact. GetAuthCredentials
     // stays as the fallback for the 407 dance. The header terminates at
     // the proxy: tunnels end there and plain HTTP is re-fetched
     // internally, so the token never leaves loopback.
-    request->SetHeaderByName("Proxy-Authorization", proxy_auth_header_, true);
+    // exclude_from_copy=false so the header survives request copies.
+    request->SetHeaderByName("Proxy-Authorization", proxy_auth_header_, false);
     return RV_CONTINUE;
 }
 
@@ -55,10 +62,16 @@ void CefBrowserClient::App::OnBeforeCommandLineProcessing(
     // and GPU subprocesses inherit Chromium's defaults.
     if (!process_type.empty()) return;
     if (!ctx_) return;
+    // LETHE_CEF_MIN_SWITCHES=1 (bisect): skip every switch except the mock
+    // keychain (the securityd startup block is fatal without it).
+    if (getenv("LETHE_CEF_MIN_SWITCHES")) {
+        command_line->AppendSwitch("use-mock-keychain");
+        return;
+    }
     if (ctx_->proxyPort > 0) {
         const std::string url = "http://127.0.0.1:" + std::to_string(ctx_->proxyPort);
         command_line->AppendSwitchWithValue("proxy-server", url);
-        if (!ctx_->proxyAuthToken.empty()) {
+        if (!ctx_->proxyAuthToken.empty() && !getenv("LETHE_CEF_NO_PROXY_AUTH_SWITCH")) {
             // The proxy is HTTP, not HTTPS, so this is "lethe:<token>" sent
             // in plain over loopback. The token is per-launch, never leaves
             // the machine, and is the same secret the WebKit shell uses.
@@ -69,14 +82,17 @@ void CefBrowserClient::App::OnBeforeCommandLineProcessing(
         // DoH-only: tell Chromium not to bypass the proxy's resolver. The
         // proxy itself is the only thing allowed to open DNS sockets; the
         // browser subprocess's resolver would defeat that gate.
-        command_line->AppendSwitch("host-resolver-rules");
+        // (Temporarily disabled to bisect the network-service crash.)
+        // command_line->AppendSwitch("host-resolver-rules");
     }
     // Delegate every login / proxy-auth challenge to the embedder's
     // CefRequestHandler::GetAuthCredentials. Without this CEF falls back to
     // Chrome's own login-prompt UI, which does not exist in an embedded
     // app: the 407 challenge from the policy proxy then hangs forever and
     // every https navigation dies as ERR_INVALID_AUTH_CREDENTIALS.
-    command_line->AppendSwitch("disable-chrome-login-prompt");
+    // LETHE_CEF_NO_LOGIN_PROMPT_SWITCH=1 to bisect.
+    if (!getenv("LETHE_CEF_NO_LOGIN_PROMPT_SWITCH"))
+        command_line->AppendSwitch("disable-chrome-login-prompt");
     // Privacy: turn off everything Chromium does in the background that
     // would phone home. These are all default-off in --no-first-run, but
     // we set them explicitly so a config drift in upstream CEF cannot
@@ -96,11 +112,25 @@ void CefBrowserClient::App::OnBeforeCommandLineProcessing(
     // macOS Seatbelt sandbox does not allow writing the singleton
     // lock into ~/Library/Application Support/.
     command_line->AppendSwitch("disable-process-singleton");
-    command_line->AppendSwitch("disable-default-apps");
-    command_line->AppendSwitchWithValue("disable-features",
-        "InterestFeedContentSuggestions,LookalikeUrlNavigationThrottle,"
-        "PrivacySandboxAdsAPIs,PrivacySandboxAttributionReporting,"
-        "Translate,TranslateUI");
+    // Ephemeral browser: never touch the login keychain. The Safe Storage
+    // prompt blocks the browser UI thread in securityd and starves CEF's
+    // browser-info handshake (see the delegate's global-command-line note).
+    command_line->AppendSwitch("use-mock-keychain");
+    // Merge, don't clobber: a --disable-features passed on our own argv
+    // (diagnostics, upstream-bug workarounds) must survive alongside the
+    // privacy set below - Chromium keeps the LAST value of a repeated
+    // switch, which would otherwise silently drop the user's list.
+    {
+        static const char* kOurs =
+            "InterestFeedContentSuggestions,LookalikeUrlNavigationThrottle,"
+            "PrivacySandboxAdsAPIs,PrivacySandboxAttributionReporting,"
+            "Translate,TranslateUI";
+        std::string theirs =
+            command_line->GetSwitchValue("disable-features").ToString();
+        command_line->AppendSwitchWithValue(
+            "disable-features",
+            theirs.empty() ? kOurs : theirs + "," + kOurs);
+    }
     // --user-data-dir: without an explicit value the chromium process
     // singleton tries to read DIR_USER_DATA before any settings have
     // registered it, and crashes in chrome_main_delegate.cc:1566. The
@@ -120,6 +150,12 @@ void CefBrowserClient::App::OnBeforeCommandLineProcessing(
     if (ctx_->cfg.userAgentMode == "stealth") {
         command_line->AppendSwitchWithValue("user-agent",
             lethe::stealthUserAgentString());
+    }
+    // The "hardware-accel" plugin: off = software compositing (the
+    // documented debugging mode with a large performance cost).
+    if (!ctx_->cfg.useHardwareAcceleration) {
+        command_line->AppendSwitch("disable-gpu");
+        command_line->AppendSwitch("disable-gpu-compositing");
     }
 }
 
@@ -148,7 +184,13 @@ bool CefBrowserClient::GetAuthCredentials(CefRefPtr<CefBrowser> browser,
                                           const CefString& realm,
                                           const CefString& scheme,
                                           CefRefPtr<CefAuthCallback> callback) {
-    (void)browser; (void)origin_url; (void)realm; (void)scheme;
+    std::cout << "[lethe-cef] GetAuthCredentials proxy=" << isProxy
+              << " host=" << host.ToString() << " port=" << port
+              << " scheme=" << scheme.ToString()
+              << " browser=" << (browser ? browser->GetIdentifier() : -1)
+              << std::endl;
+    std::cout.flush();
+    (void)origin_url; (void)realm; (void)scheme;
     if (!ctx_ || !isProxy) return false;
     // Only ever answer the loopback policy proxy we started ourselves -
     // never volunteer the per-launch token to any other host.

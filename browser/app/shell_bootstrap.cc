@@ -3,8 +3,10 @@
 #include "app/shell_bootstrap.h"
 
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 
 #include "browser/url_input.h"
@@ -39,6 +41,27 @@ bool envOff(const char* name) {
     if (!v) return false;
     const std::string s(v);
     return s == "0" || s == "off" || s == "false" || s == "no";
+}
+
+// Everything is a plugin. Shells with a native settings surface (the WebKit
+// shell) mirror their own preferences; shells without one (lethe-cef) point
+// LETHE_PREFS_FILE at the same preferences.json the WebKit settings window
+// writes, or hand LETHE_PLUGIN_OVERRIDES raw {"plugins":[...]} JSON. The
+// registry's tolerant parser ignores unknown ids, so a plugin list written
+// by a newer shell stays loadable here.
+void loadPluginOverrides() {
+    PluginRegistry::instance().registerBuiltins();
+    if (const char* raw = std::getenv("LETHE_PLUGIN_OVERRIDES")) {
+        PluginRegistry::instance().loadOverridesJson(raw);
+        return;
+    }
+    if (const char* prefsPath = std::getenv("LETHE_PREFS_FILE")) {
+        std::ifstream f(prefsPath);
+        if (!f) return;
+        std::stringstream buf;
+        buf << f.rdbuf();
+        PluginRegistry::instance().loadOverridesJson(buf.str());
+    }
 }
 
 } // namespace
@@ -108,6 +131,33 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
     ctx.trackerBlocking = trackerBlock;
     if (trackerBlock && std::getenv("LETHE_TRACKER_BLOCK")) ctx.trackerBlocking = !envOff("LETHE_TRACKER_BLOCK");
     if (httpsFirst && std::getenv("LETHE_HTTPS_FIRST")) ctx.httpsFirst = !envOff("LETHE_HTTPS_FIRST");
+
+    // ---- Plugins: persisted user toggles beat defaults and env ------------
+    // Every shell-level feature is a PluginSpec; the registry is the single
+    // table of what exists, what it defaults to and what the user chose.
+    // The mirror below runs AFTER env so a settings toggle wins over the
+    // environment, and BEFORE the engine/proxy are built so restart-flagged
+    // plugins (proxy, DoH, VPN, sandboxing) shape this launch.
+    loadPluginOverrides();
+    {
+        PluginRegistry& reg = PluginRegistry::instance();
+        // Privacy
+        ctx.trackerBlocking = reg.enabled("tracker-block");
+        ctx.httpsFirst = reg.enabled("https-first");
+        if (reg.enabled("stealth-ua")) cfg.userAgentMode = "stealth";
+        // Data
+        if (reg.enabled("persistent-cookies")) {
+            persistent = true;
+            cfg.incognitoMode = false;
+        }
+        // Network (restart-flagged: shape this launch)
+        if (!reg.enabled("secure-dns")) cfg.dnsProvider.clear();
+        if (!reg.enabled("policy-proxy")) useProxy = false;
+        if (!reg.enabled("private-net-isolation")) cfg.isolatePrivateNetworks = false;
+        if (!reg.enabled("vpn")) cfg.vpnEnabled = false;
+        // Engine
+        if (!reg.enabled("hardware-accel")) cfg.useHardwareAcceleration = false;
+    }
     // Built-in VPN: defaults ON. LETHE_VPN=0 to disable entirely; the
     // fail-closed loopback tunnel keeps every byte on the policy path
     // until a real endpoint is set via LETHE_VPN_ENDPOINT=host:port.
@@ -128,8 +178,12 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
         }
     }
 
-    if (!envOff("LETHE_DOH_SHARED_CACHE")) ctx.dohCache = std::make_shared<SharedDohCache>();
-    const bool usePool = !envOff("LETHE_DOH_POOL");
+    if (!envOff("LETHE_DOH_SHARED_CACHE")
+        && PluginRegistry::instance().enabled("doh-cache")) {
+        ctx.dohCache = std::make_shared<SharedDohCache>();
+    }
+    const bool usePool = !envOff("LETHE_DOH_POOL")
+        && PluginRegistry::instance().enabled("doh-pool");
     if (!cfg.dnsProvider.empty() && usePool) {
         const TLSConfig rtls = ctx.tls;
         const std::string provider = cfg.dnsProvider;

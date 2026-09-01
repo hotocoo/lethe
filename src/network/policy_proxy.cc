@@ -96,16 +96,24 @@ bool sendAll(int fd, const char* p, size_t n) {
 }
 
 // Read until CRLFCRLF or cap. False on EOF/error/oversize.
+// Reads in 4KB chunks for efficiency instead of byte-by-byte.
 bool readHead(int fd, std::string& out) {
     out.clear();
-    char c;
+    char buf[4096];
     while (out.size() < kMaxHeadBytes) {
-        ssize_t r = ::recv(fd, &c, 1, 0);
+        ssize_t r = ::recv(fd, buf, sizeof(buf), 0);
         if (r <= 0) return false;
-        out.push_back(c);
+        out.append(buf, static_cast<size_t>(r));
+        // Check for CRLFCRLF at the end
         if (out.size() >= 4 &&
             out.compare(out.size() - 4, 4, "\r\n\r\n") == 0)
             return true;
+        // Also check if CRLFCRLF appears in the middle (in case we read past it)
+        size_t pos = out.find("\r\n\r\n");
+        if (pos != std::string::npos) {
+            out.resize(pos + 4);
+            return true;
+        }
     }
     return false;
 }

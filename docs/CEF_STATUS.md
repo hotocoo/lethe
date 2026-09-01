@@ -31,15 +31,16 @@ engine family as Chrome).
 - **Eval round-trip.** The renderer answers the browser's `lethe:eval`
   process messages (CefV8Context eval + reply), so the e2e / bench
   driver works against lethe-cef.
-- **Proxy auth plumbing.** `GetAuthCredentials` answers the policy
-  proxy's 407 with the per-launch token (only ever to 127.0.0.1 on our
-  own port), `disable-chrome-login-prompt` routes login challenges to
-  the embedder instead of Chrome's nonexistent login UI, and
-  `OnBeforeResourceLoad` stamps a pre-emptive Proxy-Authorization on
-  every request (Chromium uses a request-level header directly on the
-  CONNECT tunnel). With the flow engaged, the tunnel reaches
-  `200 Connection Established` and the TLS handshake through it
-  completes with the real server certificates.
+- **Proxy auth plumbing (BROKEN in current builds).** `GetAuthCredentials`
+  is wired to answer the policy proxy's 407 with the per-launch token
+  (only ever to 127.0.0.1 on our own port), and `OnBeforeResourceLoad`
+  stamps a pre-emptive Proxy-Authorization on every request. However,
+  in current builds (CEF 135 and 151), the credentials are NOT being
+  attached to the CONNECT tunnel: every request reaches the proxy with
+  no credential, the proxy 407s, and the navigation fails with
+  ERR_INVALID_ARGUMENT. The `GetAuthCredentials` callback is never
+  invoked, and the `--proxy-auth` switch (if real) does not help.
+  This blocks real https page loads through the policy proxy.
 - **Sandbox.** The shared Seatbelt profile honors
   `LETHE_SANDBOX_EXTRA_WRITE_DIRS` for the CEF user-data dir.
 

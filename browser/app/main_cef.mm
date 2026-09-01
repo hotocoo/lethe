@@ -19,6 +19,7 @@
 #include <iostream>
 
 #include "include/cef_app.h"
+#include "include/cef_version.h"
 #include "include/wrapper/cef_helpers.h"
 
 #include "app/cef_app_delegate.h"
@@ -42,6 +43,12 @@ int main(int argc, char** argv) {
         NSArray* dirs = NSSearchPathForDirectoriesInDomains(
             NSApplicationSupportDirectory, NSUserDomainMask, YES);
         NSString* root = [dirs.firstObject stringByAppendingPathComponent:@"Lethe CEF"];
+        // LETHE_CEF_USER_DATA_DIR overrides the profile location so two
+        // runs (bench + interactive, two users of the same checkout) never
+        // fight over one Chromium profile.
+        if (const char* override = std::getenv("LETHE_CEF_USER_DATA_DIR")) {
+            if (*override) root = [NSString stringWithUTF8String:override];
+        }
         [[NSFileManager defaultManager] createDirectoryAtPath:root
             withIntermediateDirectories:YES attributes:nil error:nil];
         setenv("CHROME_USER_DATA_DIR", [root UTF8String] ?: "", 1);
@@ -50,6 +57,17 @@ int main(int argc, char** argv) {
         // Chromium needs to write its SingletonLock and per-profile caches
         // into this dir, so hand it to the profile builder.
         setenv("LETHE_SANDBOX_EXTRA_WRITE_DIRS", [root UTF8String] ?: "", 1);
+        // Every feature is a plugin and the settings toggles live in ONE
+        // store: the preferences.json the WebKit shell's Settings window
+        // (and lethe://plugins) writes. Point the shared bootstrap at it so
+        // the Blink engine honors the same user choices. It stays optional:
+        // a CEF-only install runs on registry defaults.
+        NSString* prefs = [NSHomeDirectory()
+            stringByAppendingPathComponent:
+                @"Library/Application Support/Lethe/preferences.json"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:prefs]) {
+            setenv("LETHE_PREFS_FILE", [prefs UTF8String] ?: "", 1);
+        }
     }
     // Force the singleton off in argv. The macOS Seatbelt sandbox
     // blocks the singleton lock write; OnBeforeCommandLineProcessing
@@ -66,7 +84,8 @@ int main(int argc, char** argv) {
     // populates ShellContext with the DoH pool, the policy proxy, and the
     // per-launch auth token we need to inject into CEF's net stack.
     lethe::ShellBootstrap boot;
-    const int initRc = boot.init(argc, argv, "Chromium 151.0.7922.174 (CEF 151.3.24)");
+    // Engine banner from the dist itself - stays honest across upgrades.
+    const int initRc = boot.init(argc, argv, "CEF " CEF_VERSION);
     if (initRc >= 0) return initRc;
 
     // Step 2: build the CefApp + CefBrowserClient. CefExecuteProcess only

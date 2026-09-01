@@ -284,9 +284,12 @@ void LetheCefAutomation::Pass(const std::string& what) {
 }
 
 void LetheCefAutomation::Stop(int exitCode) {
+    // Quit the CEF loop; the delegate tears CEF down right after
+    // CefRunMessageLoop returns (terminate: from a nested CEF loop would
+    // re-enter CefShutdown on the same stack and crash). exitCode rides
+    // through the delegate.
+    hasRun_ = true;
+    exitCode_ = exitCode;
     if (delegate_ && delegate_.client) delegate_.client->SetPendingQuit(true);
     CefQuitMessageLoop();
-    lethe::ShellContext* ctx = delegate_ ? delegate_.context : nullptr;
-    if (ctx && ctx->onTerminate) ctx->onTerminate();
-    std::exit(exitCode);
 }

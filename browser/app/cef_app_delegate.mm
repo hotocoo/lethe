@@ -27,6 +27,7 @@
 #include "app/cef_automation.h"
 
 #include "network/policy_proxy.h"
+#include "plugins/plugin_registry.h"
 
 @implementation LetheCefAppDelegate {
     lethe::ShellContext* _ctx;
@@ -64,7 +65,19 @@
     // NSProcessInfo). Force the singleton off + sandbox off on the global
     // CefCommandLine so CefInitialize picks them up before Chromium boots.
     CefRefPtr<CefCommandLine> global = CefCommandLine::GetGlobalCommandLine();
-    if (global) {
+    // LETHE_CEF_MIN_SWITCHES=1 (bisect): skip the global-command-line block
+    // entirely (mock keychain still applied by App::OnBeforeCommandLineProcessing).
+    const bool minSwitches = getenv("LETHE_CEF_MIN_SWITCHES") != nullptr;
+    if (global && !minSwitches) {
+        // Lethe is ephemeral by default: there is no stored password or
+        // cookie blob to decrypt. Chromium's OSCrypt would still read the
+        // "Chromium Safe Storage" keychain item at startup - a modal
+        // keychain prompt on every launch that blocks the browser UI
+        // thread in securityd and (through CEF's 15 s browser-info
+        // handshake timeout) kills the first navigation. The mock keychain
+        // skips the prompt and the keychain entirely.
+        if (!global->HasSwitch("use-mock-keychain"))
+            global->AppendSwitch("use-mock-keychain");
         if (!global->HasSwitch("disable-process-singleton"))
             global->AppendSwitch("disable-process-singleton");
         if (!global->HasSwitch("disable-default-apps"))
@@ -115,6 +128,13 @@
     // load. Turning the CEF sandbox back on requires a proper codesign
     // pass on the Helper, which is part of the v1.0 packaging work.
     settings.no_sandbox = true;
+    // Crash forensics: Chromium CHECK aborts print only through CEF's
+    // logging sink. Route it somewhere we can read after a SIGTRAP.
+    {
+        const char* src = "/tmp/lethe-cef-debug.log";
+        cef_string_from_utf8(src, strlen(src), &settings.log_file);
+        settings.log_severity = LOGSEVERITY_INFO;
+    }
     // No persistent cache by default: every launch is a fresh profile.
     // The Settings UI can flip this in a follow-up.
     settings.multi_threaded_message_loop = false;  // we run our own run loop
@@ -127,6 +147,11 @@
     NSArray* dirs = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,
                                                         NSUserDomainMask, YES);
     NSString* root = [dirs.firstObject stringByAppendingPathComponent:@"Lethe CEF"];
+    // Same override main_cef.mm honored: one profile per run on request
+    // (bench + interactive, or two sessions sharing one checkout).
+    if (const char* override = getenv("LETHE_CEF_USER_DATA_DIR")) {
+        if (*override) root = [NSString stringWithUTF8String:override];
+    }
     [[NSFileManager defaultManager] createDirectoryAtPath:root
         withIntermediateDirectories:YES attributes:nil error:nil];
     // CefSettings exposes the underlying cef_settings_t fields directly;
@@ -174,10 +199,24 @@
     // white flash doesn't appear between window-show and first paint.
     // (0x00000000 = fully transparent. We use opaque white instead.)
     browserSettings.background_color = 0xFFFFFFFFu;
+    // The "javascript" plugin: settings toggles reach this engine through
+    // the shared preferences store (see main_cef.mm). Off breaks most
+    // modern sites - that is the plugin's documented trade-off.
+    if (!lethe::PluginRegistry::instance().enabled("javascript")) {
+        browserSettings.javascript = STATE_DISABLED;
+    }
 
     CefRefPtr<CefBrowserClient> client = _client;
+    // Start directly on the requested URL when there is one. The first
+    // main frame is then created inside the initial renderer, whose
+    // browser-info handshake is answered during browser creation. The old
+    // about:blank start dropped the first cross-site navigation into CEF's
+    // speculative-RFH browser-info race (upstream cef#4001; the proposed
+    // fix was declined) and the frame sat hung until the 15 s info timeout.
+    std::string startUrl = "about:blank";
+    if (!_ctx->cfg.initialUrl.empty()) startUrl = _ctx->cfg.initialUrl;
     CefRefPtr<CefBrowser> browser = CefBrowserHost::CreateBrowserSync(
-        windowInfo, client, "about:blank", browserSettings, nullptr, nullptr);
+        windowInfo, client, startUrl, browserSettings, nullptr, nullptr);
     if (!browser) {
         std::cerr << "[lethe-cef] CreateBrowserSync failed" << std::endl;
         CefShutdown();
@@ -193,17 +232,27 @@
     } else if (!_ctx->e2eScript.empty()) {
         LetheCefAutomation::shared()->Start(self, _ctx->e2eScript);
     } else if (!_ctx->cfg.initialUrl.empty()) {
-        browser->GetMainFrame()->LoadURL(_ctx->cfg.initialUrl);
+        // Non-e2e launch with a URL: CreateBrowserSync already navigated.
     }
 
     std::cout << "[lethe-cef] CefRunMessageLoop..." << std::endl;
     CefRunMessageLoop();
+    // An e2e script quit the loop: tear CEF down on this same stack. Doing
+    // it in applicationWillTerminate would re-enter CefShutdown from a
+    // nested run loop and crash.
+    if (LetheCefAutomation::shared()->hasRun()) {
+        std::cout << "[lethe-cef] CefShutdown..." << std::endl;
+        CefShutdown();
+        if (_ctx && _ctx->onTerminate) _ctx->onTerminate();
+        std::exit(LetheCefAutomation::shared()->exitCode());
+    }
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
     (void)notification;
     std::cout << "[lethe-cef] CefShutdown..." << std::endl;
     CefShutdown();
+    if (_ctx && _ctx->onTerminate) _ctx->onTerminate();
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)app {
