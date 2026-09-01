@@ -736,11 +736,18 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     bool targetIsIp = false;
     std::string guardAddress; // destination address the isolation guard sees
     if (!dohProvider_.empty() && !isIpLiteral(host)) {
+        auto t_doh_start = std::chrono::steady_clock::now();
         std::string ip;
         if (!dohResolve(host, ip)) {
             lastConnectError_ = "Blocked: secure DNS (DoH) lookup failed for " + host;
             std::cerr << "[lethe-http][doh] " << lastConnectError_ << std::endl;
             return false;
+        }
+        auto t_doh_end = std::chrono::steady_clock::now();
+        if (getenv("LETHE_DEBUG")) {
+            std::cout << "[lethe-http] DoH resolve " << host << ": "
+                      << std::chrono::duration_cast<std::chrono::milliseconds>(t_doh_end - t_doh_start).count()
+                      << "ms" << std::endl;
         }
         connectTarget = ip;
         guardAddress = ip;
