@@ -5,6 +5,33 @@ through the same declarative step list, with both browsers launched cold
 under a fresh profile. Raw JSON for every run is committed under
 `tools/bench/results/v1.0/`. Reproduce with the commands in `README.md`.*
 
+## Latest results (2026-09-01)
+
+After optimizing the proxy's `readHead` to use 4KB chunks instead of
+byte-by-byte reads, the latest pageload benchmark shows:
+
+| Site | Lethe TTFB | Lethe FCP | Lethe Load | Chrome TTFB | Chrome FCP | Chrome Load |
+|---|---|---|---|---|---|---|
+| example.com | 352ms | 370ms | 369ms | 331ms | 372ms | 340ms |
+| iana.org | - | 299ms | 263ms | 73ms | 164ms | 334ms |
+| wikipedia.org | **46ms** | **217ms** | 3332ms | 62ms | 184ms | **202ms** |
+| github.com | **55ms** | **492ms** | 868ms | 79ms | 544ms | 659ms |
+| bbc.com | **177ms** | 240ms | **939ms** | 182ms | 232ms | 1905ms |
+
+**Wins for Lethe:**
+- TTFB on wikipedia.org (46 vs 62ms), github.com (55 vs 79ms), bbc.com (177 vs 182ms)
+- FCP on github.com (492 vs 544ms)
+- Load on iana.org (263 vs 334ms), bbc.com (939 vs 1905ms)
+
+**Wins for Chrome:**
+- TTFB on example.com (331 vs 352ms), iana.org (73 vs -)
+- FCP on example.com (372 vs 370ms - close), iana.org (164 vs 299ms), wikipedia.org (184 vs 217ms)
+- Load on example.com (340 vs 369ms - close), wikipedia.org (202 vs 3332ms), github.com (659 vs 868ms)
+
+The main remaining gap is the Load time on wikipedia.org, which is likely
+due to WebKit waiting for all subresources to load before firing the
+`load` event. This is an area for future optimization.
+
 ## Method
 
 - **Harness.** Lethe is driven through its own `--e2e-script` driver; Chrome
