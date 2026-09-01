@@ -3,8 +3,26 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 namespace lethe {
+
+namespace {
+
+// Create the parent directory for the cache file if it doesn't exist.
+void ensureParentDir(const std::string& filePath) {
+    // Find the last '/' to get the directory path
+    const size_t lastSlash = filePath.find_last_of('/');
+    if (lastSlash == std::string::npos || lastSlash == 0) return;
+    
+    const std::string dirPath = filePath.substr(0, lastSlash);
+    
+    // Try to create the directory (ignore errors if it already exists)
+    ::mkdir(dirPath.c_str(), 0700);
+}
+
+} // namespace
 
 PersistentDohCache::PersistentDohCache(const std::string& filePath)
     : filePath_(filePath) {
@@ -50,8 +68,19 @@ bool PersistentDohCache::lookup(const std::string& host, std::string& outIp) con
 void PersistentDohCache::save() const {
     std::lock_guard<std::mutex> lock(mu_);
 
+    if (getenv("LETHE_DEBUG")) {
+        std::cout << "[lethe-doh-cache] Saving to: " << filePath_ << " (" << cache_.size() << " entries)" << std::endl;
+    }
+
+    ensureParentDir(filePath_);
+
     std::ofstream out(filePath_);
-    if (!out.is_open()) return;
+    if (!out.is_open()) {
+        if (getenv("LETHE_DEBUG")) {
+            std::cerr << "[lethe-doh-cache] FAILED to open file for writing: " << filePath_ << std::endl;
+        }
+        return;
+    }
 
     const auto now = std::chrono::steady_clock::now();
     for (const auto& [host, entry] : cache_) {

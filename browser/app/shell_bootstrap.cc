@@ -190,9 +190,10 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
         std::cout << "[lethe] Checking LETHE_DOH_PERSISTENT_CACHE: " << (envOff("LETHE_DOH_PERSISTENT_CACHE") ? "off" : "on") << std::endl;
     }
     if (!envOff("LETHE_DOH_PERSISTENT_CACHE")) {
+        // Use Lethe's Caches directory (sandbox-allowed)
         const std::string cachePath =
             std::string(getenv("HOME") ? getenv("HOME") : "/tmp") +
-            "/.lethe-doh-cache";
+            "/Library/Caches/org.aletheia.lethe/.lethe-doh-cache";
         ctx.persistentDohCache = std::make_shared<PersistentDohCache>(cachePath);
         if (getenv("LETHE_DEBUG")) {
             std::cout << "[lethe] Persistent DoH cache initialized: " << cachePath << std::endl;
