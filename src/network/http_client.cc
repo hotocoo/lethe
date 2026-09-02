@@ -332,8 +332,10 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             if (parseReferrerPolicy(rpHeader, learned)) {
                 chainPolicy = learned;
             } else {
-                std::cout << "[lethe-http] Ignoring Referrer-Policy "
-                             "header with no known token" << std::endl;
+                if (verboseHttpLog()) {
+                    std::cout << "[lethe-http] Ignoring Referrer-Policy "
+                              "header with no known token" << std::endl;
+                }
             }
         }
 
@@ -728,8 +730,10 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     // scheme://host:port serves the next request with no TCP or TLS setup,
     // and skips DNS entirely - the origin was already validated for it.
     if (tryReuseConnection(scheme, host, port)) {
-        std::cout << "[lethe-http] Reusing keep-alive connection to "
-                  << host << ":" << port << std::endl;
+        if (verboseHttpLog()) {
+            std::cout << "[lethe-http] Reusing keep-alive connection to "
+                      << host << ":" << port << std::endl;
+        }
         return true;
     }
 
@@ -815,8 +819,10 @@ bool HttpClient::connectToHost(const std::string& host, int port,
         relayMode_ = true;
         relayTargetHost_ = connectTarget;
         relayTargetPort_ = port;
-        std::cout << "[lethe-http] Routing " << host << ":" << port
-                  << " through the encrypted tunnel" << std::endl;
+        if (verboseHttpLog()) {
+            std::cout << "[lethe-http] Routing " << host << ":" << port
+                      << " through the encrypted tunnel" << std::endl;
+        }
         // TLS runs over the pipe too: startTls branches on relayMode_ and
         // uses memory BIOs fed by the relay stream.
         if (scheme == "https") {
