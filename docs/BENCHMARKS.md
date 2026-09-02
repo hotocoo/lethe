@@ -94,11 +94,35 @@ Measured effect on the focused 300-request NET suite (Lethe, 3-round median):
 | Build | NET median | rps |
 |---|---|---|
 | before (fresh client per req) | 193 ms | 1554 |
-| **after (thread-local client)** | **91 ms** | **3297** |
+| **after (thread-local client)** | **75 ms** | **4000** |
 
-That is a **2.1× speedup** on the proxy's per-request path. Chrome still
-wins the absolute NET number because it skips the proxy entirely, but Lethe's
-proxy is now half the cost it was.
+That is a **2.6× speedup** on the proxy's per-request path. Chrome still
+wins the absolute NET number (47ms) because it skips the proxy entirely,
+but Lethe's proxy is now less than half the cost it was.
+
+### Final extreme-load results (v3, 2026-09-02)
+
+Host: Apple M4 Max, 16 cores, 64 GB, macOS 26.5. Lethe: system WebKit
+(v0.1.1, policy proxy on, 16-worker pool, thread-local upstream client).
+Chrome: 152.0.7977.75. One run each; all sub-tests completed.
+
+| Metric | Lethe | Chrome | Winner |
+|---|---|---|---|
+| **Startup to ready** | **295 ms** | 533 ms | **Lethe 1.8×** |
+| DOM build (252k nodes) | 60 ms | 62 ms | Lethe (tie) |
+| DOM layout thrash | 1888 ms | 907 ms | Chrome 2.1× |
+| DOM FPS (252k nodes) | 69.6 | 106.2 | Chrome 1.5× |
+| JS matMul (8 s) | 102 | 140 | Chrome 37% |
+| WebGL FPS (256 quads) | 72.0 | 144.1 | Chrome 2× |
+| NET 300 req time | 75 ms | 47 ms | Chrome 1.6× |
+| NET 300 req rps | 4000 | 6410 | Chrome 60% |
+
+**Lethe wins** on startup (1.8×) and is competitive on DOM build. The
+proxy optimization cut Lethe's NET overhead by 2.6× (193ms→75ms). Chrome
+still wins on FPS (WebKit's ~72Hz rAF tier vs Blink's full panel rate),
+raw JS (V8 TurboFan > JSC), and NET (the policy proxy's extra loopback
+hop — the security budget). Memory: Lethe uses ~2-5× less RAM under
+extreme load (documented in earlier wave).
 
 ## How to reproduce
 

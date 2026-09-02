@@ -1,0 +1,84 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-09-02T04:10:16.773Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "extreme-net"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 301.454292,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      "net n=300 done=300 bytes=307200 t=87ms rps=3448",
+      "net n=300 done=300 bytes=307200 t=82ms rps=3659",
+      "net n=300 done=300 bytes=307200 t=79ms rps=3797"
+    ]
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 675.3367920000001,
+      "rssMb": 196.40625,
+      "processes": 4,
+      "cpuSec": 0.46,
+      "breakdown": [
+        {
+          "pid": 72381,
+          "rssMb": 115,
+          "cpuSec": 0.26,
+          "name": "lethe"
+        },
+        {
+          "pid": 72382,
+          "rssMb": 13.9,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 72383,
+          "rssMb": 33.1,
+          "cpuSec": 0.07,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 72384,
+          "rssMb": 34.5,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ]
+}
