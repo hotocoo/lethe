@@ -1,0 +1,121 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-09-02T01:32:56.940Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "extreme"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 426.054417,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 14: no browser tab available",
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": "dom=505009 build=112ms thrash=23046ms fps=52.1",
+    "js": "js matMul=102 crypto=1 rec=1 t=8116ms ok=true",
+    "webgl": null,
+    "net": null
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 814.318792,
+      "rssMb": 182.015625,
+      "processes": 4,
+      "cpuSec": 0.54,
+      "breakdown": [
+        {
+          "pid": 19626,
+          "rssMb": 114.3,
+          "cpuSec": 0.34,
+          "name": "lethe"
+        },
+        {
+          "pid": 19627,
+          "rssMb": 12.9,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 19628,
+          "rssMb": 20.7,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 19629,
+          "rssMb": 34.1,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN enabled (fail-closed loopback; set LETHE_VPN_ENDPOINT=host:port to tunnel)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] worker pool: 16 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:58761 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:58761 (subresource enforcement on)",
+    "[e2e] start: 21 lines",
+    "[e2e] keep-front: on",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > sleep 1500",
+    "[e2e] > newtab http://127.0.0.1:58760/xdom.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > sleep 20000",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[e2e] result dom=505009 build=112ms thrash=23046ms fps=52.1",
+    "[e2e] > newtab http://127.0.0.1:58760/xjs.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > sleep 11000",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[e2e] result js matMul=102 crypto=1 rec=1 t=8116ms ok=true",
+    "[e2e] > newtab http://127.0.0.1:58760/xgl.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > sleep 20000",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[e2e] FAIL line 14: no browser tab available",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

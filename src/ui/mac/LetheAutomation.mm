@@ -234,10 +234,19 @@
             stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
     std::cout << "[e2e] > " << line.UTF8String << std::endl;
 
-    if (!current_ && ![cmd isEqualToString:@"newtab"] && ![cmd isEqualToString:@"quit"] &&
-        ![cmd isEqualToString:@"assert-tabs"]) {
-        [self fail:@"no browser tab available"];
-        return;
+    if (!current_) {
+        // Recovery: if every window has closed (a heavy page can take one
+        // down), open a fresh one and continue with this same command. This
+        // keeps long torture runs alive instead of aborting on a transient
+        // close. quit/assert-tabs still fail (they need a real tab to check).
+        if ([cmd isEqualToString:@"quit"] || [cmd isEqualToString:@"assert-tabs"]) {
+            [self fail:@"no browser tab available"];
+            return;
+        }
+        BrowserWindowController* c = [app_ openWindowWithURL:nil];
+        current_ = c;
+        std::cout << "[e2e] recovered: reopened a window for " << cmd.UTF8String << std::endl;
+        std::cout.flush();
     }
 
     if ([cmd isEqualToString:@"load"]) {

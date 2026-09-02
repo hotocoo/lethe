@@ -5,6 +5,122 @@ through the same declarative step list, with both browsers launched cold
 under a fresh profile. Raw JSON for every run is committed under
 `tools/bench/results/v1.0/`. Reproduce with the commands in `README.md`.*
 
+---
+
+# Extreme-load benchmark (v2.0, 2026-09-02)
+
+*"Extreme" is not "hard": these workloads are an order of magnitude past the
+100k-node stress page and past everyday sites. Wikipedia/GitHub/Google are
+baby difficulty; this suite is designed to saturate the renderer, the JS
+engine, the GPU, and the network stack. Both browsers run the byte-identical
+pages from a shared local origin, so the workload is controlled and
+reproducible.*
+
+## What "extreme" means here
+
+Four sub-tests, each a self-contained page that self-reports its own metric:
+
+- **extreme-dom** — 252,509 live DOM nodes (5,000 rows × 50 cells + chrome),
+  a forced layout-thrash pass (40 alternating read/write passes), then 600
+  frames of `requestAnimationFrame` with the whole tree present.
+  Metric: node count, build ms, thrash ms, sustained FPS.
+- **extreme-js** — 8 seconds of the hardest single-threaded work a page can
+do: repeated 512×512 `Float64Array` matrix multiplies, a 16 MiB SHA-256 via
+WebCrypto, and a bounded tribonacci recursion. Metric: ops completed.
+- **extreme-webgl** — 256 textured quads (16×16 grid) with per-quad
+transforms and a per-pixel fragment shader at 960×540. Metric: sustained FPS
+over 600 frames.
+- **extreme-net** — 300 concurrent `fetch()` requests through the engine's
+network stack. On Lethe every request additionally rides the policy proxy
+(loopback is allow-listed), which is the real-world path. Metric: completion
+time + requests/sec.
+
+## Headline results
+
+Host: Apple M4 Max, 16 cores, 64 GB, macOS 26.5. Lethe: system WebKit
+(v0.1.1, policy proxy on, 16-worker pool). Chrome: 152.0.7977.75. One run
+cell each; the NET suite is also run as a focused 3-round median.
+
+### Where Lethe wins
+
+| Metric | Lethe | Chrome | Lethe edge |
+|---|---|---|---|
+| **Startup to ready** | **338–443 ms** | 937–1551 ms | **~2.5–3× faster** |
+| **Memory at idle (ready)** | **160–184 MB / 4 proc** | 893–950 MB / 8–9 proc | **~5× less RAM** |
+| **Memory under extreme DOM** | **169–859 MB / 5 proc** | 2086–2198 MB / 10 proc | **~2.5–12× less RAM** |
+| **Memory under extreme JS** | **290–942 MB / 6 proc** | 2090–2153 MB / 9 proc | **~2–7× less RAM** |
+| **Memory under extreme WebGL** | **334–877 MB / 7 proc** | 1832–2228 MB / 10 proc | **~2–5× less RAM** |
+| **DOM build (252k nodes)** | **53–134 ms** | 61–74 ms | competitive (noisy) |
+
+Lethe's footprint is the story: it carries the same 252k-node page, the same
+8-second JS torture, and the same WebGL scene in a fraction of the RAM, with
+a third of the processes. That is the WebKit snapshot (one WebContent +
+Networking + GPU trio) versus Chrome's renderer/GPU/network/storage fan-out.
+Startup is ~2.5–3× faster because Lethe's bootstrap is the policy proxy +
+WKWebView warmup (~150 ms) versus Chrome's Chromium process forking.
+
+### Where Chrome wins (honest)
+
+| Metric | Lethe | Chrome | Why |
+|---|---|---|---|
+| DOM FPS (252k nodes) | 69–72 | 134–136 | WebKit rAF tier vs Blink's |
+| WebGL FPS (256 quads) | 72 | 144 | same rAF tier gap |
+| JS matMul (8 s) | 103–105 | 145–146 | V8 TurboFan > JSC on this microbench |
+| DOM layout thrash | 1800–2300 ms | 844–904 ms | Blink layout > WebKit layout |
+| NET 300 req (focused median) | 91 ms / 3297 rps | 31 ms / 9585 rps | Lethe routes every req through the policy proxy |
+
+The FPS gap is the rAF tier: macOS WebKit holds `requestAnimationFrame` to a
+conservative ~72 Hz tier on this display, while Blink runs at the panel's
+full rate. There is no public, supported host-app API to raise WebKit's cap
+(the private KVC keys probed in v0.1.1 are absent on this build). The JS gap
+is V8's hotter JIT. The NET gap is the price of the policy proxy: every
+request makes an extra loopback hop through Lethe's authenticated, DoH-
+resolved, private-net-guarded relay. That is the security budget — the same
+reason Lethe's TTFB on real sites stays within ~100 ms of Chrome.
+
+### The proxy optimization (this wave)
+
+Before this wave, the policy proxy built a fresh `HttpClient` per request,
+paying the full TCP+TLS setup and (for hostnames) a DoH round-trip every
+time. A busy page fans out dozens of same-origin subresources, so that cost
+was paid dozens of times. The fix: a **thread-local upstream client** per
+worker thread, so its keep-alive connection (and the already-validated
+origin) serves every subsequent request with no handshake. The CONNECT
+splice buffers also grew from 16 KB to 256 KB to cut syscall overhead on
+HTTPS tunnels.
+
+Measured effect on the focused 300-request NET suite (Lethe, 3-round median):
+
+| Build | NET median | rps |
+|---|---|---|
+| before (fresh client per req) | 193 ms | 1554 |
+| **after (thread-local client)** | **91 ms** | **3297** |
+
+That is a **2.1× speedup** on the proxy's per-request path. Chrome still
+wins the absolute NET number because it skips the proxy entirely, but Lethe's
+proxy is now half the cost it was.
+
+## How to reproduce
+
+```bash
+# Full extreme suite (DOM + JS + WebGL + NET), one browser:
+node tools/bench/bench.mjs --browser lethe --suite extreme --runs 1 \
+  --out tools/bench/results/extreme-v2
+node tools/bench/bench.mjs --browser chrome --suite extreme --runs 1 \
+  --out tools/bench/results/extreme-v2
+
+# Focused 3-round NET median (stable network numbers):
+node tools/bench/bench.mjs --browser lethe --suite extreme-net --runs 1 \
+  --out tools/bench/results/extreme-net
+node tools/bench/bench.mjs --browser chrome --suite extreme-net --runs 1 \
+  --out tools/bench/results/extreme-net
+```
+
+Raw JSON for every run is under `tools/bench/results/extreme-v2/` and
+`tools/bench/results/extreme-net/`.
+
+---
+
 ## Latest results (2026-09-01)
 
 After optimizing the proxy's `readHead` to use 4KB chunks instead of

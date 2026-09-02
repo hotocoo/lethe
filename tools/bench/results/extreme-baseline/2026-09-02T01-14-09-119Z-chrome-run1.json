@@ -1,0 +1,103 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 152.0.7977.75",
+  "run": 1,
+  "startedAt": "2026-09-02T01:14:09.119Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "extreme"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 787.9690830000001,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": "dom=505009 build=134ms thrash=2199ms fps=126.6",
+    "js": "js matMul=138 crypto=[object Crypto] rec=0 t=7961ms",
+    "webgl": "webgl quads=4096 fps=141.8 frames=600",
+    "net": "net n=300 done=300 bytes=307200 t=61ms rps=4942"
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 787.9746250000001,
+      "rssMb": 998.375,
+      "processes": 8,
+      "cpuSec": 0.88,
+      "breakdown": [
+        {
+          "pid": 2066,
+          "rssMb": 215.8,
+          "cpuSec": 0.43,
+          "name": "Google"
+        },
+        {
+          "pid": 2079,
+          "rssMb": 138.2,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 2080,
+          "rssMb": 92,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 2081,
+          "rssMb": 78.5,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 2084,
+          "rssMb": 143.8,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 2086,
+          "rssMb": 117.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 2087,
+          "rssMb": 99,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 2088,
+          "rssMb": 113.4,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    }
+  ]
+}

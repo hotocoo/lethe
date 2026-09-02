@@ -1,0 +1,116 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-09-02T01:41:58.558Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "extreme"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 473.22850000000005,
+  "exitCode": 1,
+  "failure": "[e2e] FAIL line 6: no browser tab available",
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 843.249333,
+      "rssMb": 189.234375,
+      "processes": 4,
+      "cpuSec": 0.52,
+      "breakdown": [
+        {
+          "pid": 28096,
+          "rssMb": 114.3,
+          "cpuSec": 0.36,
+          "name": "lethe"
+        },
+        {
+          "pid": 28106,
+          "rssMb": 13.1,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 28107,
+          "rssMb": 31.3,
+          "cpuSec": 0.08,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 28108,
+          "rssMb": 30.5,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "Lethe Browser v0.1.1 (system WebKit)",
+    "[lethe] Applying macOS sandbox (Seatbelt)...",
+    "[lethe] Seatbelt profile active (file writes limited to temp, ~/Downloads and Lethe's own Library subtrees)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN enabled (fail-closed loopback; set LETHE_VPN_ENDPOINT=host:port to tunnel)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] worker pool: 16 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:61769 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:61769 (subresource enforcement on)",
+    "[e2e] start: 21 lines",
+    "[e2e] keep-front: on",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > sleep 1500",
+    "[e2e] > newtab http://127.0.0.1:61768/xdom.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > sleep 20000",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[e2e] FAIL line 6: no browser tab available",
+    "[e2e] stopped on first failure (FAILED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

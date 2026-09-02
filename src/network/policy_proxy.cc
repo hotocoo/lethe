@@ -398,7 +398,7 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         // direction runs on its own thread; downstream here.
         std::atomic<bool> done{false};
         std::thread up([&] {
-            uint8_t buf[16384];
+            uint8_t buf[262144];
             while (!done.load(std::memory_order_relaxed) &&
                    !isStopping()) {
                 ssize_t r = ::recv(clientFd, buf, sizeof(buf), 0);
@@ -408,7 +408,7 @@ void PolicyProxyServer::serveConnection(int clientFd) {
             stream->shutdownWrite();
             done.store(true, std::memory_order_relaxed);
         });
-        uint8_t buf[16384];
+        uint8_t buf[262144];
         while (!done.load(std::memory_order_relaxed) && !isStopping()) {
             ssize_t r = stream->read(buf, sizeof(buf), 30000);
             if (r <= 0) break;
@@ -440,15 +440,28 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         return;
     }
 
-    auto client = std::make_unique<HttpClient>();
-    client->initialize(cfg.tls);
-    if (!cfg.dohProvider.empty()) client->setDohProvider(cfg.dohProvider);
-    if (cfg.dohCache) client->setSharedDohCache(cfg.dohCache);
-    if (cfg.dohResolver) client->setSharedDohResolver(cfg.dohResolver);
-    client->setPrivateNetworkPolicy(cfg.privateNet);
-    if (cfg.vpnTunnel)
-        client->setVpnTunnel(std::shared_ptr<vpn::VpnTunnel>(
-            cfg.vpnTunnel, [](vpn::VpnTunnel*) {}));
+    // -- v0.2.x perf: thread-local upstream client ----------------------
+    // The previous code built a fresh HttpClient per request, paying the
+    // full TCP+TLS setup and (for hostnames) a DoH round-trip every time.
+    // A busy page fans out dozens of same-origin subresources; reusing one
+    // client per worker thread lets its keep-alive connection (and the
+    // already-validated origin) serve every subsequent request with no
+    // handshake. The client is owned by this thread for its whole life.
+    thread_local std::unique_ptr<HttpClient> tlsClient;
+    thread_local bool tlsClientReady = false;
+    if (!tlsClientReady) {
+        tlsClient = std::make_unique<HttpClient>();
+        tlsClient->initialize(cfg.tls);
+        if (!cfg.dohProvider.empty()) tlsClient->setDohProvider(cfg.dohProvider);
+        if (cfg.dohCache) tlsClient->setSharedDohCache(cfg.dohCache);
+        if (cfg.dohResolver) tlsClient->setSharedDohResolver(cfg.dohResolver);
+        tlsClient->setPrivateNetworkPolicy(cfg.privateNet);
+        if (cfg.vpnTunnel)
+            tlsClient->setVpnTunnel(std::shared_ptr<vpn::VpnTunnel>(
+                cfg.vpnTunnel, [](vpn::VpnTunnel*) {}));
+        tlsClientReady = true;
+    }
+    HttpClient* client = tlsClient.get();
 
     HttpRequest req;
     req.url = target;

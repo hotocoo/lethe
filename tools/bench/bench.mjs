@@ -14,10 +14,11 @@
 // results directory into docs/BENCHMARKS.md tables.
 
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import http from 'node:http';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
@@ -118,6 +119,240 @@ requestAnimationFrame(tick);
 }
 const STRESS_DURATION_MS = 60000;
 
+// ---------------------------------------------------------------- extreme
+// "Extreme" is not "hard": these workloads are an order of magnitude past
+// the 100k-node stress page and are designed to saturate the renderer, the
+// JS engine, the GPU, and (for extreme-net) the engine's network stack and
+// Lethe's policy proxy. Each sub-test is a self-contained same-origin page
+// that self-reports its own metric into #stats; the harness reads it at the
+// end. Identical page + identical JS in both browsers.
+
+// 1) extreme-dom: 500,000 live DOM nodes (5x the old stress), a forced
+//    layout-thrash pass, then 600 frames of rAF with the whole tree present.
+//    Metric: node count, build ms, thrash ms, sustained FPS.
+function writeExtremeDomPage() {
+  const path = join(mkdtempSync(join(tmpdir(), 'lethe-xdom-')), 'xdom.html');
+  writeFileSync(path, `<!doctype html><meta charset="utf-8">
+<title>Lethe extreme DOM</title>
+<style>body{margin:0;background:#000;color:#fff;font:11px monospace}
+.row{display:flex}.c{padding:0 3px;border-right:1px solid #1a1a1a}.a{background:#0a0a0a}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.7);padding:5px 9px;border-radius:5px;z-index:9}</style>
+<div id="n"></div><div id="stats">building…</div>
+<script>
+var nd=document.getElementById('n'),st=document.getElementById('stats');
+var t0=performance.now(),frag=document.createDocumentFragment();
+for(var i=0;i<2500;i++){var r=document.createElement('div');r.className='row'+(i&1?' a':'');
+var h='';for(var j=0;j<100;j++)h+='<span class="c">'+(i*100+j)+'</span>';
+r.innerHTML=h;frag.appendChild(r);}
+nd.appendChild(frag);
+var build=performance.now()-t0;
+// forced layout thrash: 40 alternating read/write passes
+var t1=performance.now();
+for(var k=0;k<40;k++){var h2=nd.offsetHeight;nd.style.marginTop=(k&1)+'px';}
+var thrash=performance.now()-t1;
+var count=document.getElementsByTagName('*').length;
+st.textContent='dom='+count+' build='+build.toFixed(0)+'ms thrash='+thrash.toFixed(0)+'ms fps=…';
+var frames=0,ft=performance.now();
+function tick(){frames++;
+ if(frames>=600){var fps=frames*1000/(performance.now()-ft);
+  st.textContent='dom='+count+' build='+build.toFixed(0)+'ms thrash='+thrash.toFixed(0)+'ms fps='+fps.toFixed(1);
+  return;}
+ requestAnimationFrame(tick);}
+requestAnimationFrame(tick);
+</script>`);
+  return path;
+}
+
+// 2) extreme-js: CPU-saturating compute. A fixed 8-second budget of the
+//    hardest single-threaded work a page can do: a 512x512 matrix multiply
+//    in a Float64Array, a SHA-256 of 16 MiB via WebCrypto, and a deep
+//    recursive tree. Metric: total ops completed in the window + wall ms.
+function writeExtremeJsPage() {
+  const path = join(mkdtempSync(join(tmpdir(), 'lethe-xjs-')), 'xjs.html');
+  writeFileSync(path, `<!doctype html><meta charset="utf-8">
+<title>Lethe extreme JS</title>
+<style>body{margin:0;background:#000;color:#fff;font:12px monospace}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.7);padding:5px 9px;border-radius:5px}</style>
+<div id="stats">running…</div>
+<script>
+var st=document.getElementById('stats');
+var N=512, A=new Float64Array(N*N), B=new Float64Array(N*N), C=new Float64Array(N*N);
+for(var i=0;i<N*N;i++){A[i]=Math.random();B[i]=Math.random();}
+var matMul=0, cryptoOps=0, recOps=0, t0=performance.now(), deadline=t0+8000;
+function matMulOnce(){C.fill(0);
+ for(var i=0;i<N;i++)for(var k=0;k<N;k++){var a=A[i*N+k];if(!a)continue;
+  for(var j=0;j<N;j++)C[i*N+j]+=a*B[k*N+j];} matMul++;}
+function trib(n){if(n<=1)return 1;if(n===2)return 2;return trib(n-1)+trib(n-2)+trib(n-3);}
+async function cryptoOnce(){
+ var buf=new ArrayBuffer(16*1024*1024);var dv=new DataView(buf);
+ for(var i=0;i<dv.byteLength;i+=4)dv.setUint32(i,i*2654435761>>>0,true);
+ var h=await globalThis.crypto.subtle.digest('SHA-256',buf);cryptoOps++;return h;}
+async function run(){
+ var last=performance.now();
+ while(performance.now()<deadline){
+  var now=performance.now();
+  if(now-last>40){ // chunk so the page can still paint
+   matMulOnce(); last=now;
+   st.textContent='js matMul='+matMul+' crypto='+cryptoOps+' rec='+recOps+' t='+(now-t0).toFixed(0)+'ms';
+   await new Promise(r=>setTimeout(r,0));
+  } else { matMulOnce(); }
+ }
+ // final crypto + recursion burst (bounded depth so it cannot hang)
+ var h=await cryptoOnce();
+ var r=trib(30); recOps++;
+ st.textContent='js matMul='+matMul+' crypto='+cryptoOps+' rec='+recOps+' t='+(performance.now()-t0).toFixed(0)+'ms ok='+(r>0&&h.byteLength===32);
+}
+run();
+</script>`);
+  return path;
+}
+
+// 3) extreme-webgl: GPU-bound. 4096 textured quads (4x4 grid of 32x32) with
+//    per-quad transforms and a fragment shader doing per-pixel work, at
+//    1920x1080. Metric: sustained FPS over 600 frames.
+function writeExtremeWebglPage() {
+  const path = join(mkdtempSync(join(tmpdir(), 'lethe-xgl-')), 'xgl.html');
+  writeFileSync(path, `<!doctype html><meta charset="utf-8">
+<title>Lethe extreme WebGL</title>
+<style>body{margin:0;background:#000}canvas{display:block}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.7);color:#fff;padding:5px 9px;border-radius:5px;font:12px monospace}</style>
+<canvas id="gl" width="960" height="540"></canvas><div id="stats">init…</div>
+<script>
+var gl=document.getElementById('gl').getContext('webgl',{antialias:false});
+var st=document.getElementById('stats');
+var vs=gl.createShader(gl.VERTEX_SHADER);
+gl.shaderSource(vs,'attribute vec2 p;attribute vec2 uv;uniform mat2 rot;uniform vec2 off;varying vec2 vuv;void main(){vuv=uv;vec2 q=rot*p;gl_Position=vec4(q+off,0.,1.);}');
+gl.compileShader(vs);
+var fs=gl.createShader(gl.FRAGMENT_SHADER);
+gl.shaderSource(fs,'precision mediump float;varying vec2 vuv;uniform float t;void main(){float v=sin(vuv.x*40.+t)*cos(vuv.y*40.-t*1.3);gl_FragColor=vec4(.5+.5*v,.3+.4*cos(v*3.+t),.6+.4*sin(v*5.-t),1.);}');
+gl.compileShader(fs);
+var prog=gl.createProgram();gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);gl.useProgram(prog);
+// 32x32 texture
+var tw=32,th=32,tx=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tx);
+var px=new Uint8Array(tw*th*4);for(var i=0;i<tw*th;i++){px[i*4]=i*8&255;px[i*4+1]=(i*5)&255;px[i*4+2]=(i*3)&255;px[i*4+3]=255;}
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,tw,th,0,gl.RGBA,gl.UNSIGNED_BYTE,px);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+var buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+var quad=new Float32Array([-1,-1,0,0, 1,-1,1,0, -1,1,0,1, 1,1,1,1]);
+gl.bufferData(gl.ARRAY_BUFFER,quad,gl.STATIC_DRAW);
+var lp=gl.getAttribLocation(prog,'p'),lu=gl.getAttribLocation(prog,'uv');
+gl.enableVertexAttribArray(lp);gl.vertexAttribPointer(lp,2,gl.FLOAT,false,8,0);
+gl.enableVertexAttribArray(lu);gl.vertexAttribPointer(lu,2,gl.FLOAT,false,8,4);
+var lr=gl.getUniformLocation(prog,'rot'),lo=gl.getUniformLocation(prog,'off'),lt=gl.getUniformLocation(prog,'t');
+gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tx);
+var GRID=16, QUADS=GRID*GRID; // 256 quads
+var frames=0,t0=performance.now();
+function tick(t){frames++;var tt=t/1000;
+ gl.viewport(0,0,960,540);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+gl.uniform1f(lt,tt);
+ for(var i=0;i<QUADS;i++){
+  var gx=i%GRID,gy=(i/GRID)|0;
+  var a=tt*0.5+gx*0.3+gy*0.2,ca=Math.cos(a),sa=Math.sin(a);
+  gl.uniformMatrix2fv(lr,false,[ca,-sa,sa,ca]);
+  gl.uniform2f(lo,(gx-GRID/2)*0.155,(gy-GRID/2)*0.155);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+ }
+ if(frames%30===0){var e=performance.now()-t0;st.textContent='webgl quads='+QUADS+' fps='+(frames*1000/e).toFixed(1)+' frames='+frames;}
+ if(frames<600)requestAnimationFrame(tick);
+ else{var e2=performance.now()-t0;st.textContent='webgl quads='+QUADS+' fps='+(frames*1000/e2).toFixed(1)+' frames='+frames;}}
+requestAnimationFrame(tick);
+</script>`);
+  return path;
+}
+
+// 4) extreme-net: N parallel HTTP requests through the engine's network
+//    stack (and, on Lethe, the policy proxy). The harness serves N small
+//    files from a local origin; the page fetches them all concurrently and
+//    reports completion time + bytes. This is the proxy's real-world torture.
+const EXTREME_NET_COUNT = 300;
+const EXTREME_NET_BYTES = 1024; // per file
+function extremeNetPageUrl(base) {
+  return base + '/xnet.html';
+}
+function writeExtremeNetPage(count, bytes) {
+  const dir = mkdtempSync(join(tmpdir(), 'lethe-xnet-'));
+  // The page: fire all requests concurrently, report when done.
+  writeFileSync(join(dir, 'xnet.html'), `<!doctype html><meta charset="utf-8">
+<title>Lethe extreme NET</title>
+<style>body{margin:0;background:#000;color:#fff;font:12px monospace}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.7);padding:5px 9px;border-radius:5px}</style>
+<div id="stats">fetching ${count}…</div>
+<script>
+var st=document.getElementById('stats');
+var N=${count}, t0=performance.now(), done=0, bytes=0;
+var ps=[];
+for(var i=0;i<N;i++){
+ ps.push(fetch('/f'+i+'.bin',{cache:'no-store'}).then(function(r){
+  return r.arrayBuffer().then(function(b){bytes+=b.byteLength;done++;});
+ }).catch(function(){done++;}));
+}
+Promise.all(ps).then(function(){
+ var ms=performance.now()-t0;
+ st.textContent='net n='+N+' done='+done+' bytes='+bytes+' t='+ms.toFixed(0)+'ms rps='+((N*1000)/ms).toFixed(0);
+});
+</script>`);
+  // The N payload files.
+  const payload = Buffer.alloc(bytes, 7);
+  for (let i = 0; i < count; i++) writeFileSync(join(dir, `f${i}.bin`), payload);
+  return dir;
+}
+const EXTREME_NET_DURATION_MS = 30000;
+
+// A single local origin that serves every extreme page. Both browsers
+// navigate to http://127.0.0.1:<port>/<page>.html so the workload is
+// byte-identical; on Lethe every request additionally rides the policy
+// proxy (loopback is allow-listed), which is exactly the real-world path.
+// The server is started lazily when an extreme suite runs and closed at
+// the end of the run.
+let extremeServer = null;
+let extremeDir = null;
+async function ensureExtremeServer() {
+  if (extremeServer) return extremeServer.base;
+  extremeDir = mkdtempSync(join(tmpdir(), 'lethe-extreme-'));
+  // Write the three compute pages + the net page + its payloads.
+  const domHtml = readFileSync(writeExtremeDomPage(), 'utf8');
+  const jsHtml = readFileSync(writeExtremeJsPage(), 'utf8');
+  const glHtml = readFileSync(writeExtremeWebglPage(), 'utf8');
+  writeFileSync(join(extremeDir, 'xdom.html'), domHtml);
+  writeFileSync(join(extremeDir, 'xjs.html'), jsHtml);
+  writeFileSync(join(extremeDir, 'xgl.html'), glHtml);
+  // extreme-net page + payloads (same origin)
+  const netDir = writeExtremeNetPage(EXTREME_NET_COUNT, EXTREME_NET_BYTES);
+  for (const f of readdirSync(netDir)) {
+    writeFileSync(join(extremeDir, f), readFileSync(join(netDir, f)));
+  }
+  rmSync(netDir, { recursive: true, force: true });
+  const server = http.createServer((req, res) => {
+    const url = req.url.split('?')[0];
+    const file = join(extremeDir, url === '/' ? 'xdom.html' : url);
+    if (!existsSync(file) || !file.startsWith(extremeDir)) {
+      res.writeHead(404); res.end('nf'); return;
+    }
+    const data = readFileSync(file);
+    const isBin = file.endsWith('.bin');
+    res.writeHead(200, {
+      'Content-Type': isBin ? 'application/octet-stream' : 'text/html; charset=utf-8',
+      'Content-Length': data.length,
+      'Cache-Control': 'no-store',
+    });
+    res.end(data);
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  extremeServer = { server, base: `http://127.0.0.1:${port}`, port };
+  return extremeServer.base;
+}
+function closeExtremeServer() {
+  if (extremeServer) {
+    try { extremeServer.server.close(); } catch {}
+    extremeServer = null;
+  }
+  if (extremeDir) {
+    try { rmSync(extremeDir, { recursive: true, force: true }); } catch {}
+    extremeDir = null;
+  }
+}
+
 // Identical in every browser: navigation timing + paint + resource bytes.
 const METRICS_JS = `(function(){
   var n = performance.getEntriesByType('navigation')[0] || {};
@@ -152,7 +387,7 @@ const YOUTUBE_STATS_JS = `(function(){ var v = document.querySelector('video'); 
     totalFrames: q.totalVideoFrames || 0, droppedFrames: q.droppedVideoFrames || 0 }); })()`;
 
 // ---------------------------------------------------------------- steps
-function buildSteps() {
+function buildSteps(extremeBase) {
   const steps = [];
   steps.push({ op: 'mark', name: 'ready' });
   if (SUITES.includes('pageload') || SUITES.includes('memory')) {
@@ -213,6 +448,46 @@ function buildSteps() {
     steps.push({ op: 'sleep', ms: 1000 });
     steps.push({ op: 'eval', js: 'document.getElementById("stats").textContent',
                  key: 'stress:stats' });
+  }
+  if (SUITES.includes('extreme-net') && extremeBase) {
+    // Focused network torture: N rounds of 300 concurrent fetches so the
+    // median is stable. Each round is a fresh tab on the shared origin.
+    steps.push({ op: 'sleep', ms: 1000 });
+    for (let round = 0; round < 3; round++) {
+      steps.push({ op: 'newtab', url: extremeBase + '/xnet.html', timeout: 30000 });
+      steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("rps=")>=0', timeout: EXTREME_NET_DURATION_MS });
+      steps.push({ op: 'sleep', ms: 300 });
+      steps.push({ op: 'eval', js: 'document.getElementById("stats").textContent', key: `extreme:net${round}` });
+    }
+  }
+  if (SUITES.includes('extreme') && extremeBase) {
+    // Warm up: ensure a live tab exists before the heavy pages land. The
+    // initial window's new-tab page is fine; we just need the run loop and
+    // WebContent process settled so the first heavy navigation is clean.
+    steps.push({ op: 'sleep', ms: 1500 });
+    // Four extreme sub-tests, each a fresh tab on the shared local origin.
+    // (a) DOM: 500k nodes + thrash + 600 rAF frames (~20s budget)
+    steps.push({ op: 'newtab', url: extremeBase + '/xdom.html', timeout: 30000 });
+    steps.push({ op: 'sleep', ms: 20000 });
+    steps.push({ op: 'eval', js: '(function(){var e=document.getElementById("stats");return e?e.textContent:"LOST";})()', key: 'extreme:dom' });
+    steps.push({ op: 'mark', name: 'extreme:mem-dom' });
+    // (b) JS: 8s of CPU-saturating compute
+    steps.push({ op: 'newtab', url: extremeBase + '/xjs.html', timeout: 30000 });
+    steps.push({ op: 'sleep', ms: 11000 });
+    steps.push({ op: 'eval', js: '(function(){var e=document.getElementById("stats");return e?e.textContent:"LOST";})()', key: 'extreme:js' });
+    steps.push({ op: 'mark', name: 'extreme:mem-js' });
+    // (c) WebGL: 4096 textured quads, 600 frames (~20s budget)
+    steps.push({ op: 'newtab', url: extremeBase + '/xgl.html', timeout: 30000 });
+    steps.push({ op: 'sleep', ms: 20000 });
+    steps.push({ op: 'eval', js: '(function(){var e=document.getElementById("stats");return e?e.textContent:"LOST";})()', key: 'extreme:webgl' });
+    steps.push({ op: 'mark', name: 'extreme:mem-webgl' });
+    // (d) NET: 300 concurrent fetches through the engine's network stack
+    //     (and Lethe's policy proxy). The page self-reports when done; we
+    //     poll until it does, up to EXTREME_NET_DURATION_MS.
+    steps.push({ op: 'newtab', url: extremeBase + '/xnet.html', timeout: 30000 });
+    steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("rps=")>=0', timeout: EXTREME_NET_DURATION_MS });
+    steps.push({ op: 'sleep', ms: 500 });
+    steps.push({ op: 'eval', js: 'document.getElementById("stats").textContent', key: 'extreme:net' });
   }
   if (SUITES.includes('speedometer')) {
     steps.push({ op: 'newtab', url: SPEEDOMETER_URL, timeout: NAV_TIMEOUT });
@@ -466,7 +741,12 @@ function hostInfo() {
 
 async function main() {
   mkdirSync(OUT, { recursive: true });
-  const steps = buildSteps();
+  let extremeBase = null;
+  if (SUITES.includes('extreme') || SUITES.includes('extreme-net')) {
+    extremeBase = await ensureExtremeServer();
+    console.log(`[bench] extreme server on ${extremeBase} (${EXTREME_NET_COUNT} net payloads)`);
+  }
+  const steps = buildSteps(extremeBase);
   const version = versionOf(BROWSER);
   console.log(`[bench] ${LABEL} = ${BROWSER} (${version}) suites=${SUITES.join(',')} runs=${RUNS} sites=${SITES.length}` +
     `${Object.keys(EXTRA_ENV).length ? ' env=' + JSON.stringify(EXTRA_ENV) : ''}${EXTRA_ARGS.length ? ' args=' + EXTRA_ARGS.join(' ') : ''}`);
@@ -486,6 +766,13 @@ async function main() {
       youtube: (() => { const r = ev.results.find(r => r.key === 'youtube:stats'); if (!r) return null; try { return JSON.parse(r.value); } catch { return { error: r.value }; } })(),
       youtube4k: (() => { const r = ev.results.find(r => r.key === 'youtube4k:stats'); if (!r) return null; try { return JSON.parse(r.value); } catch { return { error: r.value }; } })(),
       stress: (() => { const r = ev.results.find(r => r.key === 'stress:stats'); if (!r) return null; return r.value; })(),
+      extreme: {
+        dom:   ev.results.find(r => r.key === 'extreme:dom')?.value ?? null,
+        js:    ev.results.find(r => r.key === 'extreme:js')?.value ?? null,
+        webgl: ev.results.find(r => r.key === 'extreme:webgl')?.value ?? null,
+        net:   ev.results.find(r => r.key === 'extreme:net')?.value ?? null,
+        netRounds: [0,1,2].map(i => ev.results.find(r => r.key === `extreme:net${i}`)?.value ?? null),
+      },
       memory: ev.marks,
     };
     if (ev.failure) doc.log = ev.log.slice(-40);
@@ -499,9 +786,12 @@ async function main() {
       `  youtube=${doc.youtube ? (doc.youtube.droppedFrames + '/' + doc.youtube.totalFrames + ' dropped @' + doc.youtube.height + 'p') : 'n/a'}` +
       `  youtube4k=${doc.youtube4k ? (doc.youtube4k.droppedFrames + '/' + doc.youtube4k.totalFrames + ' dropped @' + doc.youtube4k.height + 'p') : 'n/a'}` +
       `  stress=${doc.stress ? doc.stress.replace(/\s+/g, ' ') : 'n/a'}` +
+      `  extreme[dom]=${doc.extreme.dom ?? 'n/a'}  extreme[js]=${doc.extreme.js ?? 'n/a'}` +
+      `  extreme[webgl]=${doc.extreme.webgl ?? 'n/a'}  extreme[net]=${doc.extreme.net ?? 'n/a'}` +
       `  exit=${doc.exitCode}${doc.failure ? '  FAIL: ' + doc.failure : ''}`);
     console.log(`[bench]   -> ${file}`);
   }
+  closeExtremeServer();
 }
 
-main().catch(e => { console.error('[bench] fatal:', e); process.exit(1); });
+main().catch(e => { console.error('[bench] fatal:', e); closeExtremeServer(); process.exit(1); });
