@@ -207,8 +207,10 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             hstsCache_->shouldUpgrade(host)) {
             constexpr const char* kHttpPrefix = "http://";
             currentUrl = "https://" + currentUrl.substr(strlen(kHttpPrefix));
-            std::cout << "[lethe-http] HSTS upgrade: " << currentUrl
-                      << " enforced before connect" << std::endl;
+            if (verboseHttpLog()) {
+                std::cout << "[lethe-http] HSTS upgrade: " << currentUrl
+                          << " enforced before connect" << std::endl;
+            }
             parseUrl(currentUrl, scheme, host, path, port);
         }
 
@@ -218,9 +220,11 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
         const bool viaVpn = isVpnActive() && vpnTunnel_ &&
             vpnTunnel_->shouldRouteThroughVpn(host);
 
-        std::cout << "[lethe-http] "
-                  << (currentReq.method == HttpMethod::GET ? "GET" : "REQ")
-                  << " " << currentUrl << (viaVpn ? " (via VPN)" : "") << std::endl;
+        if (verboseHttpLog()) {
+            std::cout << "[lethe-http] "
+                      << (currentReq.method == HttpMethod::GET ? "GET" : "REQ")
+                      << " " << currentUrl << (viaVpn ? " (via VPN)" : "") << std::endl;
+        }
 
         // A reused keep-alive connection can go stale while idle (the peer
         // closed it). That failure mode is indistinguishable from a flaky
@@ -298,16 +302,20 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
                 if (HstsCache::parseStsHeader(sts, maxAge,
                                               includeSubDomains)) {
                     hstsCache_->record(host, maxAge, includeSubDomains);
-                    std::cout << "[lethe-http] HSTS policy recorded for "
-                              << host << " (max-age="
-                              << maxAge.count()
-                              << (includeSubDomains ? ", includeSubDomains"
-                                                    : "")
-                              << ")" << std::endl;
+                    if (verboseHttpLog()) {
+                        std::cout << "[lethe-http] HSTS policy recorded for "
+                                  << host << " (max-age="
+                                  << maxAge.count()
+                                  << (includeSubDomains ? ", includeSubDomains"
+                                                        : "")
+                                  << ")" << std::endl;
+                    }
                 } else {
-                    std::cout << "[lethe-http] Ignoring malformed "
-                                 "Strict-Transport-Security header"
-                              << std::endl;
+                    if (verboseHttpLog()) {
+                        std::cout << "[lethe-http] Ignoring malformed "
+                                     "Strict-Transport-Security header"
+                                  << std::endl;
+                    }
                 }
             }
         }
@@ -2344,4 +2352,3 @@ std::string HttpClient::policyCheckUrl(const std::string& url) {
 }
 
 } // namespace lethe
-
