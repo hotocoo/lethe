@@ -134,6 +134,10 @@ private:
     size_t workerCount_ = 0;
 
     std::string lastError_;
+    // Precomputed once at start: proxy authentication is on the hot path
+    // for every engine connection, so do not rebuild the Base64 credential
+    // (and allocate) for every request.
+    std::string expectedAuthCredential_;
 
     // Refuse absurd request sizes before allocating.
     static constexpr size_t kMaxHeaderBytes = 64 * 1024;

@@ -138,6 +138,10 @@ std::string PolicyProxyServer::basicCredentialFor(const std::string& token) {
 
 bool PolicyProxyServer::start(const Options& options) {
     opts_ = options;
+    expectedAuthCredential_.clear();
+    if (!opts_.authToken.empty()) {
+        expectedAuthCredential_ = basicCredentialFor(opts_.authToken);
+    }
     listenFd_ = ::socket(AF_INET, SOCK_STREAM, 0);
     if (listenFd_ < 0) {
         lastError_ = "socket() failed";
@@ -332,7 +336,7 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         std::string presented = headerValue(head, "Proxy-Authorization");
         if (presented.empty())
             presented = headerValue(head, "X-Lethe-Proxy-Auth");
-        const std::string expected = basicCredentialFor(opts_.authToken);
+        const std::string& expected = expectedAuthCredential_;
         bool ok = presented.size() == expected.size();
         // Constant-time compare: a local attacker could otherwise time the
         // prefix match byte by byte.
