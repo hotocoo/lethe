@@ -1,0 +1,65 @@
+name: Build current artifacts
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS DMG (arm64)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install cmake ninja pkg-config openssl@3
+      - name: Build and test
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+          cmake --build build -j "$(sysctl -n hw.ncpu)"
+          cd build && ctest --output-on-failure
+      - name: Package DMG
+        run: |
+          chmod +x scripts/bundle_mac_libs.sh scripts/package_mac_app.sh
+          scripts/package_mac_app.sh build
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: lethe-macos-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows EXE (WebView2)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.2210.55 -OutputDirectory packages -NonInteractive
+          $pkg = Resolve-Path 'packages/Microsoft.Web.WebView2.1.0.2210.55'
+          echo "WEBVIEW2_DIR=$pkg" >> $env:GITHUB_ENV
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWEBVIEW2_DIR="${env:WEBVIEW2_DIR}"
+          cmake --build build --config Release --target lethe-win
+      - name: Stage EXE
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path CMakeLists.txt -Pattern 'project\(lethe VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $exe = Get-ChildItem -Recurse -Filter lethe-win.exe build | Select-Object -First 1
+          if (-not $exe) { throw 'lethe-win.exe was not produced' }
+          Copy-Item $exe.FullName "dist/Lethe-$ver-windows-x64.exe"
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: lethe-windows-exe
+          path: dist/*.exe
+          if-no-files-found: error
