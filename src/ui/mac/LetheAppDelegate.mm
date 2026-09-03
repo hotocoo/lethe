@@ -152,8 +152,14 @@ NSString* LetheMediaUpscalerScript(void) {
   }
 
   function setup(el, videoFrame) {
-    if(!eligible(el) || mode===0) { if(entries.has(el)) remove(entries.get(el)); return; }
     var e=entries.get(el);
+    // requestVideoFrameCallback is already scoped to a live video element.
+    // For an established entry, avoid another getBoundingClientRect() on
+    // every decoded frame; the visibility/resize/scroll observers maintain
+    // the cached geometry used by the fast path below.
+    var fastCandidate = videoFrame && el instanceof HTMLVideoElement && e &&
+      mode!==0 && e.mode===mode && e.frameState && e.canvas.style.display!=='none';
+    if(!fastCandidate && (!eligible(el) || mode===0)) { if(e) remove(e); return; }
     if(!e){
       if(activeEntries.size>=maxActiveEntries) return;
       var c=document.createElement('canvas'); c.setAttribute('aria-hidden','true');
@@ -169,6 +175,38 @@ NSString* LetheMediaUpscalerScript(void) {
       document.documentElement.appendChild(c);
       e={el:el,canvas:c,gpu:makeGL(c),w:0,h:0}; entries.set(el,e); activeEntries.add(e);
     if(!e.gpu){ remove(e); return; }
+    }
+
+    // Decoded-video callbacks can arrive at display rate. Once geometry,
+    // object-fit state, and the source texture allocation are stable, keep
+    // this hot path entirely on the GPU: do not re-read layout, recompute
+    // CSS transforms, or rebuild shader uniforms for every frame. Resize,
+    // scroll, source changes, and mode changes fall through to the full path
+    // below and refresh the cached state before the fast path is used again.
+    var fastVideo = videoFrame && el instanceof HTMLVideoElement &&
+      e.mode===mode && e.canvas.style.display!=='none' &&
+      e.texW===el.videoWidth && e.texH===el.videoHeight && e.frameState;
+    if(fastVideo){
+      if(el.readyState < 2) { scheduleVideo(e); return; }
+      try {
+        var fastGl=e.gpu.gl;
+        fastGl.viewport(0,0,e.w,e.h);
+        fastGl.useProgram(e.gpu.program);
+        fastGl.activeTexture(fastGl.TEXTURE0);
+        fastGl.bindTexture(fastGl.TEXTURE_2D,e.gpu.tex);
+        fastGl.texSubImage2D(fastGl.TEXTURE_2D,0,0,0,fastGl.RGBA,fastGl.UNSIGNED_BYTE,el);
+        fastGl.uniform2f(e.gpu.texel,e.frameState.texelX,e.frameState.texelY);
+        fastGl.uniform1f(e.gpu.sharp,e.frameState.sharp);
+        fastGl.uniform4f(e.gpu.uvRect,e.frameState.ux,e.frameState.uy,e.frameState.uw,e.frameState.uh);
+        fastGl.uniform4f(e.gpu.destRect,e.frameState.dx,e.frameState.dy,e.frameState.dw,e.frameState.dh);
+        fastGl.drawArrays(fastGl.TRIANGLE_STRIP,0,4);
+      } catch(_) { remove(e); return; }
+      e.frames=(e.frames||0)+1;
+      e.lastFrame={sourceWidth:el.videoWidth,sourceHeight:el.videoHeight,
+        outputWidth:e.w,outputHeight:e.h,scaleX:e.w/el.videoWidth,
+        scaleY:e.h/el.videoHeight,time:el.currentTime};
+      scheduleVideo(e);
+      return;
     }
     var r=el.getBoundingClientRect(), d=Math.min(window.devicePixelRatio||1,2);
     // A Retina 4K video would otherwise request an 8K backing canvas
@@ -256,6 +294,9 @@ NSString* LetheMediaUpscalerScript(void) {
       e.validated=true;
     }
     e.srcKey=srcKey;
+    e.mode=mode;
+    e.frameState={texelX:1/sw,texelY:1/sh,sharp:mode===1?-1:mode===3?.62:.42,
+      ux:ux,uy:uy,uw:uw,uh:uh,dx:dx,dy:dy,dw:dw,dh:dh};
     e.frames=(e.frames||0)+1;
     e.lastFrame={sourceWidth:sw,sourceHeight:sh,outputWidth:cw,outputHeight:ch,
       scaleX:cw/sw,scaleY:ch/sh,time:isVideo?el.currentTime:0};
