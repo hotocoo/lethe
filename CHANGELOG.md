@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.3 — 2026-09-03
+
+- WebKit media upscaling: explicitly release enhancement WebGL contexts when
+  overlays are removed, avoiding delayed GPU-resource reclamation on
+  navigation, DOM churn, and media visibility changes.
+- WebKit media upscaling: keep native WebKit media rendering untouched while
+  the optional enhancement layer tears down its own GPU state independently.
+
 ## 1.3.2 — 2026-09-03
 
 - WebKit media upscaling: bound enhancement GPU usage to 8 concurrent WebGL

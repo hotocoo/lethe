@@ -109,6 +109,18 @@ NSString* LetheMediaUpscalerScript(void) {
       try { e.el.cancelVideoFrameCallback(e.videoCallback); } catch(_) {}
       videoCallbacks.delete(e.el);
     }
+    // Explicitly release the page-local GPU context before detaching its
+    // canvas. Waiting for WebKit's JavaScript GC to notice an unreachable
+    // WebGL context can retain a large texture/context allocation for an
+    // arbitrary interval, which is especially costly on media-heavy feeds.
+    // Context loss is best-effort: the normal compositor remains responsible
+    // for the source element and is never affected by this overlay cleanup.
+    if(e.gpu && e.gpu.gl) {
+      try {
+        var lose=e.gpu.gl.getExtension('WEBGL_lose_context');
+        if(lose) lose.loseContext();
+      } catch(_) {}
+    }
     if(e.canvas&&e.canvas.parentNode)e.canvas.parentNode.removeChild(e.canvas);
     if(e.el && visibilityObserver) visibilityObserver.unobserve(e.el);
     if(e.el && resizeObserver) resizeObserver.unobserve(e.el);
