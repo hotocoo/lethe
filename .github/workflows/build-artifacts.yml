@@ -33,6 +33,14 @@ jobs:
           name: lethe-macos-dmg
           path: dist/*.dmg
           if-no-files-found: error
+      - name: Generate checksum
+        run: shasum -a 256 dist/*.dmg > dist/SHA256SUMS-macos.txt
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: lethe-macos-dmg-sha256
+          path: dist/SHA256SUMS-macos.txt
+          if-no-files-found: error
 
   windows:
     name: Windows EXE (WebView2)
@@ -62,4 +70,16 @@ jobs:
         with:
           name: lethe-windows-exe
           path: dist/*.exe
+          if-no-files-found: error
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist/*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($exe.Name)" | Set-Content -NoNewline dist/SHA256SUMS-windows.txt
+      - name: Upload checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: lethe-windows-exe-sha256
+          path: dist/SHA256SUMS-windows.txt
           if-no-files-found: error

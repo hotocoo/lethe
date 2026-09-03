@@ -47,7 +47,9 @@ jobs:
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "Lethe $TAG" --generate-notes
+          shasum -a 256 dist/*.dmg > dist/SHA256SUMS-macos.txt
           gh release upload "$TAG" dist/*.dmg --clobber
+          gh release upload "$TAG" dist/SHA256SUMS-macos.txt --clobber
 
   macos-blink:
     name: macOS DMG — Blink/CEF (arm64)
@@ -86,7 +88,9 @@ jobs:
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "Lethe $TAG" --generate-notes
+          shasum -a 256 dist/*-blink-*.dmg > dist/SHA256SUMS-macos-blink.txt
           gh release upload "$TAG" dist/*-blink-*.dmg --clobber
+          gh release upload "$TAG" dist/SHA256SUMS-macos-blink.txt --clobber
 
   linux:
     name: Linux tarball (${{ matrix.id }})
@@ -156,4 +160,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Lethe $TAG" --generate-notes
+          sha256sum dist/*.exe > dist/SHA256SUMS-windows.txt
           gh release upload "$TAG" dist/*.exe --clobber
+          gh release upload "$TAG" dist/SHA256SUMS-windows.txt --clobber
