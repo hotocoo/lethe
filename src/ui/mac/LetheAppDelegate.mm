@@ -45,6 +45,12 @@ NSString* LetheMediaUpscalerScript(void) {
   var mode = __LETHE_INITIAL_MODE__; // 0 off, 1 linear, 2 high quality, 3 high quality + sharp
   var entries = new WeakMap();
   var activeEntries = new Set();
+  // A hostile or simply pathological page can contain thousands of visible
+  // media nodes. Never let the enhancement layer turn that into thousands
+  // of WebGL contexts/canvases and an unbounded GPU-resource commitment.
+  // WebKit remains responsible for rendering all media outside this bounded
+  // enhancement set, so this is a resource guard rather than a page limit.
+  var maxActiveEntries = 32;
   var raf = 0;
   var geometryRaf = 0;
   var pendingMedia = new Set();
@@ -66,7 +72,8 @@ NSString* LetheMediaUpscalerScript(void) {
     'vec3 avg=(n+e+ss+ww)*.25; vec3 detail=c.rgb-avg; float edge=clamp(length(detail)*4.0,0.,1.); c.rgb=clamp(c.rgb+detail*sharp*(1.-edge*.65),0.,1.); } o=c; }';
 
   function makeGL(canvas) {
-    var gl = canvas.getContext('webgl2', {alpha:true, premultipliedAlpha:false, antialias:false});
+    var gl = canvas.getContext('webgl2', {alpha:true, premultipliedAlpha:false, antialias:false,
+      powerPreference:'high-performance', desynchronized:true});
     if (!gl) return null;
     var pv=gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(pv,vs); gl.compileShader(pv);
     var pf=gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(pf,fs); gl.compileShader(pf);
@@ -123,6 +130,7 @@ NSString* LetheMediaUpscalerScript(void) {
     if(!eligible(el) || mode===0) { if(entries.has(el)) remove(entries.get(el)); return; }
     var e=entries.get(el);
     if(!e){
+      if(activeEntries.size>=maxActiveEntries) return;
       var c=document.createElement('canvas'); c.setAttribute('aria-hidden','true');
       c.style.cssText='position:fixed;z-index:2147483646;pointer-events:none;margin:0;padding:0;display:block;';
       document.documentElement.appendChild(c);
