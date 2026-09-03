@@ -481,51 +481,54 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                                     })
                                     .Get(),
                                 &navToken);
-                            // Tracker protection: every request passes through
-                            // here; listed third-party hosts get a synthetic
-                            // 403 and never reach the network.
-                            if (g_trackerBlock) {
-                                g_web->AddWebResourceRequestedFilter(
-                                    L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
-                                EventRegistrationToken resToken{};
-                                g_web->add_WebResourceRequested(
-                                    Callback<ICoreWebView2WebResourceRequestedEventHandler>(
-                                        [](ICoreWebView2* sender,
-                                           ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
-                                            ComPtr<ICoreWebView2WebResourceRequest> req;
-                                            if (FAILED(args->get_Request(&req)) || !req) return S_OK;
-                                            LPWSTR raw = nullptr;
-                                            req->get_Uri(&raw);
-                                            const std::wstring url = raw ? raw : L"";
-                                            CoTaskMemFree(raw);
-                                            // NavigationStarting cannot protect subresources, frames,
-                                            // redirects, or worker fetches. Apply the same scheme/private-
-                                            // network policy to every WebView2 request before it can leave.
-                                            const std::wstring policyReason = policyCheckUrl(url);
-                                            if (!policyReason.empty()) {
-                                                args->put_Response(nullptr);
-                                                if (g_env) {
-                                                    ComPtr<ICoreWebView2WebResourceResponse> resp;
-                                                    if (SUCCEEDED(g_env->CreateWebResourceResponse(
-                                                            nullptr, 403, L"Blocked by Lethe network policy",
-                                                            L"Content-Type: text/plain", &resp)))
-                                                        args->put_Response(resp.Get());
-                                                }
-                                                return S_OK;
-                                            }
-                                            if (!isBlockedTracker(url)) return S_OK;
-                                            ComPtr<ICoreWebView2WebResourceResponse> resp;
-                                            if (g_env && SUCCEEDED(g_env->CreateWebResourceResponse(
-                                                    nullptr, 403, L"Blocked by Lethe tracker protection",
-                                                    L"Content-Type: text/plain", &resp))) {
-                                                args->put_Response(resp.Get());
-                                                g_trackerBlocked++;
+                            // Every WebView2 request passes through the policy
+                            // gate, regardless of the optional tracker setting.
+                            // Previously this handler was installed only when
+                            // tracker blocking was enabled, which accidentally
+                            // made disabling the tracker list disable the
+                            // subresource scheme/private-network boundary too.
+                            // NavigationStarting alone cannot protect frames,
+                            // redirects, workers, fetch/XHR, images, or media.
+                            g_web->AddWebResourceRequestedFilter(
+                                L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                            EventRegistrationToken resToken{};
+                            g_web->add_WebResourceRequested(
+                                Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+                                    [](ICoreWebView2* sender,
+                                       ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+                                        ComPtr<ICoreWebView2WebResourceRequest> req;
+                                        if (FAILED(args->get_Request(&req)) || !req) return S_OK;
+                                        LPWSTR raw = nullptr;
+                                        req->get_Uri(&raw);
+                                        const std::wstring url = raw ? raw : L"";
+                                        CoTaskMemFree(raw);
+                                        // NavigationStarting cannot protect subresources, frames,
+                                        // redirects, or worker fetches. Apply the same scheme/private-
+                                        // network policy to every WebView2 request before it can leave.
+                                        const std::wstring policyReason = policyCheckUrl(url);
+                                        if (!policyReason.empty()) {
+                                            args->put_Response(nullptr);
+                                            if (g_env) {
+                                                ComPtr<ICoreWebView2WebResourceResponse> resp;
+                                                if (SUCCEEDED(g_env->CreateWebResourceResponse(
+                                                        nullptr, 403, L"Blocked by Lethe network policy",
+                                                        L"Content-Type: text/plain", &resp)))
+                                                    args->put_Response(resp.Get());
                                             }
                                             return S_OK;
-                                        })
-                                        .Get(),
-                                    &resToken);
-                            }
+                                        }
+                                        if (!g_trackerBlock || !isBlockedTracker(url)) return S_OK;
+                                        ComPtr<ICoreWebView2WebResourceResponse> resp;
+                                        if (g_env && SUCCEEDED(g_env->CreateWebResourceResponse(
+                                                nullptr, 403, L"Blocked by Lethe tracker protection",
+                                                L"Content-Type: text/plain", &resp))) {
+                                            args->put_Response(resp.Get());
+                                            g_trackerBlocked++;
+                                        }
+                                        return S_OK;
+                                    })
+                                    .Get(),
+                                &resToken);
                             applyRasterScale();
                             RECT r;
                             GetClientRect(g_hwnd, &r);
