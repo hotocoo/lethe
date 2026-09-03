@@ -4,7 +4,7 @@
 
 Minimalist, high-performance browser with maximum security and a built-in VPN, built as the native browser for the Aletheia OS. Lethe's secure network stack is also used by the OS's LLM agent for private, encrypted web searching.
 
-## Status: v1.0.0 (release-ready, measured, security-first)
+## Status: v1.3.0 (release-ready, measured, security-first)
 
 Lethe is a working browser you can use day to day, and every
 performance claim about it is backed by `tools/bench` runs against Google

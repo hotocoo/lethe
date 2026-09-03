@@ -111,21 +111,18 @@ extern "C" bool lethe_metalfx_upscale_rgba8(const uint8_t* src,
         [c.input replaceRegion:MTLRegionMake2D(0, 0, sw, sh)
                    mipmapLevel:0 withBytes:src bytesPerRow:sw * 4];
 
+        // Keep the scaler and readback in one command buffer. The old path
+        // submitted and waited twice per frame, forcing a second CPU/GPU
+        // synchronization point. One submission preserves the synchronous
+        // API contract while removing that avoidable round-trip.
         id<MTLCommandBuffer> cb = [c.queue commandBuffer];
         [c.scaler encodeToCommandBuffer:cb];
+        id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+        [blit copyFromTexture:c.output toTexture:c.readable];
+        [blit endEncoding];
         [cb commit];
         [cb waitUntilCompleted];
         if (cb.status != MTLCommandBufferStatusCompleted) return false;
-
-        // Reuse the shared readback texture as well; this avoids a second
-        // allocation per frame while preserving the existing API contract.
-        id<MTLCommandBuffer> copyCB = [c.queue commandBuffer];
-        id<MTLBlitCommandEncoder> blit = [copyCB blitCommandEncoder];
-        [blit copyFromTexture:c.output toTexture:c.readable];
-        [blit endEncoding];
-        [copyCB commit];
-        [copyCB waitUntilCompleted];
-        if (copyCB.status != MTLCommandBufferStatusCompleted) return false;
         [c.readable getBytes:dst bytesPerRow:dw * 4
                   fromRegion:MTLRegionMake2D(0, 0, dw, dh) mipmapLevel:0];
         return true;

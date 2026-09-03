@@ -46,6 +46,8 @@ NSString* LetheMediaUpscalerScript(void) {
   var entries = new WeakMap();
   var activeEntries = new Set();
   var raf = 0;
+  var geometryRaf = 0;
+  var pendingMedia = new Set();
   var videoCallbacks = new WeakMap();
 
   var vs = '#version 300 es\n' +
@@ -212,6 +214,7 @@ NSString* LetheMediaUpscalerScript(void) {
   // scroll event, which is disproportionately expensive on media-heavy
   // pages. Frame uploads remain exclusively on decoded-frame callbacks.
   function syncGeometry(){
+    geometryRaf=0;
     activeEntries.forEach(function(e){
       if(!e.el.isConnected){ remove(e); return; }
       var r=e.el.getBoundingClientRect();
@@ -224,6 +227,10 @@ NSString* LetheMediaUpscalerScript(void) {
       }
       e.canvas.style.display='block';
     });
+  }
+
+  function scheduleGeometry(){
+    if(mode!==0 && !geometryRaf) geometryRaf=requestAnimationFrame(syncGeometry);
   }
 
   function scan(){ raf=0; if(mode===0)return;
@@ -274,9 +281,32 @@ NSString* LetheMediaUpscalerScript(void) {
   var resizeObserver = 'ResizeObserver' in window ? new ResizeObserver(function(list){
     list.forEach(function(item){ if(entries.has(item.target)) setup(item.target); });
   }) : null;
-  new MutationObserver(function(){start();}).observe(document.documentElement,{subtree:true,childList:true});
+  new MutationObserver(function(list){
+    // Avoid rescanning the entire document for every framework mutation.
+    // Collect only newly-added media and let one animation-frame pass process
+    // the batch. This matters on feeds that continuously append thumbnails.
+    list.forEach(function(m){
+      m.addedNodes.forEach(function(n){
+        if(n.nodeType!==1) return;
+        if(n.matches && n.matches('img,video')) pendingMedia.add(n);
+        if(n.querySelectorAll) n.querySelectorAll('img,video').forEach(function(el){pendingMedia.add(el);});
+      });
+    });
+    if(pendingMedia.size){
+      if(!raf) raf=requestAnimationFrame(function(){
+        raf=0;
+        if(mode===0){pendingMedia.clear();return;}
+        pendingMedia.forEach(function(el){
+          if(el.isConnected) setup(el);
+          if(visibilityObserver) visibilityObserver.observe(el);
+          if(resizeObserver) resizeObserver.observe(el);
+        });
+        pendingMedia.clear();
+      });
+    }
+  }).observe(document.documentElement,{subtree:true,childList:true});
   window.addEventListener('resize',start,{passive:true});
-  window.addEventListener('scroll',function(){ if(mode!==0) syncGeometry(); },{passive:true});
+  window.addEventListener('scroll',scheduleGeometry,{passive:true});
   document.addEventListener('load',start,true);
   document.addEventListener('loadeddata',start,true);
   start();

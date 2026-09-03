@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0 — 2026-09-03
+
+- WebKit media upscaling: combine MetalFX scale + readback into one Metal
+  command submission, removing one CPU/GPU synchronization point per frame.
+- WebKit media upscaling: coalesce scroll geometry work to one animation frame
+  and process only newly-added media nodes instead of rescanning the whole DOM
+  for every mutation.
+- macOS browser minimum is now explicitly 14.0, matching the required
+  `WKWebsiteDataStore` proxy enforcement API instead of advertising an older
+  deployment target that cannot preserve the full network security boundary.
+
 All notable changes to Lethe are documented in this file.
 
 ## [0.2.1] — 2026-08-29 KL — "Quiet chrome, and everything is a plugin"
