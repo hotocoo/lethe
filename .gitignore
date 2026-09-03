@@ -10,6 +10,7 @@ cmake-build-*/
 .vscode/
 .DS_Store
 build-linux/
+build-windows/
 packages/
 dist/
 

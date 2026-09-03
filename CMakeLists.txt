@@ -34,7 +34,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TRACKER_LIST_T
 # yet; early-return so no POSIX target is even configured.
 # ---------------------------------------------------------------------------
 if(WIN32)
-    add_executable(lethe-win WIN32 src/win/lethe_win.cpp)
+    add_executable(lethe-win WIN32 src/win/lethe_win.cpp src/win/lethe_win.rc)
     target_compile_definitions(lethe-win PRIVATE
         UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
     # Keep the Windows host hardened even though it is intentionally a small
@@ -62,6 +62,17 @@ if(WIN32)
         message(FATAL_ERROR "WEBVIEW2_DIR must point at the extracted "
             "Microsoft.Web.WebView2 nuget package")
     endif()
+    # Keep the Windows artifact directly installable/packageable. The
+    # WebView2 Evergreen Runtime is intentionally not copied into the app:
+    # it is a Microsoft-managed shared runtime and must be installed/updated
+    # independently of Lethe.
+    install(TARGETS lethe-win RUNTIME DESTINATION .)
+    set(CPACK_PACKAGE_NAME "Lethe")
+    set(CPACK_PACKAGE_VENDOR "ACOTech")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_FILE_NAME "Lethe-${PROJECT_VERSION}-windows-x64")
+    set(CPACK_GENERATOR "ZIP")
+    include(CPack)
     return()
 endif()
 
