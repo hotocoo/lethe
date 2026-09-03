@@ -50,7 +50,12 @@ NSString* LetheMediaUpscalerScript(void) {
   // of WebGL contexts/canvases and an unbounded GPU-resource commitment.
   // WebKit remains responsible for rendering all media outside this bounded
   // enhancement set, so this is a resource guard rather than a page limit.
-  var maxActiveEntries = 32;
+  // Bound both the number of GPU contexts and the aggregate backing-store
+  // size. A per-element cap alone still lets a hostile page reserve hundreds
+  // of MiB by creating many 16MP overlays.
+  var maxActiveEntries = 8;
+  var maxTotalPixels = 33554432; // 32MP aggregate RGBA working set
+  var activePixels = 0;
   var raf = 0;
   var geometryRaf = 0;
   var pendingMedia = new Set();
@@ -109,6 +114,8 @@ NSString* LetheMediaUpscalerScript(void) {
     if(e.el && resizeObserver) resizeObserver.unobserve(e.el);
     entries.delete(e.el);
     activeEntries.delete(e);
+    activePixels=Math.max(0,activePixels-(e.budgetPixels||0));
+    e.budgetPixels=0;
   }
 
   function scheduleVideo(e) {
@@ -133,6 +140,14 @@ NSString* LetheMediaUpscalerScript(void) {
       if(activeEntries.size>=maxActiveEntries) return;
       var c=document.createElement('canvas'); c.setAttribute('aria-hidden','true');
       c.style.cssText='position:fixed;z-index:2147483646;pointer-events:none;margin:0;padding:0;display:block;';
+      c.addEventListener('webglcontextlost',function(ev){
+        // A lost context must not leave the native media hidden behind a dead
+        // overlay. Prevent the browser from attempting an unbounded recovery
+        // cycle and tear the entry down instead.
+        ev.preventDefault();
+        var current=entries.get(el);
+        if(current) remove(current);
+      },{passive:false});
       document.documentElement.appendChild(c);
       e={el:el,canvas:c,gpu:makeGL(c),w:0,h:0}; entries.set(el,e); activeEntries.add(e);
     if(!e.gpu){ remove(e); return; }
@@ -146,6 +161,10 @@ NSString* LetheMediaUpscalerScript(void) {
     var cw=Math.max(1,Math.round(r.width*d)), ch=Math.max(1,Math.round(r.height*d));
     var isVideo = el instanceof HTMLVideoElement;
     var sw=isVideo?el.videoWidth:el.naturalWidth, sh=isVideo?el.videoHeight:el.naturalHeight;
+    // Do not copy pathological decoded surfaces into a WebGL texture. This
+    // keeps the enhancement layer bounded even when a page supplies a very
+    // large image/video frame; WebKit's normal compositor remains available.
+    if(sw>8192 || sh>8192 || sw*sh>33554432) { if(e) remove(e); return; }
     // CSS pixels are not the output resolution on Retina displays. Decide
     // whether scaling is useful from the actual canvas backing dimensions;
     // otherwise a 854x480 video rendered at 2x DPR would incorrectly look
@@ -154,6 +173,14 @@ NSString* LetheMediaUpscalerScript(void) {
       if (e) remove(e);
       return;
     }
+    var oldBudget=e.budgetPixels||0;
+    var newBudget=cw*ch;
+    if(activePixels-oldBudget+newBudget>maxTotalPixels){
+      if(!oldBudget) return;
+      remove(e);
+      return;
+    }
+    if(oldBudget!==newBudget){ activePixels=activePixels-oldBudget+newBudget; e.budgetPixels=newBudget; }
     var geometryChanged=e.w!==cw||e.h!==ch||e.x!==r.left||e.y!==r.top;
     if(geometryChanged){e.canvas.width=cw; e.canvas.height=ch; e.canvas.style.left=r.left+'px'; e.canvas.style.top=r.top+'px'; e.canvas.style.width=r.width+'px'; e.canvas.style.height=r.height+'px'; e.w=cw; e.h=ch; e.x=r.left; e.y=r.top;}
     e.canvas.style.display=el.offsetWidth&&el.offsetHeight?'block':'none';

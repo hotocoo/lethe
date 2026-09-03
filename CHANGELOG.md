@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.1 — 2026-09-03
+
+- WebKit media upscaling: bound enhancement GPU usage to 8 concurrent WebGL
+  contexts and 32MP of aggregate backing-store pixels.
+- WebKit media upscaling: tear down overlays on WebGL context loss and reject
+  pathological decoded surfaces before uploading them to the GPU.
+- Native RGBA upscaling: add overflow-safe dimension validation and a 64MP
+  per-frame working-set ceiling before any byte-count arithmetic or copy.
+
 ## 1.3.0 — 2026-09-03
 
 - WebKit media upscaling: combine MetalFX scale + readback into one Metal

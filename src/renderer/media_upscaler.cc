@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #if defined(__APPLE__)
@@ -80,8 +81,18 @@ void MediaUpscaler::setMode(MediaUpscalerMode mode) { (void)initialize(mode); }
 bool MediaUpscaler::upscaleRGBA8(const uint8_t* src, size_t sw, size_t sh,
                                  uint8_t* dst, size_t dw, size_t dh) {
     if (!src || !dst || sw == 0 || sh == 0 || dw == 0 || dh == 0) return false;
+    // Keep all byte-count arithmetic overflow-safe and bound the native
+    // enhancement API independently of the browser-side canvas guard. The
+    // latter protects page-created WebGL resources; this protects callers
+    // feeding native RGBA buffers directly into the renderer.
+    constexpr size_t kMaxPixels = 64u * 1024u * 1024u;
+    if (sw > kMaxPixels / sh || dw > kMaxPixels / dh) return false;
+    const size_t srcPixels = sw * sh;
+    const size_t dstPixels = dw * dh;
+    if (srcPixels > std::numeric_limits<size_t>::max() / 4 ||
+        dstPixels > std::numeric_limits<size_t>::max() / 4) return false;
     if (sw == dw && sh == dh) {
-        std::memcpy(dst, src, sw * sh * 4);
+        std::memcpy(dst, src, srcPixels * 4);
         return true;
     }
     if (activeMode_ == MediaUpscalerMode::MetalFX) {
