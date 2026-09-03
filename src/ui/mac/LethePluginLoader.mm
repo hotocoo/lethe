@@ -3,6 +3,9 @@
 #import "ui/mac/LethePluginLoader.h"
 #import "ui/mac/LethePreferences.h"
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 // Shared browser media scaler script. The plugin loader owns the shared
 // WKUserContentController's remove/rebuild cycle, so it must restore this
 // non-plugin script after clearing the old plugin scripts.
@@ -85,7 +88,23 @@ NSString* const LethePluginsFolderChangedNotification =
         [LethePreferences shared].disabledPlugins ?: @[]];
     for (NSString* f in [files sortedArrayUsingSelector:@selector(compare:)]) {
         if (![f.pathExtension isEqualToString:@"js"]) continue;
-        LethePluginScript* p = [self parseFile:[folder stringByAppendingPathComponent:f]];
+        NSString* path = [folder stringByAppendingPathComponent:f];
+
+        // Script plugins execute with the full authority of the page's
+        // JavaScript context. Treat the plugin directory as an integrity
+        // boundary: never execute a symlink, a non-regular file, a file owned
+        // by another account, or a file writable by group/others. Also cap
+        // the manifest/script size so a malformed local file cannot force a
+        // large allocation during startup.
+        struct stat st;
+        if (lstat(path.fileSystemRepresentation, &st) != 0 ||
+            !S_ISREG(st.st_mode) || st.st_uid != getuid() ||
+            (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 ||
+            st.st_size < 0 || static_cast<uint64_t>(st.st_size) > 1024u * 1024u) {
+            continue;
+        }
+
+        LethePluginScript* p = [self parseFile:path];
         if (!p) continue;
         p.enabled = ![disabled containsObject:p.fileName];
         [out addObject:p];
@@ -105,8 +124,15 @@ NSString* const LethePluginsFolderChangedNotification =
     for (LethePluginScript* p in [self scanPlugins]) {
         if (!p.enabled) continue;
         NSString* folder = [LethePluginLoader pluginsFolder];
-        NSData* d = [NSData dataWithContentsOfFile:
-            [folder stringByAppendingPathComponent:p.fileName]];
+        NSString* path = [folder stringByAppendingPathComponent:p.fileName];
+        struct stat st;
+        if (lstat(path.fileSystemRepresentation, &st) != 0 ||
+            !S_ISREG(st.st_mode) || st.st_uid != getuid() ||
+            (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 ||
+            st.st_size < 0 || static_cast<uint64_t>(st.st_size) > 1024u * 1024u) {
+            continue;
+        }
+        NSData* d = [NSData dataWithContentsOfFile:path];
         if (!d) continue;
         // IIFE wrap: one plugin's top-level names never leak into another's
         // scope or the page's. document-start so plugins see every frame.
