@@ -96,6 +96,8 @@ NSString* LetheMediaUpscalerScript(void) {
       videoCallbacks.delete(e.el);
     }
     if(e.canvas&&e.canvas.parentNode)e.canvas.parentNode.removeChild(e.canvas);
+    if(e.el && visibilityObserver) visibilityObserver.unobserve(e.el);
+    if(e.el && resizeObserver) resizeObserver.unobserve(e.el);
     entries.delete(e.el);
     activeEntries.delete(e);
   }
