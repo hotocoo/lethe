@@ -50,17 +50,18 @@ NSString* LetheMediaUpscalerScript(void) {
 
   var vs = '#version 300 es\n' +
     'in vec2 p; out vec2 uv; void main(){ uv=p*.5+.5; gl_Position=vec4(p,0.,1.); }';
-  // 16-tap bicubic reconstruction plus a restrained edge-adaptive RCAS-like
-  // sharpen.  This is deliberately page-local: no decoded media bytes leave
-  // the renderer process and CORS rules are still enforced by WebGL.
+  // Mode 1 uses the GPU's native bilinear filter; modes 2/3 use the
+  // high-quality bicubic reconstruction. All decoded media remains page-local
+  // and WebGL still enforces the browser's CORS sampling rules.
   var fs = '#version 300 es\nprecision highp float;\n' +
     'uniform sampler2D t; uniform vec2 texel; uniform float sharp; uniform vec4 uvRect; uniform vec4 destRect;\n' +
     'in vec2 uv; out vec4 o;\n' +
     'float w(float x){x=abs(x); if(x<1.0)return 1.0-2.5*x*x+1.5*x*x*x; if(x<2.0)return 2.0-4.0*x+2.5*x*x-.5*x*x*x; return 0.0;}\n' +
-    'void main(){ if(uv.x<destRect.x||uv.y<destRect.y||uv.x>destRect.x+destRect.z||uv.y>destRect.y+destRect.w) discard; vec2 luv=(uv-destRect.xy)/destRect.zw; vec2 suv=uvRect.xy+luv*uvRect.zw; vec2 q=suv/texel; vec2 b=floor(q-.5); vec2 f=q-.5-b; vec4 s=vec4(0); float ws=0.;\n' +
+    'void main(){ if(uv.x<destRect.x||uv.y<destRect.y||uv.x>destRect.x+destRect.z||uv.y>destRect.y+destRect.w) discard; vec2 luv=(uv-destRect.xy)/destRect.zw; vec2 suv=uvRect.xy+luv*uvRect.zw; vec4 c;\n' +
+    'if(sharp<0.) c=texture(t,suv); else { vec2 q=suv/texel; vec2 b=floor(q-.5); vec2 f=q-.5-b; vec4 s=vec4(0); float ws=0.;\n' +
     'for(int j=-1;j<=2;j++) for(int i=-1;i<=2;i++){float ww=w(float(i)-f.x)*w(float(j)-f.y); s+=texture(t,(b+vec2(i,j)+.5)*texel)*ww; ws+=ww;}\n' +
-    'vec4 c=s/max(ws,.0001); vec3 n=texture(t,suv+vec2(0,-texel.y)).rgb, e=texture(t,suv+vec2(texel.x,0)).rgb, ss=texture(t,suv+vec2(0,texel.y)).rgb, ww=texture(t,suv+vec2(-texel.x,0)).rgb;\n' +
-    'vec3 avg=(n+e+ss+ww)*.25; vec3 detail=c.rgb-avg; float edge=clamp(length(detail)*4.0,0.,1.); c.rgb=clamp(c.rgb+detail*sharp*(1.-edge*.65),0.,1.); o=c; }';
+    'c=s/max(ws,.0001); vec3 n=texture(t,suv+vec2(0,-texel.y)).rgb, e=texture(t,suv+vec2(texel.x,0)).rgb, ss=texture(t,suv+vec2(0,texel.y)).rgb, ww=texture(t,suv+vec2(-texel.x,0)).rgb;\n' +
+    'vec3 avg=(n+e+ss+ww)*.25; vec3 detail=c.rgb-avg; float edge=clamp(length(detail)*4.0,0.,1.); c.rgb=clamp(c.rgb+detail*sharp*(1.-edge*.65),0.,1.); } o=c; }';
 
   function makeGL(canvas) {
     var gl = canvas.getContext('webgl2', {alpha:true, premultipliedAlpha:false, antialias:false});
@@ -84,7 +85,8 @@ NSString* LetheMediaUpscalerScript(void) {
     var h=el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
     if (!w || !h) return false;
     var r=el.getBoundingClientRect();
-    return r.width>=32 && r.height>=32;
+    return r.width>=32 && r.height>=32 && r.right>0 && r.bottom>0 &&
+      r.left<window.innerWidth && r.top<window.innerHeight;
   }
 
   function remove(e) {
@@ -178,7 +180,9 @@ NSString* LetheMediaUpscalerScript(void) {
       if(dar>sar) { dw=sar/dar; dx=(1-dw)*px; }
       else { dh=dar/sar; dy=(1-dh)*py; }
     }
-    gl.uniform2f(e.gpu.texel,1/sw,1/sh); gl.uniform1f(e.gpu.sharp,mode===3?.62:mode===2?.42:0.);
+    // Linear mode deliberately takes the hardware-filtered fast path instead
+    // of paying for the 16-tap reconstruction used by high-quality modes.
+    gl.uniform2f(e.gpu.texel,1/sw,1/sh); gl.uniform1f(e.gpu.sharp,mode===1?-1:mode===3?.62:.42);
     gl.uniform4f(e.gpu.uvRect,ux,uy,uw,uh); gl.uniform4f(e.gpu.destRect,dx,dy,dw,dh); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
     // Validate the first rendered frame before hiding WebKit's compositor
     // surface. A successful texImage2D call alone is not sufficient proof

@@ -189,6 +189,11 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
                                           configuration:[app webViewConfigurationWithStore:store]];
         }
         if (!dataStore_) dataStore_ = webView_.configuration.websiteDataStore;
+#if DEBUG
+        if (@available(macOS 13.3, *)) webView_.inspectable = YES;
+#else
+        if (@available(macOS 13.3, *)) webView_.inspectable = NO;
+#endif
         webView_.navigationDelegate = self;
         webView_.UIDelegate = self;
         webView_.allowsBackForwardNavigationGestures = YES;
