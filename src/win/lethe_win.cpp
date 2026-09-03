@@ -396,6 +396,13 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                             if (FAILED(result2) || !ctl) return result2;
                             g_controller = ctl;
                             ctl->get_CoreWebView2(&g_web);
+                            ComPtr<ICoreWebView2Settings> settings;
+                            if (SUCCEEDED(g_web->get_Settings(&settings)) && settings) {
+                                settings->put_AreDevToolsEnabled(FALSE);
+                                settings->put_IsStatusBarEnabled(FALSE);
+                                settings->put_AreDefaultContextMenusEnabled(FALSE);
+                                settings->put_AreHostObjectsAllowed(FALSE);
+                            }
                             EventRegistrationToken navToken{};
                             g_web->add_NavigationStarting(
                                 Callback<
@@ -439,6 +446,21 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                                             req->get_Uri(&raw);
                                             const std::wstring url = raw ? raw : L"";
                                             CoTaskMemFree(raw);
+                                            // NavigationStarting cannot protect subresources, frames,
+                                            // redirects, or worker fetches. Apply the same scheme/private-
+                                            // network policy to every WebView2 request before it can leave.
+                                            const std::wstring policyReason = policyCheckUrl(url);
+                                            if (!policyReason.empty()) {
+                                                args->put_Response(nullptr);
+                                                if (g_env) {
+                                                    ComPtr<ICoreWebView2WebResourceResponse> resp;
+                                                    if (SUCCEEDED(g_env->CreateWebResourceResponse(
+                                                            nullptr, 403, L"Blocked by Lethe network policy",
+                                                            L"Content-Type: text/plain", &resp)))
+                                                        args->put_Response(resp.Get());
+                                                }
+                                                return S_OK;
+                                            }
                                             if (!isBlockedTracker(url)) return S_OK;
                                             ComPtr<ICoreWebView2WebResourceResponse> resp;
                                             if (g_env && SUCCEEDED(g_env->CreateWebResourceResponse(

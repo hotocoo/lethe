@@ -495,7 +495,11 @@ NSString* LetheMediaUpscalerScript(void) {
     // Popup blocking like Chrome: window.open needs a user gesture.
     c.preferences.javaScriptCanOpenWindowsAutomatically = NO;
     c.preferences.fraudulentWebsiteWarningEnabled = YES;
+#if DEBUG
+    // Keep Web Inspector available for developer builds only. Shipping
+    // builds must not expose developer tooling to arbitrary page content.
     [c.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
+#endif
     if (@available(macOS 12.3, *)) {
         c.preferences.elementFullscreenEnabled = YES;
     }
