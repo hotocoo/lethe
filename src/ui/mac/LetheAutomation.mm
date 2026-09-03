@@ -281,6 +281,10 @@
     } else if ([cmd isEqualToString:@"oblivion"]) {
         // oblivion [url]: open an Oblivion window; it becomes current.
         BrowserWindowController* c = [app_ openOblivionWindowWithURL:arg.length ? arg : nil];
+        if (!c) {
+            [self fail:@"oblivion window could not be created securely"];
+            return;
+        }
         current_ = c;
         [self later:150];
     } else if ([cmd isEqualToString:@"assert-oblivion"]) {

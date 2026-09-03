@@ -55,12 +55,12 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         _language = @"en";
 
         // Performance. Defaults: unlimited frame rate, high-refresh on,
-        // no upscaler, 4x MSAA. Power users with a 240 Hz display can
+        // built-in spatial upscaling, 4x MSAA. Power users with a 240 Hz display can
         // let the engine pick up that rate automatically; users on a 60 Hz
         // external monitor can cap the cap and let the GPU cool down.
         _maxFrameRate = 0;             // 0 = unlimited (let the display drive)
         _preferHighRefresh = YES;      // ask the compositor for the panel rate
-        _upscaler = LetheUpscalerNone; // bit-exact, no spatial upscale
+        _upscaler = LetheUpscalerFSR1; // built-in high-quality spatial upscale
         _antiAliasing = 4;             // MSAA 4x
         _policyProxyWorkerThreads = 0; // 0 = auto (hardware_concurrency)
 

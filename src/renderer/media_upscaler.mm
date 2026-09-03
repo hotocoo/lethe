@@ -16,8 +16,10 @@ id<MTLDevice> device() {
 // MetalFX resource creation is expensive enough to be visible when this
 // path is used for video. Reuse the complete scaler pipeline for a stable
 // source/output size instead of allocating textures, a queue and a scaler
-// for every decoded frame. The API is currently consumed by the renderer's
-// serial media path, so a single cached entry is sufficient and bounded.
+// for every decoded frame. Keep the cache thread-local: the native renderer
+// API can be called from more than one media worker, and sharing Metal
+// resources without synchronization would introduce a data race while a
+// mutex would serialize otherwise independent GPU work.
 struct SpatialScalerCache {
     NSUInteger sw = 0;
     NSUInteger sh = 0;
@@ -31,7 +33,7 @@ struct SpatialScalerCache {
 };
 
 SpatialScalerCache& cache() {
-    static SpatialScalerCache c;
+    thread_local SpatialScalerCache c;
     return c;
 }
 

@@ -73,7 +73,7 @@ NSString* LetheMediaUpscalerScript(void) {
     var buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
     var a=gl.getAttribLocation(pr,'p'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
-    var tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    var tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
     return {gl:gl,program:pr,tex:tex,texel:gl.getUniformLocation(pr,'texel'),sharp:gl.getUniformLocation(pr,'sharp'),uvRect:gl.getUniformLocation(pr,'uvRect'),destRect:gl.getUniformLocation(pr,'destRect')};
   }
 
@@ -155,7 +155,13 @@ NSString* LetheMediaUpscalerScript(void) {
     }
     if(!isVideo && !geometryChanged && e.srcKey===srcKey) return;
     if(isVideo && el.readyState < 2) return;
-    try { gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,el); } catch(_) { remove(e); return; }
+    try {
+      // Keep the GPU allocation stable for video. texImage2D reallocates the
+      // backing store on every decoded frame; texSubImage2D only uploads the
+      // new pixels and is substantially cheaper on the WebKit GPU process.
+      if (e.texW===sw && e.texH===sh) gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,el);
+      else { gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,el); e.texW=sw; e.texH=sh; }
+    } catch(_) { remove(e); return; }
     // Preserve the source element's object-fit behavior. Without this, a
     // CSS `object-fit: cover` video would be stretched rather than cropped.
     // The overlay remains the exact displayed rectangle while the shader
@@ -174,7 +180,6 @@ NSString* LetheMediaUpscalerScript(void) {
     }
     gl.uniform2f(e.gpu.texel,1/sw,1/sh); gl.uniform1f(e.gpu.sharp,mode===3?.62:mode===2?.42:0.);
     gl.uniform4f(e.gpu.uvRect,ux,uy,uw,uh); gl.uniform4f(e.gpu.destRect,dx,dy,dw,dh); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
-    if(gl.getError()!==gl.NO_ERROR) { remove(e); return; }
     // Validate the first rendered frame before hiding WebKit's compositor
     // surface. A successful texImage2D call alone is not sufficient proof
     // that the media texture produced pixels on every WebKit configuration;
@@ -182,7 +187,7 @@ NSString* LetheMediaUpscalerScript(void) {
     if(!e.validated){
       var probe=new Uint8Array(4);
       gl.readPixels(Math.floor(cw*.5),Math.floor(ch*.5),1,1,gl.RGBA,gl.UNSIGNED_BYTE,probe);
-      if(gl.getError()!==gl.NO_ERROR || probe[3]===0){ remove(e); return; }
+      if(probe[3]===0){ remove(e); return; }
       e.validated=true;
     }
     e.srcKey=srcKey;
@@ -506,7 +511,15 @@ NSString* LetheMediaUpscalerScript(void) {
 
 - (WKWebsiteDataStore*)makeOblivionStore {
     WKWebsiteDataStore* store = [WKWebsiteDataStore nonPersistentDataStore];
-    [self bindStoreToProxy:store];
+    // Oblivion has the strongest isolation contract: if the policy proxy is
+    // enabled, never hand a WebKit store to a window unless that store was
+    // actually bound to the proxy. A failed bind must not silently degrade
+    // to WebKit's direct network path.
+    if (ctx_->proxyPort > 0 && ![self bindStoreToProxy:store]) {
+        std::cerr << "[lethe] Oblivion store: policy proxy binding failed; "
+                     "refusing to create an unprotected window" << std::endl;
+        return nil;
+    }
     return store;
 }
 
@@ -561,7 +574,16 @@ NSString* LetheMediaUpscalerScript(void) {
 }
 
 - (BrowserWindowController*)openOblivionWindowWithURL:(NSString*)url {
-    BrowserWindowController* c = [self makeController:nil store:[self makeOblivionStore] oblivion:YES];
+    WKWebsiteDataStore* store = [self makeOblivionStore];
+    if (!store) {
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = @"Lethe cannot start Oblivion securely";
+        alert.informativeText = @"The isolated window requires the policy proxy. The window was not created because transport enforcement could not be installed.";
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+        return nil;
+    }
+    BrowserWindowController* c = [self makeController:nil store:store oblivion:YES];
     c.window.tabbingMode = NSWindowTabbingModeDisallowed;
     [c showWindow:nil];
     [c.window makeKeyAndOrderFront:nil];
