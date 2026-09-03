@@ -189,12 +189,21 @@ static bool isBlockedTracker(const std::wstring& url) {
 
 // Returns empty when allowed, else a named block reason.
 static std::wstring policyCheckUrl(const std::wstring& url) {
-    const size_t colon = url.find(L"://");
+    const size_t colon = url.find(L':');
     if (colon == std::wstring::npos)
         return L"Blocked by Lethe policy: scheme not permitted";
     const std::wstring scheme = lower(url.substr(0, colon));
+    // These schemes never perform a network connection. They are required
+    // for normal web compatibility (inline images, blob-backed media and
+    // about:blank/iframe documents) and therefore must not be fed into the
+    // DNS/private-network policy. Network-capable schemes remain strictly
+    // limited to HTTP(S).
+    if (scheme == L"data" || scheme == L"blob" || scheme == L"about")
+        return L"";
     if (scheme != L"http" && scheme != L"https")
         return L"Blocked by Lethe policy: scheme not permitted (" + scheme + L")";
+    if (url.compare(colon, 3, L"://") != 0)
+        return L"Blocked by Lethe policy: malformed URL";
 
     std::wstring rest = url.substr(colon + 3);
     const size_t slash = rest.find_first_of(L"/?#");
@@ -356,8 +365,15 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     WSAStartup(MAKEWORD(2, 2), &wsa);
     {
         wchar_t buf[32] = {};
-        if (GetEnvironmentVariableW(L"LETHE_RASTER_SCALE", buf, 32))
-            g_rasterScale = wcstod(buf, nullptr);
+        if (GetEnvironmentVariableW(L"LETHE_RASTER_SCALE", buf, 32)) {
+            const double requested = wcstod(buf, nullptr);
+            // Keep the environment knob inside the same bounded range as the
+            // live hotkey control. Unbounded values can otherwise allocate
+            // pathological compositor surfaces and turn a performance knob
+            // into a trivial local resource-exhaustion vector.
+            if (std::isfinite(requested))
+                g_rasterScale = std::clamp(requested, 0.66, 2.0);
+        }
     }
 
     if (const wchar_t* tb = _wgetenv(L"LETHE_TRACKER_BLOCK"))
