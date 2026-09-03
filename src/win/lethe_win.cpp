@@ -29,6 +29,7 @@
 #endif
 #include <windows.h>
 #include <commctrl.h>
+#include <shlobj.h>
 #include <shlwapi.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -65,6 +66,19 @@ static std::set<std::wstring> g_trackerDomains; // lowercase registrable domains
 static bool g_trackerBlock = true;
 static unsigned g_trackerBlocked = 0;
 static const double kScales[] = {0.66, 0.75, 0.85, 1.0, 1.25, 1.5, 2.0};
+
+static std::wstring webViewUserDataPath() {
+    PWSTR localAppData = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT,
+                                    nullptr, &localAppData)) || !localAppData) {
+        return L"";
+    }
+    std::wstring path(localAppData);
+    CoTaskMemFree(localAppData);
+    if (path.empty()) return L"";
+    path += L"\\Lethe\\WebView2";
+    return path;
+}
 
 // ---- Scope classifier (compact port of private_network_guard rules) ----
 enum Scope { SCOPE_PUBLIC, SCOPE_LOOPBACK, SCOPE_PRIVATE };
@@ -397,8 +411,19 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                                             (LONG_PTR)EditProc);
     ShowWindow(g_hwnd, show);
 
+    const std::wstring userDataPath = webViewUserDataPath();
+    if (userDataPath.empty()) {
+        MessageBoxW(g_hwnd,
+                    L"Unable to determine the per-user WebView2 data directory.",
+                    L"Lethe", MB_ICONERROR);
+        return 1;
+    }
+    // Never derive WebView2's profile from the current working directory.
+    // The CWD can be attacker-controlled (for example when Lethe is launched
+    // by a file manager or another application), while LocalAppData is the
+    // per-user profile boundary intended for persistent browser state.
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, L"LetheWebView2", nullptr,
+        nullptr, userDataPath.c_str(), nullptr,
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(result) || !env) return result;
@@ -418,6 +443,17 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
                                 settings->put_IsStatusBarEnabled(FALSE);
                                 settings->put_AreDefaultContextMenusEnabled(FALSE);
                                 settings->put_AreHostObjectsAllowed(FALSE);
+                                // Keep convenience features from persisting
+                                // user-entered identity data into the browser
+                                // profile. Password autosave is already false
+                                // by default in current WebView2 runtimes, but
+                                // set both controls explicitly so the policy
+                                // does not depend on a runtime default.
+                                ComPtr<ICoreWebView2Settings4> settings4;
+                                if (SUCCEEDED(settings.As(&settings4)) && settings4) {
+                                    settings4->put_IsGeneralAutofillEnabled(FALSE);
+                                    settings4->put_IsPasswordAutosaveEnabled(FALSE);
+                                }
                             }
                             EventRegistrationToken navToken{};
                             g_web->add_NavigationStarting(
