@@ -37,6 +37,14 @@ if(WIN32)
     add_executable(lethe-win WIN32 src/win/lethe_win.cpp)
     target_compile_definitions(lethe-win PRIVATE
         UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    # Keep the Windows host hardened even though it is intentionally a small
+    # WebView2-only target. These flags enable the MSVC compiler/linker
+    # mitigations that are independent of WebView2's renderer sandbox.
+    if(MSVC)
+        target_compile_options(lethe-win PRIVATE /GS /sdl)
+        target_link_options(lethe-win PRIVATE
+            /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT /GUARD:CF /CETCOMPAT)
+    endif()
     target_include_directories(lethe-win PRIVATE ${CMAKE_BINARY_DIR}/generated)
     target_link_libraries(lethe-win PRIVATE
         user32 gdi32 shell32 shlwapi ws2_32 ole32 oleaut32 uuid comctl32)
