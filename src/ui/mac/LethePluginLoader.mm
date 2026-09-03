@@ -4,7 +4,11 @@
 #import "ui/mac/LethePreferences.h"
 
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
+
+#include <cerrno>
+#include <cstdint>
 
 // Shared browser media scaler script. The plugin loader owns the shared
 // WKUserContentController's remove/rebuild cycle, so it must restore this
@@ -16,6 +20,46 @@ NSString* const LethePluginsFolderChangedNotification =
 
 @implementation LethePluginScript
 @end
+
+namespace {
+
+// Read a plugin through an already-open descriptor. A pathname-only
+// lstat()+NSData load leaves a TOCTOU window in which a same-user process can
+// swap the file for a symlink or another payload after validation. O_NOFOLLOW
+// makes the opened object itself the security boundary; fstat() then verifies
+// ownership, permissions and size on that exact object before any bytes are
+// consumed by the JavaScript engine.
+NSData* ReadPluginFileSecurely(NSString* path) {
+    int fd = open(path.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) return nil;
+
+    struct stat st;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_uid != getuid() ||
+        (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 || st.st_size < 0 ||
+        static_cast<uint64_t>(st.st_size) > 1024u * 1024u) {
+        close(fd);
+        return nil;
+    }
+
+    const size_t size = static_cast<size_t>(st.st_size);
+    NSMutableData* data = [NSMutableData dataWithLength:size];
+    uint8_t* bytes = static_cast<uint8_t*>(data.mutableBytes);
+    size_t offset = 0;
+    while (offset < size) {
+        ssize_t n = read(fd, bytes + offset, size - offset);
+        if (n > 0) {
+            offset += static_cast<size_t>(n);
+            continue;
+        }
+        if (n < 0 && errno == EINTR) continue;
+        close(fd);
+        return nil;
+    }
+    close(fd);
+    return data;
+}
+
+} // namespace
 
 @implementation LethePluginLoader
 
@@ -40,7 +84,7 @@ NSString* const LethePluginsFolderChangedNotification =
 // in leading `//` comments. Unknown keys are ignored; missing keys fall
 // back to the file name.
 - (LethePluginScript*)parseFile:(NSString*)path {
-    NSData* d = [NSData dataWithContentsOfFile:path];
+    NSData* d = ReadPluginFileSecurely(path);
     if (!d) return nil;
     NSString* src = [[NSString alloc] initWithData:d
                                           encoding:NSUTF8StringEncoding];
@@ -96,14 +140,6 @@ NSString* const LethePluginsFolderChangedNotification =
         // by another account, or a file writable by group/others. Also cap
         // the manifest/script size so a malformed local file cannot force a
         // large allocation during startup.
-        struct stat st;
-        if (lstat(path.fileSystemRepresentation, &st) != 0 ||
-            !S_ISREG(st.st_mode) || st.st_uid != getuid() ||
-            (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 ||
-            st.st_size < 0 || static_cast<uint64_t>(st.st_size) > 1024u * 1024u) {
-            continue;
-        }
-
         LethePluginScript* p = [self parseFile:path];
         if (!p) continue;
         p.enabled = ![disabled containsObject:p.fileName];
@@ -125,14 +161,7 @@ NSString* const LethePluginsFolderChangedNotification =
         if (!p.enabled) continue;
         NSString* folder = [LethePluginLoader pluginsFolder];
         NSString* path = [folder stringByAppendingPathComponent:p.fileName];
-        struct stat st;
-        if (lstat(path.fileSystemRepresentation, &st) != 0 ||
-            !S_ISREG(st.st_mode) || st.st_uid != getuid() ||
-            (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 ||
-            st.st_size < 0 || static_cast<uint64_t>(st.st_size) > 1024u * 1024u) {
-            continue;
-        }
-        NSData* d = [NSData dataWithContentsOfFile:path];
+        NSData* d = ReadPluginFileSecurely(path);
         if (!d) continue;
         // IIFE wrap: one plugin's top-level names never leak into another's
         // scope or the page's. document-start so plugins see every frame.
