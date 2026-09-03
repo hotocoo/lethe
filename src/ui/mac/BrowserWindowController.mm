@@ -72,6 +72,12 @@ static NSString* const kQuietPageStyle =
     NSButton* settingsButton_;
     NSView* addressPill_;
     NSToolbarItem* addressItem_;
+    NSToolbarItem* backItem_;
+    NSToolbarItem* forwardItem_;
+    NSToolbarItem* reloadItem_;
+    NSToolbarItem* readerItem_;
+    NSToolbarItem* bookmarkItem_;
+    NSToolbarItem* settingsItem_;
     NSLayoutConstraint* addressPillWidth_;
     NSProgressIndicator* progress_;
     NSView* findBar_;
@@ -261,30 +267,65 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     if ([identifier isEqualToString:kLetheToolbarAddress]) {
         item.view = [self makeAddressPill];
         addressItem_ = item;
+        // NSToolbar sizes custom views from the item, not from Auto Layout
+        // constraints inside the view. Give the item a real toolbar extent;
+        // otherwise AppKit can collapse the custom view to zero and leave a
+        // toolbar that exists in the hierarchy but is neither visible nor
+        // hit-testable.
+        item.minSize = NSMakeSize(220.0, kLetheGhostSize);
+        item.maxSize = NSMakeSize(2000.0, kLetheGhostSize);
     } else if ([identifier isEqualToString:kLetheToolbarBack]) {
-        item.view = backButton_;
+        // Use NSToolbarItem's native action path for chrome controls. Custom
+        // NSButton views inside an NSToolbar can become visually present but
+        // lose AppKit's toolbar hit-testing/action routing after toolbar
+        // relayout. Native items keep the event target on the toolbar itself.
+        item.image = [NSImage imageWithSystemSymbolName:@"chevron.left"
+                              accessibilityDescription:@"Back"];
         item.label = @"Back";
-        item.bordered = YES;
+        item.toolTip = @"Back";
+        item.target = self;
+        item.action = @selector(goBack:);
+        backItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarForward]) {
-        item.view = forwardButton_;
+        item.image = [NSImage imageWithSystemSymbolName:@"chevron.right"
+                              accessibilityDescription:@"Forward"];
         item.label = @"Forward";
-        item.bordered = YES;
+        item.toolTip = @"Forward";
+        item.target = self;
+        item.action = @selector(goForward:);
+        forwardItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarReload]) {
-        item.view = reloadButton_;
+        item.image = [NSImage imageWithSystemSymbolName:@"arrow.clockwise"
+                              accessibilityDescription:@"Reload"];
         item.label = @"Reload";
-        item.bordered = YES;
+        item.toolTip = @"Reload";
+        item.target = self;
+        item.action = @selector(reloadOrStop:);
+        reloadItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarReader]) {
-        item.view = readerButton_;
+        item.image = [NSImage imageWithSystemSymbolName:@"doc.plaintext"
+                              accessibilityDescription:@"Reader View"];
         item.label = @"Reader View";
-        item.bordered = YES;
+        item.toolTip = @"Reader View";
+        item.target = self;
+        item.action = @selector(toggleReader:);
+        readerItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarBookmark]) {
-        item.view = bookmarkButton_;
+        item.image = [NSImage imageWithSystemSymbolName:@"bookmark"
+                              accessibilityDescription:@"Bookmark"];
         item.label = @"Bookmark";
-        item.bordered = YES;
+        item.toolTip = @"Bookmark";
+        item.target = self;
+        item.action = @selector(toggleBookmark:);
+        bookmarkItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarSettings]) {
-        item.view = settingsButton_;
+        item.image = [NSImage imageWithSystemSymbolName:@"gearshape"
+                              accessibilityDescription:@"Settings"];
         item.label = @"Settings";
-        item.bordered = YES;
+        item.toolTip = @"Settings";
+        item.target = self;
+        item.action = @selector(showSettings:);
+        settingsItem_ = item;
     } else {
         return nil;
     }
@@ -573,13 +614,20 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
 - (void)updateNavigationButtons {
     backButton_.enabled = webView_.canGoBack;
     forwardButton_.enabled = webView_.canGoForward;
+    backItem_.enabled = webView_.canGoBack;
+    forwardItem_.enabled = webView_.canGoForward;
 }
 
 - (void)updateReloadButton {
     const BOOL loading = webView_.loading;
-    reloadButton_.image = [NSImage imageWithSystemSymbolName:loading ? @"xmark" : @"arrow.clockwise"
-                                    accessibilityDescription:loading ? @"Stop" : @"Reload"];
-    reloadButton_.toolTip = loading ? @"Stop" : @"Reload";
+    NSString* symbol = loading ? @"xmark" : @"arrow.clockwise";
+    NSString* label = loading ? @"Stop" : @"Reload";
+    reloadButton_.image = [NSImage imageWithSystemSymbolName:symbol
+                                     accessibilityDescription:label];
+    reloadButton_.toolTip = label;
+    reloadItem_.image = [NSImage imageWithSystemSymbolName:symbol
+                                     accessibilityDescription:label];
+    reloadItem_.toolTip = label;
 }
 
 #pragma mark - Loading
@@ -926,15 +974,23 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     NSString* title = webView_.title.length ? webView_.title : url;
     BOOL added = [[LetheBookmarks shared] toggleURL:url title:title];
     [self refreshBookmarkIcon];
-    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:(added ? @"bookmark.fill" : @"bookmark")
-                                      accessibilityDescription:(added ? @"Bookmarked" : @"Bookmark")];
+    NSString* symbol = added ? @"bookmark.fill" : @"bookmark";
+    NSString* label = added ? @"Bookmarked" : @"Bookmark";
+    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:symbol
+                                      accessibilityDescription:label];
+    bookmarkItem_.image = [NSImage imageWithSystemSymbolName:symbol
+                                      accessibilityDescription:label];
 }
 
 - (void)refreshBookmarkIcon {
     NSString* url = webView_.URL.absoluteString;
     BOOL has = url.length && [[LetheBookmarks shared] containsURL:url];
-    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:(has ? @"bookmark.fill" : @"bookmark")
-                                      accessibilityDescription:(has ? @"Bookmarked" : @"Bookmark")];
+    NSString* symbol = has ? @"bookmark.fill" : @"bookmark";
+    NSString* label = has ? @"Bookmarked" : @"Bookmark";
+    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:symbol
+                                      accessibilityDescription:label];
+    bookmarkItem_.image = [NSImage imageWithSystemSymbolName:symbol
+                                      accessibilityDescription:label];
 }
 
 - (void)renderBookmarksPage {
