@@ -204,6 +204,26 @@ NSString* LetheMediaUpscalerScript(void) {
     scheduleVideo(e);
   }
 
+  // Scrolling changes the overlay's viewport coordinates but does not change
+  // the decoded frame. Keep this path geometry-only: the old implementation
+  // rescanned every <img>/<video> and re-ran eligibility checks on every
+  // scroll event, which is disproportionately expensive on media-heavy
+  // pages. Frame uploads remain exclusively on decoded-frame callbacks.
+  function syncGeometry(){
+    activeEntries.forEach(function(e){
+      if(!e.el.isConnected){ remove(e); return; }
+      var r=e.el.getBoundingClientRect();
+      if(r.width<1 || r.height<1){ e.canvas.style.display='none'; return; }
+      var x=r.left, y=r.top;
+      if(e.x!==x || e.y!==y || e.canvas.style.width!==r.width+'px' || e.canvas.style.height!==r.height+'px'){
+        e.canvas.style.left=x+'px'; e.canvas.style.top=y+'px';
+        e.canvas.style.width=r.width+'px'; e.canvas.style.height=r.height+'px';
+        e.x=x; e.y=y;
+      }
+      e.canvas.style.display='block';
+    });
+  }
+
   function scan(){ raf=0; if(mode===0)return;
     // Drop detached media and their overlay canvases. This also prevents a
     // navigation-heavy page from accumulating stale GPU contexts.
@@ -213,9 +233,11 @@ NSString* LetheMediaUpscalerScript(void) {
     // cover them with our canvas; controlled video stays untouched rather
     // than losing playback/fullscreen/quality controls.
     if(el instanceof HTMLVideoElement && el.controls) return;
+    if(visibilityObserver) visibilityObserver.observe(el);
+    if(resizeObserver) resizeObserver.observe(el);
     setup(el);
   }); }
-  // Coalesce DOM/scroll/resize/load churn into one scan per animation frame.
+  // Coalesce DOM/resize/load churn into one scan per animation frame.
   // Video frames already have their own decoded-frame callback, so an idle
   // page no longer pays for a periodic full-media scan every 50 ms.
   function start(){ if(!raf) raf=requestAnimationFrame(scan); }
@@ -241,8 +263,18 @@ NSString* LetheMediaUpscalerScript(void) {
       return {mode:mode,active:active.length,entries:active};
     }
   };
+  var visibilityObserver = 'IntersectionObserver' in window ? new IntersectionObserver(function(list){
+    list.forEach(function(item){
+      if(item.isIntersecting) setup(item.target);
+      else { var e=entries.get(item.target); if(e) { e.canvas.style.display='none'; } }
+    });
+  }, {root:null,rootMargin:'256px',threshold:0}) : null;
+  var resizeObserver = 'ResizeObserver' in window ? new ResizeObserver(function(list){
+    list.forEach(function(item){ if(entries.has(item.target)) setup(item.target); });
+  }) : null;
   new MutationObserver(function(){start();}).observe(document.documentElement,{subtree:true,childList:true});
-  window.addEventListener('resize',start,{passive:true}); window.addEventListener('scroll',start,{passive:true});
+  window.addEventListener('resize',start,{passive:true});
+  window.addEventListener('scroll',function(){ if(mode!==0) syncGeometry(); },{passive:true});
   document.addEventListener('load',start,true);
   document.addEventListener('loadeddata',start,true);
   start();
