@@ -8,7 +8,16 @@ $Root = Split-Path -Parent $PSScriptRoot
 $Exe = Join-Path $Root "$BuildDir\lethe-win.exe"
 $Dist = Join-Path $Root "dist"
 $Stage = Join-Path $Dist "Lethe-windows-x64"
-$Zip = Join-Path $Dist "Lethe-1.3.4-windows-x64.zip"
+
+# Keep the package name tied to the CMake project version instead of allowing
+# a release bump to silently produce an old-version artifact name.
+$CMake = Get-Content (Join-Path $Root "CMakeLists.txt") -Raw
+$VersionMatch = [regex]::Match($CMake, 'project\(lethe\s+VERSION\s+([0-9.]+)')
+if (-not $VersionMatch.Success) {
+    throw "Unable to determine Lethe version from CMakeLists.txt"
+}
+$Version = $VersionMatch.Groups[1].Value
+$Zip = Join-Path $Dist "Lethe-$Version-windows-x64.zip"
 
 if (-not (Test-Path $Exe)) {
     throw "Missing $Exe. Configure/build the Windows target first."
@@ -19,7 +28,7 @@ New-Item -ItemType Directory -Path $Stage -Force | Out-Null
 Copy-Item $Exe (Join-Path $Stage "Lethe.exe")
 
 @"
-Lethe 1.3.4 - Windows x64
+Lethe $Version - Windows x64
 
 This package contains the Lethe host executable. Microsoft Edge WebView2
 Evergreen Runtime must be installed on the machine; Lethe does not bundle a
