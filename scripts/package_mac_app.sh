@@ -26,6 +26,17 @@ mkdir -p "$RES"
 # bundled below. Frameworks (Cocoa/WebKit/Network) come from the OS.
 scripts/bundle_mac_libs.sh "$APP"
 
+# Remove build-machine OpenSSL rpaths from shipped Mach-O files. The bundled
+# @rpath dependencies must resolve to Contents/Frameworks first; leaving a
+# Homebrew rpath ahead of the app-local rpath can make the hardened runtime
+# load the host's differently-signed OpenSSL instead of the sealed copy.
+while IFS= read -r -d '' macho; do
+  if file -b "$macho" | grep -q 'Mach-O'; then
+    install_name_tool -delete_rpath /opt/homebrew/opt/openssl@3/lib "$macho" 2>/dev/null || true
+    install_name_tool -delete_rpath /usr/local/opt/openssl@3/lib "$macho" 2>/dev/null || true
+  fi
+done < <(find "$APP" -type f -print0)
+
 # HARD ASSERTION: no shipped Mach-O may reference Homebrew anymore.
 # (A smoke test alone cannot catch leaks on the build machine, where the
 # old paths still resolve.)
@@ -40,7 +51,12 @@ if [[ "$LEAKS" != "0" ]]; then
 fi
 echo "[pkg] self-containment assertion passed"
 
-# Ad-hoc sign everything we modified (required on Apple Silicon).
+# Ad-hoc sign every nested Mach-O first, then the bundle. Signing only the
+# outer bundle with --deep is insufficient when a copied Homebrew dylib still
+# carries its original Team ID: the hardened runtime rejects that dependency
+# when the host process has an ad-hoc identity. Re-signing the exact shipped
+# files also makes the resulting bundle deterministic and ready for a later
+# Developer-ID/notarization pass.
 codesign --force --deep --sign - "$APP" 2>&1 | grep -v 'replacing existing signature' || true
 
 # Verify the exact bundle that will enter the DMG.  A successful signing
