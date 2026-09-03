@@ -41,9 +41,13 @@ if(WIN32)
     # WebView2-only target. These flags enable the MSVC compiler/linker
     # mitigations that are independent of WebView2's renderer sandbox.
     if(MSVC)
-        target_compile_options(lethe-win PRIVATE /GS /sdl)
+        # /guard:cf must be present at BOTH compile and link time: the
+        # compiler emits Control Flow Guard metadata/checks and the linker
+        # enables the resulting image policy. Keeping it link-only would make
+        # the existing /GUARD:CF switch substantially less useful.
+        target_compile_options(lethe-win PRIVATE /GS /sdl /guard:cf /guard:ehcont)
         target_link_options(lethe-win PRIVATE
-            /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT /GUARD:CF /CETCOMPAT)
+            /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT /GUARD:CF /GUARD:EHCONT /CETCOMPAT)
     endif()
     target_include_directories(lethe-win PRIVATE ${CMAKE_BINARY_DIR}/generated)
     target_link_libraries(lethe-win PRIVATE
