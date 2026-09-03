@@ -85,20 +85,15 @@ int main(int argc, char** argv) {
         NSArray* dirs = NSSearchPathForDirectoriesInDomains(
             NSApplicationSupportDirectory, NSUserDomainMask, YES);
         NSString* root = [dirs.firstObject stringByAppendingPathComponent:@"Lethe CEF"];
-        // LETHE_CEF_USER_DATA_DIR overrides the profile location so two
-        // runs (bench + interactive, two users of the same checkout) never
-        // fight over one Chromium profile.
-        if (const char* override = std::getenv("LETHE_CEF_USER_DATA_DIR")) {
-            if (*override) root = [NSString stringWithUTF8String:override];
-        }
+        // Keep the profile inside Lethe's Seatbelt write allowlist. An
+        // arbitrary environment-provided path would otherwise become a
+        // sandbox escape hatch: the CEF bootstrap would explicitly grant
+        // itself write access to whatever directory the launcher supplied.
+        // Multiple instances use Chromium's normal per-process/profile
+        // coordination rather than widening the host security boundary.
         [[NSFileManager defaultManager] createDirectoryAtPath:root
             withIntermediateDirectories:YES attributes:nil error:nil];
         setenv("CHROME_USER_DATA_DIR", [root UTF8String] ?: "", 1);
-        // The shared Seatbelt profile (applied by the engine in
-        // ShellBootstrap::init) denies file writes outside its allowlist.
-        // Chromium needs to write its SingletonLock and per-profile caches
-        // into this dir, so hand it to the profile builder.
-        setenv("LETHE_SANDBOX_EXTRA_WRITE_DIRS", [root UTF8String] ?: "", 1);
         // Every feature is a plugin and the settings toggles live in ONE
         // store: the preferences.json the WebKit shell's Settings window
         // (and lethe://plugins) writes. Point the shared bootstrap at it so

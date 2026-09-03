@@ -58,28 +58,6 @@ std::string seatbeltProfile() {
         };
         for (const auto& p : paths) profile += "  (subpath \"" + p + "\")\n";
     }
-    // Engine-specific extra write dirs, colon-separated, set by the shell
-    // before the engine applies the profile (e.g. the CEF shell's user-data
-    // dir, which Chromium needs for its SingletonLock and per-profile caches).
-    // Paths containing quote/backslash characters are rejected to keep the
-    // generated SBPL text valid.
-    if (const char* extra = std::getenv("LETHE_SANDBOX_EXTRA_WRITE_DIRS")) {
-        const std::string s(extra);
-        size_t start = 0;
-        while (true) {
-            const size_t end = s.find(':', start);
-            const std::string p = (end == std::string::npos)
-                ? s.substr(start)
-                : s.substr(start, end - start);
-            if (!p.empty() &&
-                p.find('"') == std::string::npos &&
-                p.find('\\') == std::string::npos) {
-                profile += "  (subpath \"" + p + "\")\n";
-            }
-            if (end == std::string::npos) break;
-            start = end + 1;
-        }
-    }
     profile += ")\n";
     return profile;
 }
