@@ -316,6 +316,25 @@ void PolicyProxyServer::untrackFd(int fd) {
     activeFds_.erase(fd);
 }
 
+void PolicyProxyServer::reapTunnelWorkers() {
+    std::vector<std::thread> finished;
+    {
+        std::lock_guard<std::mutex> lk(tunnelWorkers_mtx_);
+        for (auto it = tunnelWorkers_.begin(); it != tunnelWorkers_.end();) {
+            if (!it->done->load(std::memory_order_acquire)) {
+                ++it;
+                continue;
+            }
+            if (it->thread.joinable()) finished.emplace_back(std::move(it->thread));
+            it = tunnelWorkers_.erase(it);
+        }
+    }
+    // Join outside the bookkeeping lock. Completed threads should return
+    // immediately, and this keeps stop()/new CONNECTs from serializing on
+    // thread destruction.
+    for (auto& t : finished) if (t.joinable()) t.join();
+}
+
 void PolicyProxyServer::stop() {
     if (!running_.exchange(false)) return;
     // Tell in-flight handlers to bail and close their sockets so any worker
@@ -357,7 +376,7 @@ void PolicyProxyServer::stop() {
     workers_.clear();
     {
         std::lock_guard<std::mutex> lk(tunnelWorkers_mtx_);
-        for (auto& t : tunnelWorkers_) if (t.joinable()) t.join();
+        for (auto& t : tunnelWorkers_) if (t.thread.joinable()) t.thread.join();
         tunnelWorkers_.clear();
     }
 }
@@ -523,6 +542,23 @@ void PolicyProxyServer::serveConnection(int clientFd) {
             return;
         }
 
+        // A CONNECT tunnel is deliberately moved off the request pool, but
+        // it still consumes one native thread. Reap finished tunnel threads
+        // and enforce a hard ceiling so a local/page-driven connection storm
+        // cannot turn the proxy into an unbounded thread allocator.
+        reapTunnelWorkers();
+        {
+            std::lock_guard<std::mutex> lk(tunnelWorkers_mtx_);
+            if (tunnelWorkers_.size() >= kMaxTunnelWorkers) {
+                static constexpr char kBusy[] =
+                    "HTTP/1.1 503 Service Unavailable\r\n"
+                    "Connection: close\r\nContent-Length: 0\r\n\r\n";
+                sendAll(clientFd, kBusy, sizeof(kBusy) - 1);
+                ::close(clientFd);
+                return;
+            }
+        }
+
         // CONNECT = raw tunnel: full policy gate, zero TLS termination.
         HttpClient::PolicyDialConfig rawCfg = cfg;
         rawCfg.rawTunnel = true;
@@ -555,20 +591,21 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         // queue immediately. This removes media-induced head-of-line
         // blocking without changing the authenticated/policy-gated tunnel.
         guard.self = nullptr;
-        std::thread tunnel([this, clientFd, stream = std::move(stream)]() mutable {
-            std::atomic<bool> done{false};
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        std::thread tunnel([this, clientFd, stream = std::move(stream), done]() mutable {
+            std::atomic<bool> tunnelDone{false};
             std::thread up([&] {
                 uint8_t buf[262144];
-                while (!done.load(std::memory_order_relaxed) && !isStopping()) {
+                while (!tunnelDone.load(std::memory_order_relaxed) && !isStopping()) {
                     ssize_t r = ::recv(clientFd, buf, sizeof(buf), 0);
                     if (r <= 0) break;
                     if (!stream->write(buf, static_cast<size_t>(r))) break;
                 }
                 stream->shutdownWrite();
-                done.store(true, std::memory_order_relaxed);
+                tunnelDone.store(true, std::memory_order_relaxed);
             });
             uint8_t buf[262144];
-            while (!done.load(std::memory_order_relaxed) && !isStopping()) {
+            while (!tunnelDone.load(std::memory_order_relaxed) && !isStopping()) {
                 // Keep shutdown latency bounded without treating a normal
                 // media/network stall as EOF. A 1 s timeout was too short for
                 // adaptive video (and even some image/TLS delivery gaps): a
@@ -582,16 +619,17 @@ void PolicyProxyServer::serveConnection(int clientFd) {
                 if (!sendAll(clientFd, reinterpret_cast<const char*>(buf),
                              static_cast<size_t>(r))) break;
             }
-            done.store(true, std::memory_order_relaxed);
+            tunnelDone.store(true, std::memory_order_relaxed);
             stream->cancel();
             ::shutdown(clientFd, SHUT_RDWR);
             up.join();
             ::close(clientFd);
             untrackFd(clientFd);
+            done->store(true, std::memory_order_release);
         });
         {
             std::lock_guard<std::mutex> lk(tunnelWorkers_mtx_);
-            tunnelWorkers_.push_back(std::move(tunnel));
+            tunnelWorkers_.push_back(TunnelWorker{std::move(tunnel), std::move(done)});
         }
         return;
     }

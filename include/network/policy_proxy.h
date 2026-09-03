@@ -131,8 +131,14 @@ private:
     // CONNECT tunnels are long-lived (video/audio/WebSocket/etc.). Keep them
     // out of the request worker pool so a media-heavy page cannot consume
     // every policy worker and create a p99.9 queueing tail for new requests.
-    std::vector<std::thread> tunnelWorkers_;
+    struct TunnelWorker {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> done;
+    };
+    std::vector<TunnelWorker> tunnelWorkers_;
     std::mutex tunnelWorkers_mtx_;
+    void reapTunnelWorkers();
+    static constexpr size_t kMaxTunnelWorkers = 128;
     std::deque<int> queue_;
     std::mutex queue_mtx_;
     std::condition_variable queue_cv_;
