@@ -138,7 +138,15 @@ int Engine::initialize(const Config& cfg) {
     
 #if defined(LETHE_SANDBOXING)
     if (config_.sandboxEnabled) {
-        apply_sandbox();
+        // Security is fail-closed: continuing with a browser engine that was
+        // configured for mandatory sandboxing but failed to install it would
+        // silently turn a hard security boundary into a best-effort feature.
+        if (!Sandbox::apply()) {
+            std::cerr << "[lethe] FATAL: mandatory sandbox could not be applied"
+                      << std::endl;
+            running_ = false;
+            return -1;
+        }
     }
 #endif
     

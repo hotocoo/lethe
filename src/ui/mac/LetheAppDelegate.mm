@@ -54,7 +54,13 @@ NSString* LetheMediaUpscalerScript(void) {
   // size. A per-element cap alone still lets a hostile page reserve hundreds
   // of MiB by creating many 16MP overlays.
   var maxActiveEntries = 8;
-  var maxTotalPixels = 33554432; // 32MP aggregate RGBA working set
+  // Account for BOTH the decoded source texture and the output canvas. The
+  // previous guard only charged the output canvas, so eight 8K sources could
+  // still consume hundreds of MiB of GPU-visible texture storage while the
+  // aggregate output budget appeared safe. Keep the whole enhancement layer
+  // inside one explicit working-set budget.
+  var maxTotalPixels = 67108864; // 64MP aggregate source + output working set
+  var maxSourcePixels = 33554432; // 32MP / roughly 8K-class decoded input
   var activePixels = 0;
   var raf = 0;
   var geometryRaf = 0;
@@ -176,7 +182,7 @@ NSString* LetheMediaUpscalerScript(void) {
     // Do not copy pathological decoded surfaces into a WebGL texture. This
     // keeps the enhancement layer bounded even when a page supplies a very
     // large image/video frame; WebKit's normal compositor remains available.
-    if(sw>8192 || sh>8192 || sw*sh>33554432) { if(e) remove(e); return; }
+    if(sw>8192 || sh>8192 || sw*sh>maxSourcePixels) { if(e) remove(e); return; }
     // CSS pixels are not the output resolution on Retina displays. Decide
     // whether scaling is useful from the actual canvas backing dimensions;
     // otherwise a 854x480 video rendered at 2x DPR would incorrectly look
@@ -186,7 +192,11 @@ NSString* LetheMediaUpscalerScript(void) {
       return;
     }
     var oldBudget=e.budgetPixels||0;
-    var newBudget=cw*ch;
+    // Charge source + destination backing stores. This is deliberately a
+    // conservative accounting model: driver-side allocations can exceed the
+    // nominal RGBA dimensions, so staying below a hard pixel ceiling leaves
+    // headroom for WebGL command/state overhead.
+    var newBudget=cw*ch + sw*sh;
     if(activePixels-oldBudget+newBudget>maxTotalPixels){
       if(!oldBudget) return;
       remove(e);
