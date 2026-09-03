@@ -36,6 +36,22 @@ int main(int argc, char** argv) {
     // Load the user's preferences before bootstrap so we can apply the
     // user-defined worker-pool size to the policy proxy at start time.
     LethePreferences* prefs = [LethePreferences shared];
+    // An explicit environment override is useful for e2e/benchmark runs and
+    // must not be overwritten by the persisted UI preference.
+    if (!getenv("LETHE_UPSCALER")) {
+        switch (prefs.upscaler) {
+            case LetheUpscalerLinear:
+                setenv("LETHE_UPSCALER", "linear", 1);
+                break;
+            case LetheUpscalerFSR1:
+            case LetheUpscalerDLSSLike:
+                setenv("LETHE_UPSCALER", "metalfx", 1);
+                break;
+            default:
+                setenv("LETHE_UPSCALER", "none", 1);
+                break;
+        }
+    }
     if (prefs.policyProxyWorkerThreads > 0) {
         // The bootstrap reads this env var; see shell_bootstrap.cc. We set
         // it here so a changed Settings value takes effect on next launch.

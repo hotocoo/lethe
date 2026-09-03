@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(lethe VERSION 0.1.1 LANGUAGES CXX)
+project(lethe VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,6 +59,10 @@ endif()
 
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0")
+    enable_language(OBJCXX)
+    find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
+    find_library(METAL_FRAMEWORK Metal REQUIRED)
+    find_library(METALFX_FRAMEWORK MetalFX REQUIRED)
     # Build for native architecture only (Homebrew libs may be single-arch).
     # Remove this line to build a universal binary if all deps support it.
 endif()
@@ -161,6 +165,11 @@ target_link_libraries(lethe_core PUBLIC
     ZLIB::ZLIB
 )
 
+if(APPLE)
+    target_sources(lethe_core PRIVATE src/renderer/media_upscaler.mm)
+    target_link_libraries(lethe_core PUBLIC ${FOUNDATION_FRAMEWORK} ${METAL_FRAMEWORK} ${METALFX_FRAMEWORK})
+endif()
+
 if(SECCOMP_FOUND)
     target_include_directories(lethe_core PUBLIC ${SECCOMP_INCLUDE_DIRS})
     target_link_libraries(lethe_core PUBLIC ${SECCOMP_LIBRARIES})
@@ -241,6 +250,7 @@ if(BUILD_UI AND APPLE)
             browser/app/main_cef.mm
             browser/app/cef_app_delegate.mm
             browser/app/cef_browser_client.mm
+            browser/app/cef_chrome.mm
             browser/app/cef_automation.mm
             browser/app/cef_render_handler.mm
             browser/app/shell_bootstrap.cc
@@ -332,20 +342,23 @@ if(BUILD_UI AND APPLE)
             PROPERTIES LANGUAGE OBJCXX)
         target_compile_options(lethe-cef-helper PRIVATE
             -fobjc-arc -Wno-deprecated-declarations)
+        target_link_options(lethe-cef-helper PRIVATE
+            "-Wl,-undefined,dynamic_lookup")
+        target_compile_definitions(lethe-cef-helper PRIVATE CEF_USE_SANDBOX)
         target_include_directories(lethe-cef-helper PRIVATE
             ${CMAKE_SOURCE_DIR}/browser
             ${CEF_ROOT} ${CEF_ROOT}/include)
         target_link_libraries(lethe-cef-helper PRIVATE
-            "${CEF_LIB}" "${CEF_WRAPPER_LIB}" ${COCOA_FRAMEWORK})
+            "${CEF_WRAPPER_LIB}" ${COCOA_FRAMEWORK})
         set_target_properties(lethe-cef-helper PROPERTIES
             OUTPUT_NAME "lethe_cef_helper")
 
-        # Post-build: copy the CEF framework + Helper .app into the bundle so
-        # @executable_path/../Frameworks/ resolves at runtime. The framework
-        # must live in BOTH the main bundle's Frameworks/ (so the browser
-        # process finds it at @executable_path/../Frameworks/...) AND the
-        # Helper.app's adjacent Frameworks/ (so the helper binary finds it
-        # at @executable_path/../../Frameworks/...).
+        # Post-build: copy the CEF framework + Helper .app into the bundle.
+        # The browser process uses the framework in the main bundle; each CEF
+        # helper bundle gets an APFS clone of the framework at the relative
+        # location required by CefScopedLibraryLoader. Framework images are
+        # process-local, so these per-helper copies do not duplicate classes
+        # or allocators inside a single process.
         #
         # CEF 151 / Chromium 151 on macOS launches SOME child types from
         # Chrome-style per-type helper bundles derived from the subprocess
@@ -353,11 +366,21 @@ if(BUILD_UI AND APPLE)
         #   <basename> (Renderer).app / (GPU) / (Plugin) / (Alerts)
         # The renderer is the critical one - without its bundle the exec
         # fails silently and every navigation aborts with ERR_ABORTED (-3).
-        # Each per-type bundle gets a clone of the helper binary (APFS
-        # clonefile, so it costs no extra disk) and a relative symlink to
-        # the shared CEF framework one level up.
+        # Each per-type bundle gets APFS clones of both the helper binary and
+        # the CEF framework. A symlink to the shared framework looks attractive
+        # here, but macOS code signing rejects symlink destinations inside an
+        # app bundle (codesign --verify --deep reports "invalid destination for
+        # symbolic link in bundle"). CEF's official helper loader also expects
+        # the framework at this exact per-helper relative path. Cloning keeps
+        # the normal bundle layout while avoiding a second physical copy on
+        # APFS; each helper process loads its own framework image, so there is
+        # no duplicate framework image inside a single process.
         set(LETHE_CEF_HELPER_SUFFIXES "Renderer" "GPU" "Plugin" "Alerts")
         add_custom_command(TARGET lethe-cef POST_BUILD
+            # Remove artifacts from older incremental builds. The diagnostic
+            # probe is no longer part of the shipping CEF bundle.
+            COMMAND ${CMAKE_COMMAND} -E remove
+                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/MacOS/lethe-cef-probe"
             COMMAND ${CMAKE_COMMAND} -E make_directory
                 "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks"
             COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -370,9 +393,6 @@ if(BUILD_UI AND APPLE)
                 "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/MacOS/lethe_cef_helper"
             COMMAND ${CMAKE_COMMAND} -E make_directory
                 "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/Frameworks"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Chromium Embedded Framework.framework"
-                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/Frameworks/Chromium Embedded Framework.framework"
             COMMAND ${CMAKE_COMMAND} -E copy
                 "${CMAKE_SOURCE_DIR}/browser/app/Info_helper.plist.in"
                 "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/Frameworks/Lethe CEF Helper.app/Contents/Info.plist"
@@ -383,9 +403,8 @@ if(BUILD_UI AND APPLE)
         # Per-type helper bundles (see comment above). Chromium derives the
         # per-type path by inserting the " (Type)" suffix into the subprocess
         # path; depending on the build that suffix lands on the BUNDLE stem,
-        # the EXECUTABLE name, or both. Cover every spelling: one real bundle
-        # per suffix carries both executable names, and the bundle-name
-        # spelling is a symlink onto it so both lookups resolve.
+        # the EXECUTABLE name, or both. Cover every spelling with a real,
+        # independently signed bundle so no symlink remains inside the app.
         set(LETHE_CEF_HELPER_BUNDLES "")
         foreach(_suffix IN LISTS LETHE_CEF_HELPER_SUFFIXES)
             string(TOLOWER "${_suffix}" _suffix_lc)
@@ -404,6 +423,13 @@ if(BUILD_UI AND APPLE)
                 "${CMAKE_SOURCE_DIR}/browser/app/Info_helper_type.plist.in"
                 "${_plist}" @ONLY)
             add_custom_command(TARGET lethe-cef POST_BUILD
+                # Remove stale aliases from incremental builds. CMake's
+                # make_directory follows an existing symlink, which would
+                # otherwise leave the old bundle-name alias in place.
+                COMMAND ${CMAKE_COMMAND} -E remove_directory
+                    "${_bundlePath2}"
+                COMMAND ${CMAKE_COMMAND} -E remove_directory
+                    "${_bundlePath}/Contents/Frameworks/Chromium Embedded Framework.framework"
                 COMMAND ${CMAKE_COMMAND} -E make_directory
                     "${_bundlePath}/Contents/MacOS"
                 COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -417,12 +443,25 @@ if(BUILD_UI AND APPLE)
                 COMMAND ${CMAKE_COMMAND} -E copy
                     "${_plist}"
                     "${_bundlePath}/Contents/Info.plist"
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    "../../../Chromium Embedded Framework.framework"
+                COMMAND /bin/cp -Rc
+                    "${CEF_ROOT}/Release/Chromium Embedded Framework.framework"
                     "${_bundlePath}/Contents/Frameworks/Chromium Embedded Framework.framework"
-                COMMAND ${CMAKE_COMMAND} -E create_symlink
-                    "${_bundleName}"
-                    "${_bundlePath2}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${_bundlePath2}/Contents/MacOS"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${_bundlePath2}/Contents/Frameworks"
+                COMMAND /bin/cp -c
+                    "$<TARGET_FILE:lethe-cef-helper>"
+                    "${_bundlePath2}/Contents/MacOS/${_exec}"
+                COMMAND /bin/cp -c
+                    "$<TARGET_FILE:lethe-cef-helper>"
+                    "${_bundlePath2}/Contents/MacOS/${_exec2}"
+                COMMAND ${CMAKE_COMMAND} -E copy
+                    "${_plist}"
+                    "${_bundlePath2}/Contents/Info.plist"
+                COMMAND /bin/cp -Rc
+                    "${CEF_ROOT}/Release/Chromium Embedded Framework.framework"
+                    "${_bundlePath2}/Contents/Frameworks/Chromium Embedded Framework.framework"
                 VERBATIM)
         endforeach()
         list(JOIN LETHE_CEF_HELPER_BUNDLES "," LETHE_CEF_HELPER_BUNDLES_CSV)
@@ -442,35 +481,6 @@ if(BUILD_UI AND APPLE)
         endif()
         install(TARGETS lethe-cef BUNDLE DESTINATION .)
 
-        # ---- CEF diagnosis probe --------------------------------------------
-        # Minimal windowless CEF host with zero Lethe code (no engine, no
-        # policy proxy, no sandbox, no NSApplication): navigates a URL and
-        # prints load end/error. Used to separate "CEF on this machine" from
-        # "the lethe-cef integration" when the browser-info handshake stalls.
-        # Compiled with the exact lethe-cef flags and dropped into the same
-        # bundle so Chromium's helper discovery applies unchanged.
-        add_executable(lethe-cef-probe tools/cef_probe.mm)
-        set_source_files_properties(tools/cef_probe.mm PROPERTIES LANGUAGE OBJCXX)
-        target_compile_options(lethe-cef-probe PRIVATE
-            -fobjc-arc -Wno-deprecated-declarations)
-        # LETHE_PROBE_WITH_BOOTSTRAP: also build the ShellBootstrap variant
-        # (variant E) so the probe can run the engine before CefInitialize
-        # and bisect engine-vs-CEF interactions.
-        target_compile_definitions(lethe-cef-probe PRIVATE
-            LETHE_PROBE_WITH_BOOTSTRAP)
-        target_include_directories(lethe-cef-probe PRIVATE
-            ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src
-            ${CMAKE_SOURCE_DIR}/browser
-            ${CEF_ROOT} ${CEF_ROOT}/include)
-        target_link_libraries(lethe-cef-probe PRIVATE
-            lethe_core ${COCOA_FRAMEWORK} "${CEF_LIB}" "${CEF_WRAPPER_LIB}")
-        add_custom_command(TARGET lethe-cef-probe POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy
-                "$<TARGET_FILE:lethe-cef-probe>"
-                "$<TARGET_BUNDLE_DIR:lethe-cef>/Contents/MacOS/lethe-cef-probe"
-            COMMAND ${LETHE_CODESIGN} --force --sign -
-                "$<TARGET_BUNDLE_DIR:lethe-cef>"
-            VERBATIM)
     endif()
 elseif(BUILD_UI)
     # Linux: GTK3 shell; WebKitGTK engine when its dev package is present,

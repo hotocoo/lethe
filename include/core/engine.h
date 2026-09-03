@@ -30,6 +30,7 @@ struct Config {
     std::string userAgentMode = "standard";
     std::string initialUrl = "";
     bool useHardwareAcceleration = true;
+    MediaUpscalerMode media_upscaler = MediaUpscalerMode::None;
     int maxOpenConnections = 128;
 
     // Private-network isolation (SSRF guard): fetches whose RESOLVED

@@ -76,6 +76,14 @@ static inline NSButton *LetheGhostButton(NSString *symbol,
     NSImage *img = [NSImage imageWithSystemSymbolName:symbol
                              accessibilityDescription:label];
     NSButton *b = [NSButton buttonWithImage:img target:target action:action];
+    // Keep toolbar controls explicitly actionable. AppKit can otherwise
+    // inherit state from toolbar/item validation and render an image-only
+    // control that looks interactive but does not accept mouse activation.
+    b.buttonType = NSButtonTypeMomentaryPushIn;
+    b.enabled = YES;
+    b.target = target;
+    b.action = action;
+    b.refusesFirstResponder = YES;
     b.bezelStyle = NSBezelStyleTexturedRounded;
     b.bordered = NO;                       // ghost: glyph only, no bezel
     b.contentTintColor = [NSColor secondaryLabelColor];

@@ -205,19 +205,19 @@ static void* kLetheMinYKey = &kLetheMinYKey;
             BOOL on = NO;
             id v = [p valueForKey:k];
             if ([v respondsToSelector:@selector(boolValue)]) on = [v boolValue];
-            NSButton* cb = makeCheckbox(self, titles[i], on, @selector(noop:), nil);
+            NSButton* cb = makeCheckbox(self, titles[i], on, @selector(controlChanged:), self);
             placeCheckbox(cb, 20, y - 22, 540);
             _boxes[k] = cb;
             helpText(self, desc[k], y - 36, 540);
             y -= 56;
         }
         sectionHeader(self, @"PRIVACY OF LETHE ITSELF", y); y -= 24;
-        NSButton* tele = makeCheckbox(self, @"Send anonymous usage telemetry", p.telemetry, @selector(noop:), nil);
+        NSButton* tele = makeCheckbox(self, @"Send anonymous usage telemetry", p.telemetry, @selector(controlChanged:), self);
         placeCheckbox(tele, 20, y - 22, 540);
         _boxes[@"telemetry"] = tele;
         helpText(self, @"Off by default. When on, sends a daily ping with no page URLs or identifiers.", y - 36, 540);
         y -= 56;
-        NSButton* crash = makeCheckbox(self, @"Send crash reports", p.crashReports, @selector(noop:), nil);
+        NSButton* crash = makeCheckbox(self, @"Send crash reports", p.crashReports, @selector(controlChanged:), self);
         placeCheckbox(crash, 20, y - 22, 540);
         _boxes[@"crashReports"] = crash;
         helpText(self, @"Off by default. When on, sends stack traces without personally identifiable information.", y - 36, 540);
@@ -231,7 +231,11 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         [p setValue:@(on) forKey:k];
     }
 }
-- (void)noop:(id)sender { (void)sender; }
+- (void)controlChanged:(id)sender {
+    (void)sender;
+    [self saveToPreferences:[LethePreferences shared]];
+    [[LethePreferences shared] save];
+}
 @end
 
 #pragma mark - Category: Permissions
@@ -368,19 +372,19 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         _dnsField.bezelStyle = NSTextFieldRoundedBezel;
         _dnsField.placeholderString = @"https://cloudflare-dns.com/dns-query";
         [self addSubview:_dnsField]; y -= 36;
-        _dohCacheBox = makeCheckbox(self, @"DoH shared cache (one answer shared by gate, reader, proxy)", p.dohSharedCache, @selector(noop:), nil);
+        _dohCacheBox = makeCheckbox(self, @"DoH shared cache (one answer shared by gate, reader, proxy)", p.dohSharedCache, @selector(controlChanged:), self);
         placeCheckbox(_dohCacheBox, 20, y - 22, 540);
         y -= 28;
-        _dohPoolBox = makeCheckbox(self, @"DoH keep-alive pool (reuses TLS to the provider)", p.dohPool, @selector(noop:), nil);
+        _dohPoolBox = makeCheckbox(self, @"DoH keep-alive pool (reuses TLS to the provider)", p.dohPool, @selector(controlChanged:), self);
         placeCheckbox(_dohPoolBox, 20, y - 22, 540);
         y -= 36;
 
         sectionHeader(self, @"PROXY", y); y -= 24;
-        _policyProxyBox = makeCheckbox(self, @"Route engine traffic through the local policy proxy", p.policyProxy, @selector(noop:), nil);
+        _policyProxyBox = makeCheckbox(self, @"Route engine traffic through the local policy proxy", p.policyProxy, @selector(controlChanged:), self);
         placeCheckbox(_policyProxyBox, 20, y - 22, 540);
         helpText(self, @"Required for subresource enforcement. Disabling reduces protection to navigation-gate only.", y - 36, 540);
         y -= 56;
-        _isolatePrivateBox = makeCheckbox(self, @"Isolate private network ranges (SSRF prevention)", p.isolatePrivateNetworks, @selector(noop:), nil);
+        _isolatePrivateBox = makeCheckbox(self, @"Isolate private network ranges (SSRF prevention)", p.isolatePrivateNetworks, @selector(controlChanged:), self);
         placeCheckbox(_isolatePrivateBox, 20, y - 22, 540);
         y -= 28;
         NSTextField* pl = [NSTextField labelWithString:@"Comma-separated host:port pairs that may bypass private-network isolation."];
@@ -403,7 +407,11 @@ static void* kLetheMinYKey = &kLetheMinYKey;
     p.isolatePrivateNetworks = _isolatePrivateBox.state == NSControlStateValueOn;
     p.proxyAllow = _proxyAllowField.stringValue ?: @"";
 }
-- (void)noop:(id)sender { (void)sender; }
+- (void)controlChanged:(id)sender {
+    (void)sender;
+    [self saveToPreferences:[LethePreferences shared]];
+    [[LethePreferences shared] save];
+}
 @end
 
 #pragma mark - Category: Engine
@@ -424,11 +432,11 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         LethePreferences* p = [LethePreferences shared];
         CGFloat y = frame.size.height - 40;
         sectionHeader(self, @"ENGINE", y); y -= 24;
-        _jsBox = makeCheckbox(self, @"JavaScript", p.javaScript, @selector(noop:), nil);
+        _jsBox = makeCheckbox(self, @"JavaScript", p.javaScript, @selector(controlChanged:), self);
         placeCheckbox(_jsBox, 20, y - 22, 540);
         helpText(self, @"Disable to break most modern sites. Use only for known-bad pages or untrusted content.", y - 36, 540);
         y -= 56;
-        _hwBox = makeCheckbox(self, @"Hardware acceleration", p.hardwareAcceleration, @selector(noop:), nil);
+        _hwBox = makeCheckbox(self, @"Hardware acceleration", p.hardwareAcceleration, @selector(controlChanged:), self);
         placeCheckbox(_hwBox, 20, y - 22, 540);
         helpText(self, @"Off = software rendering. Useful for debugging GPU-related rendering bugs; large perf cost on real pages.", y - 36, 540);
         y -= 56;
@@ -436,7 +444,7 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         // ---- Performance knobs (user-defined) ----------------------------
         sectionHeader(self, @"PERFORMANCE", y); y -= 24;
         _highRefreshBox = makeCheckbox(self, @"Prefer high-refresh rate (60 / 90 / 120 / 144 Hz)",
-            p.preferHighRefresh, @selector(noop:), nil);
+            p.preferHighRefresh, @selector(controlChanged:), self);
         placeCheckbox(_highRefreshBox, 20, y - 22, 540);
         helpText(self, @"Asks the compositor to schedule animation frames against the display's native rate. On a 144 Hz panel this is roughly a 2x MotionMark score over the conservative 60 Hz tier.", y - 36, 540);
         y -= 60;
@@ -459,11 +467,11 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         upLbl.font = [NSFont systemFontOfSize:12];
         upLbl.frame = NSMakeRect(20, y - 20, 200, 20); [self addSubview:upLbl];
         _upscalerPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(220, y - 24, 200, 24)];
-        [_upscalerPopup addItemsWithTitles:@[@"None (bit-exact)", @"Linear (fast)", @"FSR 1.0 (high quality)", @"DLSS-like (sharp text)"]];
-        _upscalerPopup.target = nil; _upscalerPopup.action = @selector(noop:);
+        [_upscalerPopup addItemsWithTitles:@[@"None (bit-exact)", @"Linear (fast)", @"MetalFX / high quality", @"MetalFX / high quality + sharp"]];
+        _upscalerPopup.target = self; _upscalerPopup.action = @selector(controlChanged:);
         [_upscalerPopup selectItemAtIndex:(NSInteger)p.upscaler];
         [self addSubview:_upscalerPopup];
-        NSTextField* upHelp = [NSTextField labelWithString:@"Applied to the reader viewport and the new-tab page. Web content itself renders 1:1 at the WKWebView's resolution."];
+        NSTextField* upHelp = [NSTextField labelWithString:@"Upscales eligible images and video with a GPU WebGL reconstruction path; native RGBA media frames use MetalFX on supported Macs. Cross-origin media that WebGL cannot sample and videos with native controls stay untouched."];
         upHelp.font = [NSFont systemFontOfSize:11];
         upHelp.textColor = [NSColor tertiaryLabelColor];
         upHelp.frame = NSMakeRect(20, y - 36, 540, 16); [self addSubview:upHelp];
@@ -474,7 +482,7 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         aaLbl.frame = NSMakeRect(20, y - 20, 200, 20); [self addSubview:aaLbl];
         _aaPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(220, y - 24, 200, 24)];
         [_aaPopup addItemsWithTitles:@[@"Off", @"MSAA 2x", @"MSAA 4x (default)", @"MSAA 8x"]];
-        _aaPopup.target = nil; _aaPopup.action = @selector(noop:);
+        _aaPopup.target = self; _aaPopup.action = @selector(controlChanged:);
         NSInteger aaIndex = 0;
         if (p.antiAliasing == 2) aaIndex = 1;
         else if (p.antiAliasing == 4) aaIndex = 2;
@@ -502,7 +510,7 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         y -= 56;
 
         sectionHeader(self, @"ENGINE CHOICE", y); y -= 24;
-        NSTextField* h = [NSTextField labelWithString:@"v0.1.1 ships the system WebKit (AppKit + WKWebView) only. The CEF (Chromium / Blink) shell is built when CMake is configured with -DLETHE_WITH_CEF=ON and the CEF binary distribution is at third_party/cef/."];
+        NSTextField* h = [NSTextField labelWithString:@"v1.0.0 ships system WebKit and optional Blink with a hardened network and sandbox stack."];
         h.font = [NSFont systemFontOfSize:11]; h.textColor = [NSColor tertiaryLabelColor];
         h.frame = NSMakeRect(20, y, 540, 40);
         h.lineBreakMode = NSLineBreakByWordWrapping;
@@ -524,7 +532,11 @@ static void* kLetheMinYKey = &kLetheMinYKey;
     p.policyProxyWorkerThreads = [_workerThreadsField.stringValue integerValue];
     if (p.policyProxyWorkerThreads < 0) p.policyProxyWorkerThreads = 0;
 }
-- (void)noop:(id)sender { (void)sender; }
+- (void)controlChanged:(id)sender {
+    (void)sender;
+    [self saveToPreferences:[LethePreferences shared]];
+    [[LethePreferences shared] save];
+}
 @end
 
 #pragma mark - Category: Shortcuts
@@ -544,7 +556,7 @@ static void* kLetheMinYKey = &kLetheMinYKey;
     return self;
 }
 - (NSString*)shortcutList {
-    return @"Keyboard shortcuts (v0.1.1):\n\n"
+    return @"Keyboard shortcuts (v1.0.0):\n\n"
            @"  Tabs and windows\n"
            @"    Cmd+T            New tab\n"
            @"    Cmd+W            Close current tab / window\n"
@@ -655,7 +667,7 @@ static void* kLetheMinYKey = &kLetheMinYKey;
                     on = reg.enabled(p.id) ? YES : NO;
                 }
                 NSButton* cb = makeCheckbox(self, title, on,
-                                            @selector(noop:), nil);
+                                            @selector(controlChanged:), self);
                 placeCheckbox(cb, 20, y - 22, 540);
                 _switches[pid] = cb;
                 helpText(self, @(p.description.c_str()), y - 36, 540);
@@ -677,7 +689,7 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         for (LethePluginScript* jp in [[LethePluginLoader shared] scanPlugins]) {
             NSString* title = jp.name.length ? jp.name : jp.fileName;
             NSButton* cb = makeCheckbox(self, title, jp.enabled,
-                                        @selector(noop:), nil);
+                                        @selector(controlChanged:), self);
             placeCheckbox(cb, 20, y - 22, 540);
             _jsSwitches[jp.fileName] = cb;
             NSString* d = jp.pluginDescription.length
@@ -727,7 +739,11 @@ static void* kLetheMinYKey = &kLetheMinYKey;
     }
     p.pluginOverrides = ov;
 }
-- (void)noop:(id)sender { (void)sender; }
+- (void)controlChanged:(id)sender {
+    (void)sender;
+    [self saveToPreferences:[LethePreferences shared]];
+    [[LethePreferences shared] save];
+}
 @end
 
 #pragma mark - Window controller

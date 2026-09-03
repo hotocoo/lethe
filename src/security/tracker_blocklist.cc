@@ -103,14 +103,43 @@ std::string trackerContentRulesJson(const TrackerBlocklist& list) {
         json += "{\"trigger\":{\"url-filter\":\"" + jsonEscape(regex) +
                 "\",\"load-type\":[\"third-party\"]},\"action\":{\"type\":\"block\"}}";
     };
-    for (const auto& d : list.domains) {
-        // Host boundary: the domain itself or any subdomain, then the end of
-        // the authority (path, port or end of string).
-        rule("^https?://([^/]+\\.)?" + regexEscape(d) + "[/:]");
+
+    // Use WebKit's native domain matcher for the domain list instead of
+    // making every subresource run through a large regular-expression
+    // alternation. `if-domain` is compiled as a domain lookup and still
+    // combines with the same third-party predicate, so it preserves the
+    // previous semantics while taking the URL-regex engine out of the hot
+    // path for ordinary tracker-host checks.
+    if (!list.domains.empty()) {
+        if (!first) json += ",";
+        first = false;
+        // Keep the mandatory URL filter as small as possible. `.*` forces
+        // WebKit's general URL-regex matcher to consider the complete URL
+        // for every resource before it can apply the native if-domain index.
+        // A web-origin prefix is sufficient for this rule and gives the
+        // engine a bounded, anchored regex while preserving http/https
+        // coverage.
+        json += "{\"trigger\":{\"url-filter\":\"^https?://\",\"if-domain\":[";
+        for (size_t i = 0; i < list.domains.size(); ++i) {
+            if (i) json += ",";
+            // A leading '*' means the listed registrable domain and every
+            // subdomain, matching the old `([^/]+\\.)?domain` expression.
+            json += "\"*" + jsonEscape(list.domains[i]) + "\"";
+        }
+        json += "],\"load-type\":[\"third-party\"]},\"action\":{\"type\":\"block\"}}";
     }
+
+    // Path entries cannot be expressed by if-domain. WebKit's content
+    // blocker regex dialect does not support disjunctions (`|`), so do not
+    // combine these entries into one alternation: that causes the entire
+    // path-rule set to be rejected and silently drops those protections.
+    // There are intentionally only a small number of path-specific entries,
+    // so one anchored rule per entry is both correct and bounded.
     for (const auto& p : list.pathPatterns) {
         const size_t slash = p.find('/');
-        rule("^https?://([^/]+\\.)?" + regexEscape(p.substr(0, slash)) +
+        if (slash == std::string::npos) continue;
+        rule("^https?://(?:[^/]+\\.)?" +
+             regexEscape(p.substr(0, slash)) +
              regexEscape(p.substr(slash)));
     }
     json += "]";
@@ -128,7 +157,10 @@ std::string trackerRulesIdentifier(const TrackerBlocklist& list) {
     for (const auto& d : list.domains) mix(d);
     for (const auto& p : list.pathPatterns) mix("/" + p);
     static const char* hex = "0123456789abcdef";
-    std::string id = "lethe-trackers-v1-";
+    // Bump the format identifier because the compiled representation changed
+    // from one rule per entry to grouped regexes. Reusing the old identifier
+    // would make WebKit load a stale compiled filter from disk.
+    std::string id = "lethe-trackers-v2-";
     for (int i = 60; i >= 0; i -= 4) id += hex[(h >> i) & 15];
     return id;
 }

@@ -1,7 +1,9 @@
 #include "network/policy_proxy.h"
 
 #include <arpa/inet.h>
+#include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <openssl/rand.h>
 #include <cctype>
 #include <cstdlib>
@@ -9,7 +11,10 @@
 #include <iostream>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
+#include <string_view>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <thread>
 #include <unistd.h>
 
@@ -18,6 +23,7 @@ namespace lethe {
 namespace {
 
 constexpr size_t kMaxHeadBytes = 64 * 1024;
+constexpr size_t kMaxQueuedConnections = 256;
 
 std::string forbiddenResponse(const std::string& reason) {
     std::string body = "Blocked by Lethe policy: " + reason + "\n";
@@ -62,12 +68,15 @@ std::string base64Encode(const std::string& in) {
     return out;
 }
 
-// Case-insensitive header lookup in a request head; "" when absent.
-std::string headerValue(const std::string& head, const std::string& name) {
+// Case-insensitive header lookup without allocating. The returned view is
+// valid only while `head` remains alive; request authentication is the hot
+// path, so avoid constructing a temporary std::string for every connection.
+std::string_view headerValueView(std::string_view head, std::string_view name) {
     size_t pos = head.find("\r\n");
     while (pos != std::string::npos && pos + 2 < head.size()) {
         const size_t end = head.find("\r\n", pos + 2);
-        const std::string line = head.substr(pos + 2, end == std::string::npos ? std::string::npos : end - pos - 2);
+        const size_t lineEnd = end == std::string::npos ? head.size() : end;
+        const std::string_view line = head.substr(pos + 2, lineEnd - pos - 2);
         if (line.size() > name.size() + 1 && line[name.size()] == ':') {
             bool match = true;
             for (size_t i = 0; i < name.size(); i++) {
@@ -80,28 +89,106 @@ std::string headerValue(const std::string& head, const std::string& name) {
                 return line.substr(v);
             }
         }
+        if (end == std::string::npos) break;
         pos = end;
     }
-    return "";
+    return {};
 }
 
 bool sendAll(int fd, const char* p, size_t n) {
     size_t off = 0;
     while (off < n) {
         ssize_t w = ::send(fd, p + off, n - off, MSG_NOSIGNAL);
+        if (w < 0 && errno == EINTR) continue;
         if (w <= 0) return false;
         off += static_cast<size_t>(w);
     }
     return true;
 }
 
-// Read until CRLFCRLF or cap. False on EOF/error/oversize.
-// Reads in 4KB chunks for efficiency instead of byte-by-byte.
+// Send a response head and body without first concatenating them. Most proxy
+// responses have two buffers already (generated headers + HttpClient body),
+// so writev() removes one syscall and avoids another potentially-large copy.
+bool sendAllParts(int fd, const char* p1, size_t n1,
+                  const char* p2, size_t n2) {
+    iovec iov[2] = {
+        {const_cast<char*>(p1), n1},
+        {const_cast<char*>(p2), n2},
+    };
+    int count = (n1 != 0 ? 1 : 0) + (n2 != 0 ? 1 : 0);
+    if (count == 0) return true;
+    int first = 0;
+    if (n1 == 0) iov[0] = iov[1], first = 0;
+    while (count > 0) {
+        ssize_t w = ::writev(fd, iov + first, count);
+        if (w < 0 && errno == EINTR) continue;
+        if (w <= 0) return false;
+        size_t left = static_cast<size_t>(w);
+        while (count > 0 && left >= iov[first].iov_len) {
+            left -= iov[first].iov_len;
+            ++first;
+            --count;
+        }
+        if (count > 0 && left != 0) {
+            auto* base = static_cast<char*>(iov[first].iov_base);
+            iov[first].iov_base = base + left;
+            iov[first].iov_len -= left;
+        }
+    }
+    return true;
+}
+
+bool isHopByHopHeader(std::string_view name) {
+    if (name.size() == 10) {
+        constexpr std::string_view kConnection = "connection";
+        bool match = true;
+        for (size_t i = 0; i < name.size(); ++i)
+            match &= ::tolower(static_cast<unsigned char>(name[i])) == kConnection[i];
+        if (match) return true;
+    }
+    if (name.size() == 10) {
+        constexpr std::string_view kKeepAlive = "keep-alive";
+        bool match = true;
+        for (size_t i = 0; i < name.size(); ++i)
+            match &= ::tolower(static_cast<unsigned char>(name[i])) == kKeepAlive[i];
+        if (match) return true;
+    }
+    if (name.size() == 17) {
+        constexpr std::string_view kTransferEncoding = "transfer-encoding";
+        bool match = true;
+        for (size_t i = 0; i < name.size(); ++i)
+            match &= ::tolower(static_cast<unsigned char>(name[i])) == kTransferEncoding[i];
+        if (match) return true;
+    }
+    if (name.size() == 14) {
+        constexpr std::string_view kContentLength = "content-length";
+        bool match = true;
+        for (size_t i = 0; i < name.size(); ++i)
+            match &= ::tolower(static_cast<unsigned char>(name[i])) == kContentLength[i];
+        if (match) return true;
+    }
+    return false;
+}
+
+// Read until CRLFCRLF or cap. False on EOF/error/oversize/timeout.
+// Reads in 4KB chunks for efficiency instead of byte-by-byte. The bounded
+// wait is important because this socket is serviced by a fixed worker pool:
+// a local peer must not be able to pin every worker with a slowloris header.
 bool readHead(int fd, std::string& out) {
     out.clear();
     char buf[4096];
+    constexpr int kHeaderTimeoutMs = 5000;
     while (out.size() < kMaxHeadBytes) {
-        ssize_t r = ::recv(fd, buf, sizeof(buf), 0);
+        struct pollfd pfd {fd, POLLIN, 0};
+        int ready;
+        do {
+            ready = ::poll(&pfd, 1, kHeaderTimeoutMs);
+        } while (ready < 0 && errno == EINTR);
+        if (ready <= 0 || !(pfd.revents & POLLIN)) return false;
+        const size_t remaining = kMaxHeadBytes - out.size();
+        const size_t want = remaining < sizeof(buf) ? remaining : sizeof(buf);
+        ssize_t r = ::recv(fd, buf, want, 0);
+        if (r < 0 && errno == EINTR) continue;
         if (r <= 0) return false;
         out.append(buf, static_cast<size_t>(r));
         // Check for CRLFCRLF at the end
@@ -138,6 +225,7 @@ std::string PolicyProxyServer::basicCredentialFor(const std::string& token) {
 
 bool PolicyProxyServer::start(const Options& options) {
     opts_ = options;
+    stopping_.store(false, std::memory_order_relaxed);
     expectedAuthCredential_.clear();
     if (!opts_.authToken.empty()) {
         expectedAuthCredential_ = basicCredentialFor(opts_.authToken);
@@ -190,7 +278,19 @@ bool PolicyProxyServer::start(const Options& options) {
     workerCount_ = opts_.workerThreads;
     if (workerCount_ == 0) {
         unsigned hc = std::thread::hardware_concurrency();
-        workerCount_ = hc == 0 ? 8 : (hc < 4 ? 4 : hc);
+        // Browser HTTPS uses one blocking CONNECT splice per live origin.
+        // Eight workers can therefore be exhausted by a single media-heavy
+        // page (YouTube commonly keeps more than eight tunnels alive), which
+        // starves the next top-level navigation even though the browser is
+        // otherwise healthy. Keep the pool bounded, but give a browser enough
+        // concurrent tunnels to avoid head-of-line blocking.
+        // Long-lived CONNECT tunnels (video/audio, WebSocket, HTTP/2) hold a
+        // worker for the lifetime of the tunnel. A 16-thread ceiling lets a
+        // media-heavy Chromium page consume the entire pool and push an
+        // unrelated navigation behind the queue. M4-class hosts have ample
+        // memory for the additional stacks; cap at 32 to avoid scheduler
+        // thrash while materially reducing this p99.9 head-of-line stall.
+        workerCount_ = hc == 0 ? 32 : std::min<size_t>(32, std::max<size_t>(16, hc * 2));
     }
     // Cap at a sane number: each worker is a real thread. Past ~32 the
     // scheduler itself becomes the bottleneck.
@@ -226,10 +326,13 @@ void PolicyProxyServer::stop() {
     {
         std::lock_guard<std::mutex> lk(activeFds_mtx_);
         for (int fd : activeFds_) {
+            // Only shutdown here. The serving worker owns the descriptor and
+            // will close it on every exit path. Closing it from stop() creates
+            // an fd-reuse race: another socket can acquire the same integer
+            // before the worker reaches its final close(), causing an
+            // unrelated live connection to be closed.
             ::shutdown(fd, SHUT_RDWR);
-            ::close(fd);
         }
-        activeFds_.clear();
     }
     if (listenFd_ >= 0) {
         ::shutdown(listenFd_, SHUT_RDWR);
@@ -237,17 +340,26 @@ void PolicyProxyServer::stop() {
         listenFd_ = -1;
     }
     if (acceptThread_.joinable()) acceptThread_.join();
-    // Wake all workers and tell them to drain. A sentinel -1 fd tells them
-    // to exit once the queue is empty (we still close any real fds the
-    // workers were handling).
+    // No queued fd is tracked until a worker starts serving it. Drain and
+    // close those descriptors here; otherwise shutdown can leave accepted
+    // clients alive behind the sentinel queue entries.
     {
         std::lock_guard<std::mutex> lk(queue_mtx_);
+        for (int fd : queue_) {
+            if (fd >= 0) ::close(fd);
+        }
+        queue_.clear();
         running_.store(false);
         for (size_t i = 0; i < workers_.size(); ++i) queue_.push_back(-1);
     }
     queue_cv_.notify_all();
     for (auto& t : workers_) if (t.joinable()) t.join();
     workers_.clear();
+    {
+        std::lock_guard<std::mutex> lk(tunnelWorkers_mtx_);
+        for (auto& t : tunnelWorkers_) if (t.joinable()) t.join();
+        tunnelWorkers_.clear();
+    }
 }
 
 void PolicyProxyServer::acceptLoop() {
@@ -256,6 +368,19 @@ void PolicyProxyServer::acceptLoop() {
         if (fd < 0) break;
         {
             std::lock_guard<std::mutex> lk(queue_mtx_);
+            if (!running_ || isStopping()) {
+                ::close(fd);
+                continue;
+            }
+            if (queue_.size() >= kMaxQueuedConnections) {
+                static constexpr char kBusy[] =
+                    "HTTP/1.1 503 Service Unavailable\r\n"
+                    "Connection: close\r\n"
+                    "Content-Length: 0\r\n\r\n";
+                sendAll(fd, kBusy, sizeof(kBusy) - 1);
+                ::close(fd);
+                continue;
+            }
             queue_.push_back(fd);
         }
         queue_cv_.notify_one();
@@ -272,6 +397,10 @@ void PolicyProxyServer::workerLoop() {
             queue_.pop_front();
         }
         if (fd == -1) return;  // sentinel: shutdown
+        if (isStopping()) {
+            ::close(fd);
+            continue;
+        }
         serveConnection(fd);
     }
 }
@@ -296,14 +425,16 @@ void PolicyProxyServer::serveConnection(int clientFd) {
     struct FdGuard {
         PolicyProxyServer* self;
         int fd;
-        ~FdGuard() { self->untrackFd(fd); }
+        ~FdGuard() { if (self) self->untrackFd(fd); }
     } guard{this, clientFd};
     trackFd(clientFd);
     // Loopback leg of the tunnel: engine <-> proxy. Small TLS records must
     // not sit in Nagle's buffer waiting for an ACK.
     int nodelay = 1;
     ::setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
-    std::string head, method, target;
+    std::string head;
+    std::string_view method;
+    std::string_view target;
     // Engines (CFNetwork, libsoup) do not remember proxy credentials across
     // connections: every new connection opens with an unauthenticated
     // request, gets 407, then retries WITH the credential. Serve that retry
@@ -315,7 +446,8 @@ void PolicyProxyServer::serveConnection(int clientFd) {
             return;
         }
         const size_t lineEnd = head.find("\r\n");
-        const std::string line = head.substr(0, lineEnd);
+        const std::string_view line(head.data(),
+                                    lineEnd == std::string::npos ? head.size() : lineEnd);
         const size_t sp1 = line.find(' ');
         if (sp1 == std::string::npos) {
             ::close(clientFd);
@@ -323,26 +455,31 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         }
         const size_t sp2 = line.find(' ', sp1 + 1);
         method = line.substr(0, sp1);
-        target = sp2 == std::string::npos ? "" : line.substr(sp1 + 1, sp2 - sp1 - 1);
+        target =
+            sp2 == std::string::npos ? std::string_view{} :
+            line.substr(sp1 + 1, sp2 - sp1 - 1);
 
         // Authenticate FIRST: an unauthenticated peer gets no policy work,
         // no DoH traffic and no upstream socket - nothing it can measure.
-        // Chromium strips Proxy-Authorization out of CONNECT tunnel requests
-        // (it belongs to the auth system), so the CEF shell also stamps the
-        // same per-launch credential into X-Lethe-Proxy-Auth, which survives
-        // the tunnel. Either header authenticates; both terminate here and
-        // are never forwarded upstream.
+        // Chromium owns Proxy-Authorization for CONNECT and CEF does not
+        // expose a safe way to pre-stamp it on every new proxy connection.
+        // Do not replace it with a normal request header: for HTTPS that
+        // header would travel inside the end-to-end tunnel to the origin.
         if (opts_.authToken.empty()) break;
-        std::string presented = headerValue(head, "Proxy-Authorization");
+        std::string_view presented = headerValueView(head, "Proxy-Authorization");
         if (presented.empty())
-            presented = headerValue(head, "X-Lethe-Proxy-Auth");
+            presented = headerValueView(head, "X-Lethe-Proxy-Auth");
         const std::string& expected = expectedAuthCredential_;
         bool ok = presented.size() == expected.size();
         // Constant-time compare: a local attacker could otherwise time the
         // prefix match byte by byte.
         unsigned diff = ok ? 0 : 1;
-        for (size_t i = 0; ok && i < expected.size(); i++)
-            diff |= static_cast<unsigned>(presented[i] ^ expected[i]);
+        for (size_t i = 0; i < expected.size(); i++) {
+            const unsigned char actual =
+                i < presented.size() ? static_cast<unsigned char>(presented[i]) : 0;
+            diff |= static_cast<unsigned>(actual ^
+                                          static_cast<unsigned char>(expected[i]));
+        }
         if (diff == 0) break;
         // A wrong (not merely absent) credential is a foreign process
         // probing - always logged. The empty first request is the normal
@@ -365,12 +502,26 @@ void PolicyProxyServer::serveConnection(int clientFd) {
 
     if (method == "CONNECT") {
         const size_t colon = target.rfind(':');
-        const std::string host = colon == std::string::npos
-                                     ? target
-                                     : target.substr(0, colon);
-        const int port = colon == std::string::npos
-                             ? 443
-                             : std::atoi(target.c_str() + colon + 1);
+        const std::string_view hostView = colon == std::string::npos
+                                              ? target
+                                              : target.substr(0, colon);
+        const std::string host(hostView);
+        int port = 443;
+        if (colon != std::string::npos) {
+            const std::string_view portView = target.substr(colon + 1);
+            const char* first = portView.data();
+            const char* last = first + portView.size();
+            const auto parsed = std::from_chars(first, last, port);
+            if (parsed.ec != std::errc{} || parsed.ptr != last || port < 1 || port > 65535)
+                port = -1;
+        }
+
+        if (host.empty() || port < 1) {
+            const std::string resp = forbiddenResponse("invalid CONNECT target");
+            sendAll(clientFd, resp.data(), resp.size());
+            ::close(clientFd);
+            return;
+        }
 
         // CONNECT = raw tunnel: full policy gate, zero TLS termination.
         HttpClient::PolicyDialConfig rawCfg = cfg;
@@ -398,33 +549,50 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         sendAll(clientFd,
                 "HTTP/1.1 200 Connection Established\r\n\r\n", 39);
 
-        // Splice both directions until either side closes. The upstream
-        // direction runs on its own thread; downstream here.
-        std::atomic<bool> done{false};
-        std::thread up([&] {
+        // Long-lived CONNECT tunnels must not occupy a request worker for
+        // their entire lifetime. Handoff the bidirectional splice to a
+        // separately joined tunnel thread, then return this worker to the
+        // queue immediately. This removes media-induced head-of-line
+        // blocking without changing the authenticated/policy-gated tunnel.
+        guard.self = nullptr;
+        std::thread tunnel([this, clientFd, stream = std::move(stream)]() mutable {
+            std::atomic<bool> done{false};
+            std::thread up([&] {
+                uint8_t buf[262144];
+                while (!done.load(std::memory_order_relaxed) && !isStopping()) {
+                    ssize_t r = ::recv(clientFd, buf, sizeof(buf), 0);
+                    if (r <= 0) break;
+                    if (!stream->write(buf, static_cast<size_t>(r))) break;
+                }
+                stream->shutdownWrite();
+                done.store(true, std::memory_order_relaxed);
+            });
             uint8_t buf[262144];
-            while (!done.load(std::memory_order_relaxed) &&
-                   !isStopping()) {
-                ssize_t r = ::recv(clientFd, buf, sizeof(buf), 0);
+            while (!done.load(std::memory_order_relaxed) && !isStopping()) {
+                // Keep shutdown latency bounded without treating a normal
+                // media/network stall as EOF. A 1 s timeout was too short for
+                // adaptive video (and even some image/TLS delivery gaps): a
+                // quiet upstream interval was mapped to -1 and the tunnel
+                // was closed as if the origin had ended it. stop() already
+                // calls stream->cancel(), so a 5 s read timeout does not
+                // compromise shutdown latency while materially improving
+                // long-lived media reliability.
+                ssize_t r = stream->read(buf, sizeof(buf), 5000);
                 if (r <= 0) break;
-                if (!stream->write(buf, static_cast<size_t>(r))) break;
+                if (!sendAll(clientFd, reinterpret_cast<const char*>(buf),
+                             static_cast<size_t>(r))) break;
             }
-            stream->shutdownWrite();
             done.store(true, std::memory_order_relaxed);
+            stream->cancel();
+            ::shutdown(clientFd, SHUT_RDWR);
+            up.join();
+            ::close(clientFd);
+            untrackFd(clientFd);
         });
-        uint8_t buf[262144];
-        while (!done.load(std::memory_order_relaxed) && !isStopping()) {
-            ssize_t r = stream->read(buf, sizeof(buf), 30000);
-            if (r <= 0) break;
-            if (!sendAll(clientFd,
-                         reinterpret_cast<const char*>(buf),
-                         static_cast<size_t>(r)))
-                break;
+        {
+            std::lock_guard<std::mutex> lk(tunnelWorkers_mtx_);
+            tunnelWorkers_.push_back(std::move(tunnel));
         }
-        done.store(true, std::memory_order_relaxed);
-        ::shutdown(clientFd, SHUT_RDWR);
-        up.join();
-        ::close(clientFd);
         return;
     }
 
@@ -479,24 +647,20 @@ void PolicyProxyServer::serveConnection(int clientFd) {
         return;
     }
 
-    std::string out =
+    std::string out;
+    out.reserve(512);
+    out +=
         "HTTP/1.1 " + std::to_string(resp.statusCode) + " OK\r\n";
     for (const auto& h : resp.headers) {
-        std::string lower = h.first;
-        for (auto& ch : lower) ch = static_cast<char>(::tolower(ch));
         // Hop-by-hop and framing headers are re-derived, never forwarded.
-        if (lower == "connection" || lower == "keep-alive" ||
-            lower == "transfer-encoding" || lower == "content-length")
+        if (isHopByHopHeader(h.first))
             continue;
         out += h.first + ": " + h.second + "\r\n";
     }
     out += "Content-Length: " + std::to_string(resp.body.size()) + "\r\n";
     out += "Connection: close\r\n\r\n";
-    sendAll(clientFd, out.data(), out.size());
-    if (!resp.body.empty())
-        sendAll(clientFd,
-                reinterpret_cast<const char*>(resp.body.data()),
-                resp.body.size());
+    sendAllParts(clientFd, out.data(), out.size(),
+                 reinterpret_cast<const char*>(resp.body.data()), resp.body.size());
     ::close(clientFd);
 }
 

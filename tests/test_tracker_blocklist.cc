@@ -51,21 +51,21 @@ LETHE_TEST_CASE(TrackerBlocklist_ContentRulesJsonShape) {
     l.pathPatterns = {"facebook.com/tr"};
     const std::string json = trackerContentRulesJson(l);
     CHECK_TRUE(json.front() == '[' && json.back() == ']');
-    // Domain rule: anchored, subdomain-aware, authority-terminated, third-party only.
-    CHECK_TRUE(json.find("\"url-filter\":\"^https?://([^/]+\\\\.)?doubleclick\\\\.net[/:]\"") != std::string::npos);
+    // Domain matcher: native domain lookup, domain + subdomains, third-party only.
+    CHECK_TRUE(json.find("\"url-filter\":\"^https?://\",\"if-domain\":[\"*doubleclick.net\",\"*a-b.example\"]") != std::string::npos);
     CHECK_TRUE(json.find("\"load-type\":[\"third-party\"]") != std::string::npos);
     CHECK_TRUE(json.find("\"action\":{\"type\":\"block\"}") != std::string::npos);
-    // Path rule keeps the path, escaped.
-    CHECK_TRUE(json.find("facebook\\\\.com\\\\/tr\"") != std::string::npos);
-    // Exactly three rules.
+    // Path matcher keeps the path, escaped.
+    CHECK_TRUE(json.find("facebook\\\\.com\\\\/tr") != std::string::npos);
+    // Exactly two rules: one domain matcher and one path matcher.
     size_t rules = 0, pos = 0;
     while ((pos = json.find("{\"trigger\"", pos)) != std::string::npos) { rules++; pos++; }
-    CHECK_EQ(rules, 3u);
+    CHECK_EQ(rules, 2u);
     // Identifier is stable and content-derived.
     CHECK_EQ(trackerRulesIdentifier(l), trackerRulesIdentifier(l));
     l.domains.push_back("extra.example");
     CHECK_TRUE(trackerRulesIdentifier(l) != trackerRulesIdentifier(builtinTrackerBlocklist()));
-    CHECK_TRUE(trackerRulesIdentifier(l).rfind("lethe-trackers-v1-", 0) == 0);
+    CHECK_TRUE(trackerRulesIdentifier(l).rfind("lethe-trackers-v2-", 0) == 0);
 }
 
 LETHE_TEST_CASE(TrackerBlocklist_RegexEscape) {

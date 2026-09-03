@@ -15,6 +15,8 @@
 
 #include "include/cef_app.h"
 #include "include/cef_base.h"
+#include "include/cef_sandbox_mac.h"
+#include "include/wrapper/cef_library_loader.h"
 
 #include "app/cef_render_handler.h"
 
@@ -36,6 +38,21 @@ class LetheHelperApp : public CefApp {
 };
 
 int main(int argc, char* argv[]) {
+    // CEF's macOS sandbox must be initialized before the helper loads the
+    // framework. The official CEF helper sequence is sandbox -> dynamic CEF
+    // library load -> CefExecuteProcess. This preserves renderer/GPU
+    // process isolation instead of relying solely on Lethe's outer Seatbelt.
+    CefScopedSandboxContext sandbox_context;
+    if (!sandbox_context.Initialize(argc, argv)) {
+        std::cerr << "[lethe-cef-helper] CEF sandbox initialization failed" << std::endl;
+        return 1;
+    }
+    CefScopedLibraryLoader library_loader;
+    if (!library_loader.LoadInHelper()) {
+        std::cerr << "[lethe-cef-helper] CEF framework load failed" << std::endl;
+        return 1;
+    }
+
     // CefExecuteProcess returns -1 in the browser process (we never get
     // here in that case - the browser binary runs the real shell). In a
     // recognised helper (renderer / GPU / network / utility) it blocks

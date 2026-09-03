@@ -6,7 +6,7 @@
 // metrics JavaScript in both, and samples process RSS at the same points.
 // No browser-specific favours: fresh profile, cold launch, sequential.
 //
-//   node tools/bench/bench.mjs --browser lethe|lethe-noproxy|chrome \
+//   node tools/bench/bench.mjs --browser lethe|lethe-noproxy|lethe-cef|chrome \
 //        [--suite pageload,memory,speedometer,startup] [--runs 3] \
 //        [--sites tools/bench/sites.txt] [--out tools/bench/results]
 //
@@ -52,7 +52,7 @@ const MOTIONMARK_URL = 'https://browserbench.org/MotionMark1.3.2/';
 const MOTIONMARK_TIMEOUT = 15 * 60 * 1000;
 // Blender's Big Buck Bunny (public, stable id), played muted for 20 s.
 const YOUTUBE_URL = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';
-const YOUTUBE_4K_URL = 'https://www.youtube.com/watch?v=Ba5_jnu_6Jo';  // "Costa Rica in 4K" public 4K HDR sample (60fps, no sign-in)
+const YOUTUBE_4K_URL = 'https://www.youtube.com/watch?v=LXb3EKWsInQ';  // "Costa Rica in 4K" public 4K HDR sample (60fps, no sign-in)
 const YOUTUBE_PLAY_MS = 20000;
 const YOUTUBE_4K_PLAY_MS = 30000;   // longer so the player actually reaches 4K
 // Stress test: 100,000 DOM nodes + rotating WebGL quad + 20ms JS work per
@@ -280,15 +280,21 @@ function writeExtremeNetPage(count, bytes) {
 <script>
 var st=document.getElementById('stats');
 var N=${count}, t0=performance.now(), done=0, bytes=0;
+var durations=[];
 var ps=[];
 for(var i=0;i<N;i++){
- ps.push(fetch('/f'+i+'.bin',{cache:'no-store'}).then(function(r){
-  return r.arrayBuffer().then(function(b){bytes+=b.byteLength;done++;});
- }).catch(function(){done++;}));
+ (function(i){var t=performance.now();
+  ps.push(fetch('/f'+i+'.bin',{cache:'no-store'}).then(function(r){
+   return r.arrayBuffer().then(function(b){bytes+=b.byteLength;done++;durations.push(performance.now()-t);});
+  }).catch(function(){done++;durations.push(performance.now()-t);}));
+ })(i);
 }
 Promise.all(ps).then(function(){
  var ms=performance.now()-t0;
- st.textContent='net n='+N+' done='+done+' bytes='+bytes+' t='+ms.toFixed(0)+'ms rps='+((N*1000)/ms).toFixed(0);
+ durations.sort(function(a,b){return a-b;});
+ function pct(p){var x=(durations.length-1)*p/100,i=Math.floor(x),f=x-i;return durations[i]+(durations[i+1]-durations[i])*f;}
+ st.textContent='net n='+N+' done='+done+' bytes='+bytes+' t='+ms.toFixed(0)+'ms rps='+((N*1000)/ms).toFixed(0)
+   +' p50='+pct(50).toFixed(1)+'ms p95='+pct(95).toFixed(1)+'ms p99='+pct(99).toFixed(1)+'ms p99.9='+pct(99.9).toFixed(1)+'ms max='+durations[durations.length-1].toFixed(1)+'ms';
 });
 </script>`);
   // The N payload files.
@@ -360,11 +366,22 @@ const METRICS_JS = `(function(){
   var p = performance.getEntriesByType('paint');
   var bytes = n.transferSize || 0, opaque = 0;
   for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; }
+  var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; });
+  var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; });
+  var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){
+    return {url:e.name,duration:e.duration,transferSize:e.transferSize||0};
+  });
+  function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; }
+  var imageEls = Array.prototype.slice.call(document.images);
+  var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length;
   var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0];
   return JSON.stringify({ url: location.href, ttfb: n.responseStart || null,
     dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null,
     fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque,
-    bytes: bytes, domNodes: document.getElementsByTagName('*').length });
+    bytes: bytes, domNodes: document.getElementsByTagName('*').length,
+    imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95),
+    imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null,
+    imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages });
 })()`;
 const SPEEDOMETER_DONE_JS = `(function(){ var e = document.querySelector('#result-number');
   return e && e.textContent.trim() ? e.textContent.trim() : ''; })()`;
@@ -377,14 +394,28 @@ const JETSTREAM_DONE_JS = `(function(){ var e = document.querySelector('#result-
 const MOTIONMARK_START_JS = `(function(){ if (typeof benchmarkController !== 'undefined') { benchmarkController.startBenchmark(); return 'started'; } return ''; })()`;
 const MOTIONMARK_DONE_JS = `(function(){ var r = document.querySelector('#results'); if (!r) return '';
   var e = r.querySelector('.score'); var t = e && e.textContent.trim(); return t && /[0-9]/.test(t) ? t : ''; })()`;
-// YouTube: pick the <video>, mute, play; report decoded/dropped frames.
+// YouTube: pick the <video>, mute, request playback; readiness is established
+// by the following playing-state poll. Some WebKit builds expose the element
+// before metadata is available (readyState=0), even though play() is already
+// queued and the stream becomes playable shortly afterward. Treating that
+// transient state as a hard failure creates a false media-tail failure.
 const YOUTUBE_START_JS = `(function(){ var v = document.querySelector('video'); if (!v) return '';
-  v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function(){}); return v.readyState >= 1 ? 'ready' : ''; })()`;
+  v.muted = true;
+  try { var p0 = document.querySelector('.html5-video-player');
+    if (p0 && p0.setPlaybackQualityRange) p0.setPlaybackQualityRange('hd2160');
+    if (p0 && p0.setPlaybackQuality) p0.setPlaybackQuality('hd2160'); } catch (e) {}
+  window.__letheMediaStats = { currentTime: 0, paused: true, width: 0, height: 0, totalFrames: 0, droppedFrames: 0 };
+  var sample = function(){ try { var q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : null;
+    window.__letheMediaStats = { currentTime: v.currentTime, paused: v.paused, width: v.videoWidth, height: v.videoHeight,
+      totalFrames: q && q.totalVideoFrames || v.webkitDecodedFrameCount || 0,
+      droppedFrames: q && q.droppedVideoFrames || v.webkitDroppedFrameCount || 0 }; } catch (e) {} };
+  if (!window.__letheMediaStatsTimer) window.__letheMediaStatsTimer = setInterval(sample, 500); sample();
+  var p = v.play(); if (p && p.catch) p.catch(function(){}); return 'found'; })()`;
 const YOUTUBE_PLAYING_JS = `(function(){ var v = document.querySelector('video'); return v && !v.paused && v.currentTime > 0.5 ? 'playing' : ''; })()`;
 const YOUTUBE_STATS_JS = `(function(){ var v = document.querySelector('video'); if (!v) return JSON.stringify({error:'no video'});
-  var q = v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality() : {};
-  return JSON.stringify({ currentTime: v.currentTime, paused: v.paused, width: v.videoWidth, height: v.videoHeight,
-    totalFrames: q.totalVideoFrames || 0, droppedFrames: q.droppedVideoFrames || 0 }); })()`;
+  var s = window.__letheMediaStats || {};
+  return JSON.stringify({ currentTime: v.currentTime, paused: v.paused, width: s.width || v.videoWidth,
+    height: s.height || v.videoHeight, totalFrames: s.totalFrames || 0, droppedFrames: s.droppedFrames || 0 }); })()`;
 
 // ---------------------------------------------------------------- steps
 function buildSteps(extremeBase) {
@@ -568,22 +599,38 @@ async function runLethe(steps, { noProxy, binOverride }) {
     }
   }
   const dir = mkdtempSync(join(tmpdir(), 'lethe-bench-'));
+  // CEF otherwise reuses the interactive profile across benchmark runs.
+  // That breaks the documented cold/fresh-profile benchmark contract and
+  // lets orphaned helpers from an interrupted run interfere with a later
+  // measurement. Isolate CEF runs unless the caller explicitly requests a
+  // profile for a warm-cache experiment.
+  const cefProfile = BROWSER === 'lethe-cef' && EXTRA_ENV.LETHE_CEF_USER_DATA_DIR === undefined
+    ? mkdtempSync(join(tmpdir(), 'lethe-cef-profile-')) : null;
   const scriptPath = join(dir, 'bench.lethe');
   writeFileSync(scriptPath, script.join('\n') + '\n');
 
   const before = new Set(psAll().map(r => r.pid));
   const t0 = performance.now();
   const argv = ['--e2e-script', scriptPath, ...EXTRA_ARGS];
+  // Media suites intentionally start muted playback without a user gesture.
+  // Keep that benchmark-only behavior deterministic instead of depending on
+  // whatever autoplay policy the CEF embedder happens to inherit.
+  if (BROWSER === 'lethe-cef' && (SUITES.includes('youtube') || SUITES.includes('youtube4k')) &&
+      !EXTRA_ARGS.some(a => a.startsWith('--autoplay-policy='))) {
+    argv.push('--autoplay-policy=no-user-gesture-required');
+  }
   if (noProxy) argv.push('--no-proxy');
   // Chrome activates itself on launch and so runs every suite as the
   // frontmost app; WebKit throttles timers and suspends requestAnimationFrame
   // for occluded windows. Same footing for Lethe: keep it frontmost too.
   const env = { ...process.env, ...EXTRA_ENV };
   if (env.LETHE_KEEP_FRONT === undefined) env.LETHE_KEEP_FRONT = '1';
+  if (cefProfile) env.LETHE_CEF_USER_DATA_DIR = cefProfile;
   const child = spawn(bin, argv, { stdio: ['ignore', 'pipe', 'pipe'], env });
   const pid = child.pid;
   const isOurs = r => r.pid === pid ||
-    (!before.has(r.pid) && /com\.apple\.WebKit\.(WebContent|Networking|GPU)/.test(r.cmd));
+    (cefProfile ? r.cmd.includes(cefProfile) :
+      (!before.has(r.pid) && /com\.apple\.WebKit\.(WebContent|Networking|GPU)/.test(r.cmd)));
 
   const events = { results: [], marks: [], startupMs: null, exitCode: null, log: [] };
   const evalKeys = steps.filter(s => s.op === 'eval').map(s => s.key);
@@ -608,6 +655,7 @@ async function runLethe(steps, { noProxy, binOverride }) {
   child.stderr.on('data', d => events.log.push(String(d).trimEnd()));
   await new Promise(res => child.on('exit', code => { events.exitCode = code; res(); }));
   rmSync(dir, { recursive: true, force: true });
+  if (cefProfile) rmSync(cefProfile, { recursive: true, force: true });
   return events;
 }
 

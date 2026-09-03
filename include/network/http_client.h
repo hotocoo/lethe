@@ -42,6 +42,10 @@ struct PolicyStream {
     virtual bool write(const uint8_t* buf, size_t len) = 0;
     // Half-close our side: END frame on a relay, shutdown(SHUT_WR) direct.
     virtual void shutdownWrite() = 0;
+    // Interrupt a blocking read without transferring ownership of the
+    // underlying descriptor. Used by the policy proxy during shutdown so a
+    // live CONNECT cannot hold a worker until its normal I/O timeout.
+    virtual void cancel() = 0;
 };
 using PolicyStreamPtr = std::unique_ptr<PolicyStream>;
 
@@ -477,4 +481,3 @@ private:
 } // namespace lethe
 
 #endif // LETHE_NETWORK_HTTP_CLIENT_H
-

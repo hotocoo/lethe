@@ -20,9 +20,11 @@
                         client:(CefRefPtr<CefBrowserClient>)client
                           argc:(int)argc
                           argv:(char**)argv;
-// CEF initialisation is a one-shot global; we run it in applicationDidFinishLaunching
-// after the AppKit activation policy is set so the first window can win focus.
-- (void)applicationDidFinishLaunching:(NSNotification*)notification;
+// CEF is initialized after NSApplication exists but before CefRunMessageLoop,
+// matching the native macOS CEF lifecycle. CefRunMessageLoop owns the AppKit
+// event loop; it must not be nested inside applicationDidFinishLaunching.
+- (void)initializeCEF;
+- (void)newTabFromMenu:(id)sender;
 - (void)applicationWillTerminate:(NSNotification*)notification;
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)app;
 @property (nonatomic, readonly) lethe::ShellContext* context;

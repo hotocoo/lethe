@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include "renderer/media_upscaler.h"
 
 namespace lethe {
 
@@ -13,6 +14,7 @@ enum class RendererBackend {
 
 struct RendererConfig {
     bool hardware_acceleration = true;
+    MediaUpscalerMode media_upscaler = MediaUpscalerMode::None;
     int gpu_device_id = -1; // -1 = auto-detect
     
     std::vector<std::string> preferred_backends;

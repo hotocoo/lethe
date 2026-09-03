@@ -4,9 +4,9 @@
 
 Minimalist, high-performance browser with maximum security and a built-in VPN, built as the native browser for the Aletheia OS. Lethe's secure network stack is also used by the OS's LLM agent for private, encrypted web searching.
 
-## Status: v0.2.0 (usable, measured, not finished)
+## Status: v1.0.0 (release-ready, measured, security-first)
 
-Lethe is a working browser you can use day to day, and since 0.2.0 every
+Lethe is a working browser you can use day to day, and every
 performance claim about it is backed by `tools/bench` runs against Google
 Chrome on the same machine (see `docs/BENCHMARKS.md`). What exists and works
 end to end:
@@ -40,8 +40,13 @@ end to end:
   Linux, ALL engine traffic additionally rides Lethe's local
   PolicyProxyServer, so subresources are enforced at the transport layer.
 - **Ephemeral by default** (`--persistent` to keep site data), no history
-  written to disk, macOS Seatbelt profile limiting writes to temp,
+  written to disk by Lethe itself, no session restore, bookmarks, or tab-search
+  index; macOS Seatbelt profile limits writes to temp,
   `~/Downloads` and Lethe's own caches.
+- **Focused shell**: no bookmarks, persistent browsing-history UI, session
+  restore, tab-search index, or developer Web Inspector. These features add
+  state, UI surface, or privileged debugging capability without improving
+  Lethe's security, privacy, or network performance goals.
 - Scripted end-to-end checklist (`--e2e-script`, see `docs/E2E.md`) that
   loads real sites, follows links, uses history, opens/closes tabs, renders
   YouTube, gets refused on `169.254.169.254`, and round-trips reader view.
@@ -64,8 +69,8 @@ Honest limits (see `docs/COMPARISON.md` for the full audit):
 - Windows host is a single-view WebView2 window with the navigation gate;
   tabs and the rest of the shell are macOS/Linux only for now.
 
-Prebuilt binaries (macOS DMG, Linux tarballs, Windows exe) are attached to
-each GitHub release by `.github/workflows/release.yml`:
+Prebuilt binaries (WebKit macOS DMG, Blink macOS DMG, Linux tarballs, Windows
+exe) are attached to each GitHub release by `.github/workflows/release.yml`:
 https://github.com/hotocoo/lethe/releases
 
 ## Features
@@ -606,4 +611,3 @@ lethe --e2e-script FILE          # Scripted session, exit 0/1 (docs/E2E.md)
 ## License
 
 Apache-2.0
-

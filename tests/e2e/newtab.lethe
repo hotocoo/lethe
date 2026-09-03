@@ -1,0 +1,8 @@
+# Blink/CEF and WebKit must both start on Lethe's built-in New Tab page
+# when no explicit initial URL is supplied.
+wait 5000
+assert-title-contains New Tab
+assert-body-contains Private by default
+assert-body-contains Network policy enforced
+assert-body-contains Ephemeral site data
+quit

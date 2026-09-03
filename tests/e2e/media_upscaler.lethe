@@ -1,0 +1,18 @@
+# WebKit media upscaler smoke test. Requires a live YouTube connection.
+newtab https://www.youtube.com/watch?v=LXb3EKWsInQ
+try-wait 60000
+wait-js 30000 (function(){var v=document.querySelector('video');return v?'found':'';})()
+js (function(){if(window.__letheMediaUpscalerSetMode)window.__letheMediaUpscalerSetMode(2);return 'upscaler-enabled';})()
+js (function(){var v=document.querySelector('video');v.muted=true;try{var p=document.querySelector('.html5-video-player');if(p&&p.setPlaybackQualityRange)p.setPlaybackQualityRange('small');if(p&&p.setPlaybackQuality)p.setPlaybackQuality('small');}catch(e){}var p=v.play();if(p&&p.catch)p.catch(function(){});return 'play-requested';})()
+wait-js 30000 (function(){var v=document.querySelector('video');return v&&!v.paused&&v.currentTime>1?'playing':'';})()
+sleep 5000
+print-js (function(){var v=document.querySelector('video'),r=v&&v.getBoundingClientRect(),s=window.__letheMediaUpscaler&&window.__letheMediaUpscaler.state();return JSON.stringify({videoWidth:v&&v.videoWidth,videoHeight:v&&v.videoHeight,rectWidth:r&&r.width,rectHeight:r&&r.height,dpr:devicePixelRatio,crossOrigin:v&&v.crossOrigin,currentSrc:v&&v.currentSrc,state:s});})()
+assert-js (function(){var s=window.__letheMediaUpscaler&&window.__letheMediaUpscaler.state();return s&&s.active>0&&s.entries[0].lastFrame.outputWidth>s.entries[0].lastFrame.sourceWidth;})()
+assert-js (function(){var v=document.querySelector('video');return v&&getComputedStyle(v).visibility==='hidden';})()
+js (function(){var v=document.querySelector('video');if(!v)return 'no-video';v.style.objectFit='cover';v.style.width='760px';v.style.height='360px';window.scrollTo(0,200);return 'geometry-changed';})()
+sleep 1000
+assert-js (function(){var v=document.querySelector('video'),r=v&&v.getBoundingClientRect(),s=window.__letheMediaUpscaler&&window.__letheMediaUpscaler.state();return !!(r&&s&&s.active>0&&s.entries[0].canvasWidth>=Math.floor(r.width)&&s.entries[0].canvasHeight>=Math.floor(r.height));})()
+assert-js (function(){var v=document.querySelector('video'),r=v&&v.getBoundingClientRect(),s=window.__letheMediaUpscaler&&window.__letheMediaUpscaler.state(),c=s&&s.entries[0];return !!(r&&c&&Math.abs(parseFloat(document.querySelector('canvas[aria-hidden="true"]').style.left)-r.left)<2&&Math.abs(parseFloat(document.querySelector('canvas[aria-hidden="true"]').style.top)-r.top)<2);})()
+print-js JSON.stringify(window.__letheMediaUpscaler.state())
+screenshot /tmp/lethe-webkit-upscaler-e2e.png
+quit

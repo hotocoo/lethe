@@ -27,12 +27,14 @@ assert-url-contains duckduckgo.com/?q=lethe
 newtab https://www.wikipedia.org
 wait
 assert-tabs 2
+assert-native-tabs 2
 assert-title-contains Wikipedia
 assert-body-contains Wikipedia
 screenshot $TMPDIR/lethe-e2e-e2e-02-tabs.png
 closetab
 sleep 300
 assert-tabs 1
+assert-native-tabs 1
 # JS-heavy site
 load https://www.youtube.com
 wait 30000
@@ -66,8 +68,10 @@ js var a=document.createElement('a');a.href='https://www.iana.org/';a.target='_b
 click #lethe-blank
 sleep 1500
 assert-tabs 2
+assert-native-tabs 2
 assert-url-contains iana.org
 closetab
 sleep 300
 assert-tabs 1
+assert-native-tabs 1
 quit

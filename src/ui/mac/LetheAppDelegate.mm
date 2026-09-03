@@ -18,6 +18,224 @@
 #include "plugins/plugin_registry.h"
 #include "security/tracker_blocklist.h"
 
+// WebKit does not expose its private media compositor surfaces to an
+// embedder.  Install a page-local GPU scaler instead: it handles the media
+// elements we can legally sample (same-origin/CORS-clean images and video),
+// while the renderer's MetalFX path remains available for native RGBA frames.
+NSString* LetheMediaUpscalerScript(void) {
+    NSInteger initialMode = 0;
+    const char* envUpscaler = getenv("LETHE_UPSCALER");
+    if (envUpscaler && *envUpscaler) {
+        std::string v = envUpscaler;
+        for (char& ch : v) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+        if (v == "linear") initialMode = 1;
+        else if (v == "metalfx-sharp") initialMode = 3;
+        else if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr") initialMode = 2;
+    } else {
+        LethePreferences* p = [LethePreferences shared];
+        if (p.upscaler == LetheUpscalerLinear) initialMode = 1;
+        else if (p.upscaler == LetheUpscalerFSR1) initialMode = 2;
+        else if (p.upscaler == LetheUpscalerDLSSLike) initialMode = 3;
+    }
+    return [(@R"JS(
+(function () {
+  'use strict';
+  if (window.__letheMediaUpscaler) return;
+
+  var mode = __LETHE_INITIAL_MODE__; // 0 off, 1 linear, 2 high quality, 3 high quality + sharp
+  var entries = new WeakMap();
+  var activeEntries = new Set();
+  var raf = 0;
+  var videoCallbacks = new WeakMap();
+
+  var vs = '#version 300 es\n' +
+    'in vec2 p; out vec2 uv; void main(){ uv=p*.5+.5; gl_Position=vec4(p,0.,1.); }';
+  // 16-tap bicubic reconstruction plus a restrained edge-adaptive RCAS-like
+  // sharpen.  This is deliberately page-local: no decoded media bytes leave
+  // the renderer process and CORS rules are still enforced by WebGL.
+  var fs = '#version 300 es\nprecision highp float;\n' +
+    'uniform sampler2D t; uniform vec2 texel; uniform float sharp; uniform vec4 uvRect; uniform vec4 destRect;\n' +
+    'in vec2 uv; out vec4 o;\n' +
+    'float w(float x){x=abs(x); if(x<1.0)return 1.0-2.5*x*x+1.5*x*x*x; if(x<2.0)return 2.0-4.0*x+2.5*x*x-.5*x*x*x; return 0.0;}\n' +
+    'void main(){ if(uv.x<destRect.x||uv.y<destRect.y||uv.x>destRect.x+destRect.z||uv.y>destRect.y+destRect.w) discard; vec2 luv=(uv-destRect.xy)/destRect.zw; vec2 suv=uvRect.xy+luv*uvRect.zw; vec2 q=suv/texel; vec2 b=floor(q-.5); vec2 f=q-.5-b; vec4 s=vec4(0); float ws=0.;\n' +
+    'for(int j=-1;j<=2;j++) for(int i=-1;i<=2;i++){float ww=w(float(i)-f.x)*w(float(j)-f.y); s+=texture(t,(b+vec2(i,j)+.5)*texel)*ww; ws+=ww;}\n' +
+    'vec4 c=s/max(ws,.0001); vec3 n=texture(t,suv+vec2(0,-texel.y)).rgb, e=texture(t,suv+vec2(texel.x,0)).rgb, ss=texture(t,suv+vec2(0,texel.y)).rgb, ww=texture(t,suv+vec2(-texel.x,0)).rgb;\n' +
+    'vec3 avg=(n+e+ss+ww)*.25; vec3 detail=c.rgb-avg; float edge=clamp(length(detail)*4.0,0.,1.); c.rgb=clamp(c.rgb+detail*sharp*(1.-edge*.65),0.,1.); o=c; }';
+
+  function makeGL(canvas) {
+    var gl = canvas.getContext('webgl2', {alpha:true, premultipliedAlpha:false, antialias:false});
+    if (!gl) return null;
+    var pv=gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(pv,vs); gl.compileShader(pv);
+    var pf=gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(pf,fs); gl.compileShader(pf);
+    if(!gl.getShaderParameter(pv,gl.COMPILE_STATUS)||!gl.getShaderParameter(pf,gl.COMPILE_STATUS)) return null;
+    var pr=gl.createProgram(); gl.attachShader(pr,pv); gl.attachShader(pr,pf); gl.linkProgram(pr);
+    if(!gl.getProgramParameter(pr,gl.LINK_STATUS)) return null;
+    var buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+    var a=gl.getAttribLocation(pr,'p'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a,2,gl.FLOAT,false,0,0);
+    var tex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,tex); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    return {gl:gl,program:pr,tex:tex,texel:gl.getUniformLocation(pr,'texel'),sharp:gl.getUniformLocation(pr,'sharp'),uvRect:gl.getUniformLocation(pr,'uvRect'),destRect:gl.getUniformLocation(pr,'destRect')};
+  }
+
+  function eligible(el) {
+    if (!(el instanceof HTMLImageElement || el instanceof HTMLVideoElement)) return false;
+    if (!el.isConnected) return false;
+    var w=el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
+    var h=el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
+    if (!w || !h) return false;
+    var r=el.getBoundingClientRect();
+    return r.width>=32 && r.height>=32;
+  }
+
+  function remove(e) {
+    if(e.el) e.el.style.visibility='';
+    if(e.el && e.el instanceof HTMLVideoElement && e.videoCallback != null && e.el.cancelVideoFrameCallback) {
+      try { e.el.cancelVideoFrameCallback(e.videoCallback); } catch(_) {}
+      videoCallbacks.delete(e.el);
+    }
+    if(e.canvas&&e.canvas.parentNode)e.canvas.parentNode.removeChild(e.canvas);
+    entries.delete(e.el);
+    activeEntries.delete(e);
+  }
+
+  function scheduleVideo(e) {
+    if (!(e.el instanceof HTMLVideoElement) || mode===0) return;
+    if (e.el.requestVideoFrameCallback) {
+      if (e.videoCallback != null) return;
+      var cb=function(){
+        e.videoCallback=null;
+        videoCallbacks.delete(e.el);
+        if (!entries.has(e.el) || mode===0 || !e.el.isConnected) return;
+        setup(e.el, true);
+      };
+      e.videoCallback=e.el.requestVideoFrameCallback(cb);
+      videoCallbacks.set(e.el,e.videoCallback);
+    }
+  }
+
+  function setup(el, videoFrame) {
+    if(!eligible(el) || mode===0) { if(entries.has(el)) remove(entries.get(el)); return; }
+    var e=entries.get(el);
+    if(!e){
+      var c=document.createElement('canvas'); c.setAttribute('aria-hidden','true');
+      c.style.cssText='position:fixed;z-index:2147483646;pointer-events:none;margin:0;padding:0;display:block;';
+      document.documentElement.appendChild(c);
+      e={el:el,canvas:c,gpu:makeGL(c),w:0,h:0}; entries.set(el,e); activeEntries.add(e);
+    if(!e.gpu){ remove(e); return; }
+    }
+    var r=el.getBoundingClientRect(), d=Math.min(window.devicePixelRatio||1,2);
+    // A Retina 4K video would otherwise request an 8K backing canvas
+    // (~132 MiB RGBA before GPU overhead). Keep the output at a bounded
+    // working set while retaining the highest useful display resolution.
+    var maxPixels=16777216, pixels=r.width*r.height*d*d;
+    if(pixels>maxPixels) d*=Math.sqrt(maxPixels/pixels);
+    var cw=Math.max(1,Math.round(r.width*d)), ch=Math.max(1,Math.round(r.height*d));
+    var isVideo = el instanceof HTMLVideoElement;
+    var sw=isVideo?el.videoWidth:el.naturalWidth, sh=isVideo?el.videoHeight:el.naturalHeight;
+    // CSS pixels are not the output resolution on Retina displays. Decide
+    // whether scaling is useful from the actual canvas backing dimensions;
+    // otherwise a 854x480 video rendered at 2x DPR would incorrectly look
+    // like a 1:1 CSS-size video and never receive the upscaler.
+    if (cw <= sw && ch <= sh) {
+      if (e) remove(e);
+      return;
+    }
+    var geometryChanged=e.w!==cw||e.h!==ch||e.x!==r.left||e.y!==r.top;
+    if(geometryChanged){e.canvas.width=cw; e.canvas.height=ch; e.canvas.style.left=r.left+'px'; e.canvas.style.top=r.top+'px'; e.canvas.style.width=r.width+'px'; e.canvas.style.height=r.height+'px'; e.w=cw; e.h=ch; e.x=r.left; e.y=r.top;}
+    e.canvas.style.display=el.offsetWidth&&el.offsetHeight?'block':'none';
+    var gl=e.gpu.gl; gl.viewport(0,0,cw,ch); gl.useProgram(e.gpu.program); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,e.gpu.tex);
+    var srcKey=isVideo ? (el.currentSrc||el.src||'') : (el.currentSrc||el.src||'');
+    // Images only need a new upload when their source or display geometry
+    // changes. Video frames, however, change while the element stays in the
+    // same DOM node; upload and reconstruct only when WebKit reports a new
+    // decoded frame, avoiding an unconditional 60 Hz readback/upload loop.
+    if(isVideo && !videoFrame && !geometryChanged && e.srcKey===srcKey) {
+      scheduleVideo(e);
+      return;
+    }
+    if(!isVideo && !geometryChanged && e.srcKey===srcKey) return;
+    if(isVideo && el.readyState < 2) return;
+    try { gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,el); } catch(_) { remove(e); return; }
+    // Preserve the source element's object-fit behavior. Without this, a
+    // CSS `object-fit: cover` video would be stretched rather than cropped.
+    // The overlay remains the exact displayed rectangle while the shader
+    // samples the corresponding sub-rectangle of the decoded frame.
+    var cs=getComputedStyle(el), fit=cs.objectFit||'fill';
+    var ux=0,uy=0,uw=1,uh=1, dx=0,dy=0,dw=1,dh=1, sar=sw/sh, dar=r.width/Math.max(r.height,1);
+    var pos=(cs.objectPosition||'50% 50%').split(/\s+/), px=parseFloat(pos[0]), py=parseFloat(pos[1]);
+    if(!isFinite(px)) px=50; if(!isFinite(py)) py=50;
+    px=Math.max(0,Math.min(100,px))/100; py=Math.max(0,Math.min(100,py))/100;
+    if(fit==='cover') {
+      if(dar>sar) { uh=sar/dar; uy=(1-uh)*py; }
+      else { uw=dar/sar; ux=(1-uw)*px; }
+    } else if(fit==='contain') {
+      if(dar>sar) { dw=sar/dar; dx=(1-dw)*px; }
+      else { dh=dar/sar; dy=(1-dh)*py; }
+    }
+    gl.uniform2f(e.gpu.texel,1/sw,1/sh); gl.uniform1f(e.gpu.sharp,mode===3?.62:mode===2?.42:0.);
+    gl.uniform4f(e.gpu.uvRect,ux,uy,uw,uh); gl.uniform4f(e.gpu.destRect,dx,dy,dw,dh); gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+    if(gl.getError()!==gl.NO_ERROR) { remove(e); return; }
+    // Validate the first rendered frame before hiding WebKit's compositor
+    // surface. A successful texImage2D call alone is not sufficient proof
+    // that the media texture produced pixels on every WebKit configuration;
+    // never leave the native video invisible behind an empty overlay.
+    if(!e.validated){
+      var probe=new Uint8Array(4);
+      gl.readPixels(Math.floor(cw*.5),Math.floor(ch*.5),1,1,gl.RGBA,gl.UNSIGNED_BYTE,probe);
+      if(gl.getError()!==gl.NO_ERROR || probe[3]===0){ remove(e); return; }
+      e.validated=true;
+    }
+    e.srcKey=srcKey;
+    e.frames=(e.frames||0)+1;
+    e.lastFrame={sourceWidth:sw,sourceHeight:sh,outputWidth:cw,outputHeight:ch,
+      scaleX:cw/sw,scaleY:ch/sh,time:isVideo?el.currentTime:0};
+    // Hide the source only after a successful draw; the overlay is
+    // pointer-transparent so controls remain on the original element.
+    el.style.visibility='hidden';
+    scheduleVideo(e);
+  }
+
+  function tick(){ raf=0; if(mode===0)return;
+    // Drop detached media and their overlay canvases. This also prevents a
+    // navigation-heavy page from accumulating stale GPU contexts.
+    activeEntries.forEach(function(e){ if(!e.el.isConnected) remove(e); });
+    document.querySelectorAll('img,video').forEach(function(el){
+    // Native video controls are part of the video compositor surface. Do not
+    // cover them with our canvas; controlled video stays untouched rather
+    // than losing playback/fullscreen/quality controls.
+    if(el instanceof HTMLVideoElement && el.controls) return;
+    setup(el);
+  }); raf=setTimeout(tick,50); }
+  function start(){ if(!raf) raf=setTimeout(tick,0); }
+
+  window.__letheMediaUpscalerSetMode=function(m){
+    mode=m|0;
+    if(mode===0){
+      activeEntries.forEach(function(e){remove(e);});
+      activeEntries.clear();
+      entries=new WeakMap();
+      return;
+    }
+    start();
+  };
+  window.__letheMediaUpscaler={
+    setMode:window.__letheMediaUpscalerSetMode,
+    state:function(){
+      var active=[];
+      activeEntries.forEach(function(e){
+        if(e.lastFrame) active.push({frames:e.frames||0,lastFrame:e.lastFrame,
+          canvasWidth:e.canvas.width,canvasHeight:e.canvas.height});
+      });
+      return {mode:mode,active:active.length,entries:active};
+    }
+  };
+  new MutationObserver(function(){start();}).observe(document.documentElement,{subtree:true,childList:true});
+  window.addEventListener('resize',start,{passive:true}); window.addEventListener('scroll',start,{passive:true});
+})();
+)JS") stringByReplacingOccurrencesOfString:@"__LETHE_INITIAL_MODE__"
+                    withString:[NSString stringWithFormat:@"%ld", (long)initialMode]];
+}
+
 @interface LetheAppDelegate () {
     lethe::ShellContext* ctx_;
     LethePolicyGate* gate_;
@@ -79,7 +297,16 @@
 - (NSUInteger)trackerRuleCount { return trackerRuleCount_; }
 
 - (WKUserContentController*)userContentController {
-    if (!userContent_) userContent_ = [[WKUserContentController alloc] init];
+    if (!userContent_) {
+        userContent_ = [[WKUserContentController alloc] init];
+        // The script is installed once, before any page document exists.
+        // It only activates when the persisted Settings mode is non-zero.
+        WKUserScript* media = [[WKUserScript alloc]
+            initWithSource:LetheMediaUpscalerScript()
+              injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+           forMainFrameOnly:YES];
+        [userContent_ addUserScript:media];
+    }
     return userContent_;
 }
 
@@ -139,11 +366,8 @@
 }
 
 - (void)openInitialWindow {
-    // Restore last session (unless an explicit initial URL or e2e script was given).
     NSArray<NSDictionary*>* saved = @[];
-    if (ctx_->cfg.initialUrl.empty() && ctx_->e2eScript.empty()) {
-        saved = [[LetheSession shared] load];
-    }
+    if (ctx_->cfg.initialUrl.empty() && ctx_->e2eScript.empty()) saved = [[LetheSession shared] load];
     NSString* initial = saved.count ? saved.firstObject[@"url"]
         : (ctx_->cfg.initialUrl.empty() ? nil : @(ctx_->cfg.initialUrl.c_str()));
     BrowserWindowController* c = [self openWindowWithURL:initial];
@@ -185,18 +409,13 @@
 
 - (void)applicationWillTerminate:(NSNotification*)note {
     (void)note;
-    // Persist the active tab URL of every visible window for restore-on-launch.
     NSMutableArray<NSDictionary*>* snap = [NSMutableArray array];
     for (BrowserWindowController* c in [controllers_ copy]) {
         NSString* url = c.webView.URL.absoluteString;
-        if (url.length && [url hasPrefix:@"http"]) {
-            [snap addObject:@{ @"url": url, @"title": c.webView.title ?: url }];
-        }
-    }
-    [[LetheSession shared] saveWindows:snap];
-    for (BrowserWindowController* c in [controllers_ copy]) {
+        if (url.length && [url hasPrefix:@"http"]) [snap addObject:@{@"url":url, @"title":c.webView.title ?: url}];
         [c.window close];
     }
+    [[LetheSession shared] saveWindows:snap];
     // The heavy shutdown (stopping the policy proxy + joining its workers,
     // tearing down the engine) can block for a while if live tunnels are
     // open. Run it off the main thread so the app always quits promptly
@@ -276,11 +495,10 @@
     // Popup blocking like Chrome: window.open needs a user gesture.
     c.preferences.javaScriptCanOpenWindowsAutomatically = NO;
     c.preferences.fraudulentWebsiteWarningEnabled = YES;
+    [c.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
     if (@available(macOS 12.3, *)) {
         c.preferences.elementFullscreenEnabled = YES;
     }
-    // "Inspect Element" in the context menu (Web Inspector).
-    [c.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
     return c;
 }
 
@@ -451,54 +669,40 @@
 
 - (void)showBookmarks:(id)sender {
     (void)sender;
-    BrowserWindowController* c = [self openTabWithURL:@"lethe://bookmarks"
-                                          fromWindow:[NSApp keyWindow] webView:nil];
+    BrowserWindowController* c = [self openTabWithURL:@"lethe://bookmarks" fromWindow:[NSApp keyWindow] webView:nil];
     if (!c) return;
-    __weak BrowserWindowController* weakC = c;
-    // Give the navigation a moment to land, then inject the rendered list.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC),
-                   dispatch_get_main_queue(), ^{
-        BrowserWindowController* strong = weakC;
-        if (!strong) return;
-        [strong renderBookmarksPage];
+    __weak BrowserWindowController* w = c;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        BrowserWindowController* strong = w;
+        if (strong) [strong renderBookmarksPage];
     });
 }
 
 - (void)clearBookmarks:(id)sender {
     (void)sender;
-    NSAlert* a = [[NSAlert alloc] init];
-    a.messageText = @"Clear all bookmarks?";
+    NSAlert* a = [[NSAlert alloc] init]; a.messageText = @"Clear all bookmarks?";
     a.informativeText = @"This removes every saved bookmark.";
-    [a addButtonWithTitle:@"Cancel"];
-    [a addButtonWithTitle:@"Clear"];
-    if ([a runModal] != NSAlertSecondButtonReturn) return;
-    for (LetheBookmark* b in [[LetheBookmarks shared] all]) {
-        [[LetheBookmarks shared] removeURL:b.url];
-    }
+    [a addButtonWithTitle:@"Cancel"]; [a addButtonWithTitle:@"Clear"];
+    if ([a runModal] == NSAlertSecondButtonReturn) for (LetheBookmark* b in [[LetheBookmarks shared] all]) [[LetheBookmarks shared] removeURL:b.url];
 }
 
 - (void)showHistory:(id)sender {
     (void)sender;
-    BrowserWindowController* c = [self openTabWithURL:@"lethe://history"
-                                          fromWindow:[NSApp keyWindow] webView:nil];
+    BrowserWindowController* c = [self openTabWithURL:@"lethe://history" fromWindow:[NSApp keyWindow] webView:nil];
     if (!c) return;
-    __weak BrowserWindowController* weakC = c;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC),
-                   dispatch_get_main_queue(), ^{
-        BrowserWindowController* strong = weakC;
+    __weak BrowserWindowController* w = c;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        BrowserWindowController* strong = w;
         if (strong) [strong renderHistoryPage];
     });
 }
 
 - (void)clearHistory:(id)sender {
     (void)sender;
-    NSAlert* a = [[NSAlert alloc] init];
-    a.messageText = @"Clear browsing history?";
+    NSAlert* a = [[NSAlert alloc] init]; a.messageText = @"Clear browsing history?";
     a.informativeText = @"This removes all recorded visits.";
-    [a addButtonWithTitle:@"Cancel"];
-    [a addButtonWithTitle:@"Clear"];
-    if ([a runModal] != NSAlertSecondButtonReturn) return;
-    [[LetheHistory shared] clear];
+    [a addButtonWithTitle:@"Cancel"]; [a addButtonWithTitle:@"Clear"];
+    if ([a runModal] == NSAlertSecondButtonReturn) [[LetheHistory shared] clear];
 }
 
 - (void)showPermissions:(id)sender {
@@ -621,10 +825,7 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     [[LetheSettings shared] show];
 }
 
-- (void)showTabSearch:(id)sender {
-    (void)sender;
-    [[LetheTabSearch shared] show];
-}
+- (void)showTabSearch:(id)sender { (void)sender; [[LetheTabSearch shared] show]; }
 
 - (void)prefsToggle:(NSButton*)sender {
     // Legacy: the old preferences dialog used this. The new LetheSettings
@@ -639,6 +840,20 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
 // so we alert the user; everything else is live.
 - (void)applyPreferences {
     LethePreferences* prefs = [LethePreferences shared];
+    if (ctx_ && ctx_->engine) {
+        lethe::MediaUpscalerMode mode = lethe::MediaUpscalerMode::None;
+        const char* env = getenv("LETHE_UPSCALER");
+        if (env && *env) {
+            std::string v = env;
+            for (char& ch : v) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+            if (v == "linear") mode = lethe::MediaUpscalerMode::Linear;
+            else if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr")
+                mode = lethe::MediaUpscalerMode::MetalFX;
+        } else if (prefs.upscaler == LetheUpscalerLinear) mode = lethe::MediaUpscalerMode::Linear;
+        else if (prefs.upscaler == LetheUpscalerFSR1 || prefs.upscaler == LetheUpscalerDLSSLike)
+            mode = lethe::MediaUpscalerMode::MetalFX;
+        ctx_->engine->renderer()->setMediaUpscaler(mode);
+    }
     // --- Plugins: the registry is the runtime view of every feature ------
     // 1. Mirror the preference-keyed plugins into the registry.
     lethe::PluginRegistry& reg = lethe::PluginRegistry::instance();
@@ -719,6 +934,28 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
         if (prefs.maxFrameRate > 0) {
             NSLog(@"[lethe] maxFrameRate=%ld (best-effort)", (long)prefs.maxFrameRate);
         }
+        // Browser media surfaces are owned by WebKit and are not exposed as
+        // Metal textures. The injected WebGL scaler therefore handles the
+        // media elements that WebGL is permitted to sample. Mode 1 is the
+        // fast linear path; modes 2/3 select the high-quality reconstruction.
+        NSInteger mediaMode = 0;
+        const char* env = getenv("LETHE_UPSCALER");
+        if (env && *env) {
+            std::string v = env;
+            for (char& ch : v) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+            if (v == "linear") mediaMode = 1;
+            else if (v == "metalfx-sharp") mediaMode = 3;
+            else if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr") mediaMode = 2;
+        } else if (prefs.upscaler == LetheUpscalerLinear) mediaMode = 1;
+        else if (prefs.upscaler == LetheUpscalerFSR1) mediaMode = 2;
+        else if (prefs.upscaler == LetheUpscalerDLSSLike) mediaMode = 3;
+        NSString* js = [NSString stringWithFormat:
+            @"window.__letheMediaUpscalerSetMode && window.__letheMediaUpscalerSetMode(%ld);",
+            (long)mediaMode];
+        [c.webView evaluateJavaScript:js completionHandler:^(id result, NSError* error) {
+            (void)result;
+            if (error) NSLog(@"[lethe] media upscaler injection: %@", error.localizedDescription);
+        }];
     }
 }
 - (void)buildMenuBar {
@@ -726,7 +963,6 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     const NSEventModifierFlags cmd = NSEventModifierFlagCommand;
     const NSEventModifierFlags cmdShift = cmd | NSEventModifierFlagShift;
     const NSEventModifierFlags cmdCtrl = cmd | NSEventModifierFlagControl;
-    const NSEventModifierFlags cmdAlt = cmd | NSEventModifierFlagOption;
     const NSEventModifierFlags ctrl = NSEventModifierFlagControl;
 
     NSMenu* app = addSubmenu(bar, @"Lethe");
@@ -757,12 +993,6 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     [file addItem:[NSMenuItem separatorItem]];
     addItem(file, @"Print…", @selector(printPage:), @"p", cmd);
 
-    NSMenu* bookmarks = addSubmenu(bar, @"Bookmarks");
-    addItem(bookmarks, @"Toggle Bookmark", @selector(toggleBookmark:), @"d", cmd);
-    addItem(bookmarks, @"Show All Bookmarks…", @selector(showBookmarks:), @"", 0);
-    [bookmarks addItem:[NSMenuItem separatorItem]];
-    addItem(bookmarks, @"Clear Bookmarks", @selector(clearBookmarks:), @"", 0);
-
     NSMenu* edit = addSubmenu(bar, @"Edit");
     addItem(edit, @"Undo", @selector(undo:), @"z", cmd);
     addItem(edit, @"Redo", @selector(redo:), @"z", cmdShift);
@@ -776,6 +1006,12 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     addItem(edit, @"Find Next", @selector(findNext:), @"g", cmd);
     addItem(edit, @"Find Previous", @selector(findPrevious:), @"g", cmdShift);
 
+    NSMenu* bookmarks = addSubmenu(bar, @"Bookmarks");
+    addItem(bookmarks, @"Toggle Bookmark", @selector(toggleBookmark:), @"d", cmd);
+    addItem(bookmarks, @"Show All Bookmarks…", @selector(showBookmarks:), @"", 0);
+    [bookmarks addItem:[NSMenuItem separatorItem]];
+    addItem(bookmarks, @"Clear Bookmarks", @selector(clearBookmarks:), @"", 0);
+
     NSMenu* view = addSubmenu(bar, @"View");
     addItem(view, @"Reload Page", @selector(reloadPage:), @"r", cmd);
     addItem(view, @"Stop", @selector(stopLoading:), @".", cmd);
@@ -784,7 +1020,7 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     [view addItem:[NSMenuItem separatorItem]];
     addItem(view, @"Find in Tabs…", @selector(showTabSearch:), @"\\", cmd);
     [view addItem:[NSMenuItem separatorItem]];
-    addItem(view, @"Show Web Inspector", @selector(showWebInspector:), @"i", cmdAlt);
+    addItem(view, @"Show Web Inspector", @selector(showWebInspector:), @"i", cmd | NSEventModifierFlagOption);
     [view addItem:[NSMenuItem separatorItem]];
     addItem(view, @"Actual Size", @selector(zoomActual:), @"0", cmd);
     addItem(view, @"Zoom In", @selector(zoomIn:), @"=", cmd);

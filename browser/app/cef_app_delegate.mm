@@ -7,8 +7,10 @@
 //
 // Engine init order: ShellBootstrap first (engine, DoH, proxy), then
 // CefInitialize, then the CefBrowserHost::CreateBrowser that opens the
-// first window. applicationWillTerminate shuts the proxy + engine down
-// via ShellBootstrap::shutdown, which is idempotent.
+// first window. The CEF message-loop owner in main_cef.mm performs the
+// single, final CefShutdown + ShellBootstrap::shutdown after the loop
+// returns. AppKit termination notifications must not tear the bootstrap
+// down while a CEF browser callback is still executing.
 
 #include "app/cef_app_delegate.h"
 
@@ -25,6 +27,7 @@
 #include "include/wrapper/cef_helpers.h"
 
 #include "app/cef_automation.h"
+#include "app/cef_chrome.h"
 
 #include "network/policy_proxy.h"
 #include "plugins/plugin_registry.h"
@@ -35,6 +38,89 @@
     CefRefPtr<CefBrowserClient> _client;
     int _argc;
     char** _argv;
+}
+
+- (void)createInitialBrowser {
+    // CEF on macOS has a long-standing lifecycle edge case when a native
+    // browser is created synchronously before CefRunMessageLoop() starts:
+    // CloseBrowser() can reach DoClose() but the top-level window never
+    // completes destruction. Defer creation onto the main/UI event queue so
+    // the browser is created from inside the running CEF/AppKit loop.
+    CefWindowInfo windowInfo;
+    CefRect rect(0, 0, 1280, 860);
+    windowInfo.bounds = rect;
+    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+
+    CefBrowserSettings browserSettings;
+    browserSettings.background_color = 0xFFFFFFFFu;
+    if (!lethe::PluginRegistry::instance().enabled("javascript")) {
+        browserSettings.javascript = STATE_DISABLED;
+    }
+
+    std::string startUrl = LetheCefNewTabDataUrl();
+    if (_ctx && !_ctx->cfg.initialUrl.empty()) startUrl = _ctx->cfg.initialUrl;
+
+    if (!CefBrowserHost::CreateBrowser(
+            windowInfo, _client, startUrl, browserSettings, nullptr, nullptr)) {
+        std::cerr << "[lethe-cef] CreateBrowser failed" << std::endl;
+        CefQuitMessageLoop();
+        return;
+    }
+
+    // Honour --e2e-script only after the browser creation request has been
+    // submitted to the running UI loop. OnAfterCreated will register the
+    // actual browser with the automation driver before its first 600 ms tick.
+    NSString* scriptPath = [[NSUserDefaults standardUserDefaults]
+        stringForKey:@"e2e-script"];
+    if (scriptPath.length) {
+        LetheCefAutomation::shared()->Start(self, [scriptPath UTF8String]);
+    } else if (_ctx && !_ctx->e2eScript.empty()) {
+        LetheCefAutomation::shared()->Start(self, _ctx->e2eScript);
+    }
+}
+
+- (void)newTabFromMenu:(id)sender {
+    (void)sender;
+    // AppKit menu key equivalents are the native macOS command path. Keep
+    // this separate from CEF's OnPreKeyEvent handler: when a renderer or
+    // NSTextField has focus, AppKit may consume Cmd+T before CEF sees the
+    // raw key event. Both paths create the same CEF browser, and OnAfterCreated
+    // folds the resulting native window into the existing tab group.
+    if (!_client) return;
+
+    CefWindowInfo windowInfo;
+    windowInfo.bounds = CefRect(0, 0, 1280, 860);
+    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+    CefBrowserSettings settings;
+    settings.background_color = 0xFFFFFFFFu;
+    if (!lethe::PluginRegistry::instance().enabled("javascript"))
+        settings.javascript = STATE_DISABLED;
+
+    const std::string startUrl = LetheCefNewTabDataUrl();
+    if (!CefBrowserHost::CreateBrowser(
+            windowInfo, _client, startUrl, settings, nullptr, nullptr)) {
+        std::cerr << "[lethe-cef] native Cmd+T CreateBrowser failed" << std::endl;
+        return;
+    }
+    std::cout << "[lethe-cef] native Cmd+T -> new tab" << std::endl;
+}
+
+- (void)installNativeMenu {
+    NSMenu* bar = [[NSMenu alloc] initWithTitle:@"Main Menu"];
+    NSMenuItem* fileHolder = [[NSMenuItem alloc] initWithTitle:@"File"
+                                                       action:nil
+                                                keyEquivalent:@""];
+    NSMenu* file = [[NSMenu alloc] initWithTitle:@"File"];
+    fileHolder.submenu = file;
+    NSMenuItem* newTab = [[NSMenuItem alloc]
+        initWithTitle:@"New Tab"
+               action:@selector(newTabFromMenu:)
+        keyEquivalent:@"t"];
+    newTab.keyEquivalentModifierMask = NSEventModifierFlagCommand;
+    newTab.target = self;
+    [file addItem:newTab];
+    [bar addItem:fileHolder];
+    [NSApp setMainMenu:bar];
 }
 
 @synthesize context = _ctx;
@@ -55,15 +141,15 @@
     return self;
 }
 
-- (void)applicationDidFinishLaunching:(NSNotification*)notification {
-    (void)notification;
+- (void)initializeCEF {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
     CefMainArgs args(_argc, _argv);  // plumbed from main(); carries --disable-process-singleton etc.
     CefSettings settings;
     // macOS ignores CefMainArgs argc/argv (CEF reads the process args from
-    // NSProcessInfo). Force the singleton off + sandbox off on the global
-    // CefCommandLine so CefInitialize picks them up before Chromium boots.
+    // NSProcessInfo). Force the singleton off on the global command line
+    // before Chromium boots. Chromium's own subprocess sandbox remains on;
+    // Lethe's Seatbelt is an additional host-level boundary.
     CefRefPtr<CefCommandLine> global = CefCommandLine::GetGlobalCommandLine();
     // LETHE_CEF_MIN_SWITCHES=1 (bisect): skip the global-command-line block
     // entirely (mock keychain still applied by App::OnBeforeCommandLineProcessing).
@@ -82,12 +168,8 @@
             global->AppendSwitch("disable-process-singleton");
         if (!global->HasSwitch("disable-default-apps"))
             global->AppendSwitch("disable-default-apps");
-        if (!global->HasSwitch("no-sandbox"))
-            global->AppendSwitch("no-sandbox");
         if (!global->HasSwitch("disable-dev-shm-usage"))
             global->AppendSwitch("disable-dev-shm-usage");
-        if (!global->HasSwitch("disable-gpu-sandbox"))
-            global->AppendSwitch("disable-gpu-sandbox");
         // Belt and suspenders for the net stack: OnBeforeCommandLineProcessing
         // also appends proxy-server, but Chromium consumes --proxy-server and
         // strips it from the command line handed to child processes. The
@@ -119,15 +201,11 @@
                 global->AppendSwitchWithValue("log-net-log", netlog);
         }
     }
-    // The CEF sandbox needs a fully-Apple-signed Helper.app that has been
-    // blessed by codesign --entitlements. Without that, Chromium's
-    // InitProcessSingleton path fails to find DIR_USER_DATA and aborts at
-    // chrome_main_delegate.cc:1566 (NOTREACHED) before CefInitialize even
-    // returns. We disable the sandbox and let our own macOS Seatbelt
-    // profile (cfg.sandboxEnabled in the engine config) carry the policy
-    // load. Turning the CEF sandbox back on requires a proper codesign
-    // pass on the Helper, which is part of the v1.0 packaging work.
-    settings.no_sandbox = true;
+    // Keep Chromium's renderer/GPU sandbox enabled by default. If the user
+    // explicitly disables native CEF sandboxing, the shared Lethe Seatbelt
+    // can be used instead.
+    const char* nativeSandbox = getenv("LETHE_CEF_NATIVE_SANDBOX");
+    settings.no_sandbox = nativeSandbox && std::string(nativeSandbox) == "0";
     // Crash forensics: Chromium CHECK aborts print only through CEF's
     // logging sink. Route it somewhere we can read after a SIGTRAP.
     {
@@ -188,76 +266,42 @@
         std::exit(1);
     }
 
-    // Open the first window. CefBrowserHost::CreateBrowser is async: the
-    // browser object will arrive in CefBrowserClient::OnAfterCreated.
-    CefWindowInfo windowInfo;
-    CefRect rect(0, 0, 1280, 860);
-    windowInfo.bounds = rect;
+    // Install an AppKit command-key equivalent in addition to the CEF raw
+    // key handler. This is the authoritative OS-level Cmd+T route on macOS:
+    // it remains reachable when CEF's renderer/input view consumes the
+    // physical key event before OnPreKeyEvent is invoked.
+    [self installNativeMenu];
 
-    CefBrowserSettings browserSettings;
-    // Background colour matches the WebKit shell's new-tab page so a brief
-    // white flash doesn't appear between window-show and first paint.
-    // (0x00000000 = fully transparent. We use opaque white instead.)
-    browserSettings.background_color = 0xFFFFFFFFu;
-    // The "javascript" plugin: settings toggles reach this engine through
-    // the shared preferences store (see main_cef.mm). Off breaks most
-    // modern sites - that is the plugin's documented trade-off.
-    if (!lethe::PluginRegistry::instance().enabled("javascript")) {
-        browserSettings.javascript = STATE_DISABLED;
-    }
+    // Defer browser creation until the CEF/AppKit message loop is running.
+    // dispatch_async cannot execute this block until initializeCEF returns,
+    // which avoids the macOS pre-run-loop browser destruction bug.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self createInitialBrowser];
+    });
 
-    CefRefPtr<CefBrowserClient> client = _client;
-    // Start directly on the requested URL when there is one. The first
-    // main frame is then created inside the initial renderer, whose
-    // browser-info handshake is answered during browser creation. The old
-    // about:blank start dropped the first cross-site navigation into CEF's
-    // speculative-RFH browser-info race (upstream cef#4001; the proposed
-    // fix was declined) and the frame sat hung until the 15 s info timeout.
-    std::string startUrl = "about:blank";
-    if (!_ctx->cfg.initialUrl.empty()) startUrl = _ctx->cfg.initialUrl;
-    CefRefPtr<CefBrowser> browser = CefBrowserHost::CreateBrowserSync(
-        windowInfo, client, startUrl, browserSettings, nullptr, nullptr);
-    if (!browser) {
-        std::cerr << "[lethe-cef] CreateBrowserSync failed" << std::endl;
-        CefShutdown();
-        std::exit(1);
-    }
-    LetheCefAutomation::shared()->set_browser(browser);
-
-    // Honour --e2e-script if present.
-    NSString* scriptPath = [[NSUserDefaults standardUserDefaults]
-        stringForKey:@"e2e-script"];
-    if (scriptPath.length) {
-        LetheCefAutomation::shared()->Start(self, [scriptPath UTF8String]);
-    } else if (!_ctx->e2eScript.empty()) {
-        LetheCefAutomation::shared()->Start(self, _ctx->e2eScript);
-    } else if (!_ctx->cfg.initialUrl.empty()) {
-        // Non-e2e launch with a URL: CreateBrowserSync already navigated.
-    }
-
-    std::cout << "[lethe-cef] CefRunMessageLoop..." << std::endl;
-    CefRunMessageLoop();
-    // An e2e script quit the loop: tear CEF down on this same stack. Doing
-    // it in applicationWillTerminate would re-enter CefShutdown from a
-    // nested run loop and crash.
-    if (LetheCefAutomation::shared()->hasRun()) {
-        std::cout << "[lethe-cef] CefShutdown..." << std::endl;
-        CefShutdown();
-        if (_ctx && _ctx->onTerminate) _ctx->onTerminate();
-        std::exit(LetheCefAutomation::shared()->exitCode());
-    }
 }
 
 - (void)applicationWillTerminate:(NSNotification*)notification {
     (void)notification;
-    std::cout << "[lethe-cef] CefShutdown..." << std::endl;
-    CefShutdown();
-    if (_ctx && _ctx->onTerminate) _ctx->onTerminate();
+    // Do not call ShellBootstrap::shutdown here. AppKit can deliver
+    // applicationWillTerminate synchronously while CEF is unwinding a
+    // browser close (including OnBeforeClose). Shutting down the policy
+    // proxy/engine from that callback races CEF's own browser destruction
+    // and was the source of the SIGTRAP seen in the 2026-09-02 diagnostic
+    // report. main_cef.mm is the sole owner of final shutdown and runs it
+    // only after CefRunMessageLoop returns.
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)app {
     (void)app;
-    return YES;
+    // CEF owns the message-loop shutdown. A CEF browser close can make its
+    // native NSWindow disappear while OnBeforeClose is still executing; if
+    // AppKit terminates NSApplication at that point it synchronously delivers
+    // applicationWillTerminate from inside the CEF callback. That re-enters
+    // the AppKit/CEF teardown stack and produces the SIGTRAP seen in the
+    // macOS crash report. CefQuitMessageLoop() is the sole termination path;
+    // main_cef.mm exits after CefShutdown completes.
+    return NO;
 }
 
 @end

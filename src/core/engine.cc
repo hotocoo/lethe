@@ -69,6 +69,15 @@ void applyEnvironmentOverrides(Config& cfg) {
         const std::string v = toLowerCopy(std::string(uaMode));
         cfg.userAgentMode = (v == "stealth") ? "stealth" : "standard";
     }
+    if (const char* upscaler = std::getenv("LETHE_UPSCALER")) {
+        const std::string v = toLowerCopy(std::string(upscaler));
+        if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr")
+            cfg.media_upscaler = MediaUpscalerMode::MetalFX;
+        else if (v == "linear")
+            cfg.media_upscaler = MediaUpscalerMode::Linear;
+        else if (v == "none" || v == "off")
+            cfg.media_upscaler = MediaUpscalerMode::None;
+    }
     if (const char* pnMode = std::getenv("LETHE_PRIVATE_NET_MODE")) {
         const std::string v = toLowerCopy(std::string(pnMode));
         // Only an explicit "open" (or the usual off spellings) lifts

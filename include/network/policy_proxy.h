@@ -66,9 +66,10 @@ public:
         // could ride Lethe's VPN tunnel and policy identity. Empty = off
         // (tests / engines that cannot send proxy credentials).
         std::string authToken;
-        // Worker threads in the connection-handling pool. 0 = auto
-        // (std::thread::hardware_concurrency, with a sane floor). The
-        // accept thread is separate and always single.
+        // Worker threads in the connection-handling pool. 0 = auto (16-32
+        // workers based on host concurrency). CONNECT tunnels occupy a
+        // worker for their lifetime, so the higher ceiling prevents
+        // media-heavy pages from starving unrelated navigations.
         size_t workerThreads = 0;
     };
 
@@ -86,7 +87,7 @@ public:
     // Bind + start accepting. Returns false (with reason in lastError()) on
     // socket failure.
     bool start(const Options& options);
-    // Stop accepting, close listener; live connection threads detach.
+    // Stop accepting, wake live handlers, and join the worker pool.
     void stop();
 
     int port() const { return port_; }
@@ -123,11 +124,15 @@ private:
     bool isStopping() const { return stopping_.load(std::memory_order_relaxed); }
 
     // Fixed-size worker pool: accept() pushes a fresh client fd, workers
-    // pop and serve. The previous design detached a fresh std::thread per
-    // connection, which costs ~100 µs of syscall + an 8 MiB stack per
-    // page load subresource. With a page that issues 50+ subresources in
-    // parallel, that thrashed the scheduler and inflated TTFB.
+    // pop and serve. CONNECT tunnels are long-lived, so the auto size is
+    // deliberately 16-32 rather than the older 8-16 range; this keeps
+    // media-heavy pages from creating p99.9 queueing for new navigations.
     std::vector<std::thread> workers_;
+    // CONNECT tunnels are long-lived (video/audio/WebSocket/etc.). Keep them
+    // out of the request worker pool so a media-heavy page cannot consume
+    // every policy worker and create a p99.9 queueing tail for new requests.
+    std::vector<std::thread> tunnelWorkers_;
+    std::mutex tunnelWorkers_mtx_;
     std::deque<int> queue_;
     std::mutex queue_mtx_;
     std::condition_variable queue_cv_;

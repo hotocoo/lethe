@@ -19,14 +19,56 @@
 #include <iostream>
 
 #include "include/cef_app.h"
+#include "include/cef_application_mac.h"
 #include "include/cef_version.h"
 #include "include/wrapper/cef_helpers.h"
 
 #include "app/cef_app_delegate.h"
 #include "app/cef_browser_client.h"
+#include "app/cef_automation.h"
 #include "app/shell_bootstrap.h"
 
+// CEF's macOS Views/Chrome-style popup implementation uses CefScopedSendingEvent
+// while dispatching AppKit events. CEF requires the host NSApplication to
+// implement CefAppProtocol; using a plain NSApplication leaves
+// -isHandlingSendEvent/-setHandlingSendEvent: undefined and a popup close
+// eventually raises NSInvalidArgumentException. This is the same AppKit
+// contract used by CEF's own macOS client applications.
+@interface LetheCefApplication : NSApplication <CefAppProtocol>
+@property(nonatomic, assign) BOOL letheHandlingSendEvent;
+@end
+
+@implementation LetheCefApplication
+
+- (BOOL)isHandlingSendEvent {
+    return self.letheHandlingSendEvent;
+}
+
+- (void)setHandlingSendEvent:(BOOL)handlingSendEvent {
+    self.letheHandlingSendEvent = handlingSendEvent;
+}
+
+- (void)sendEvent:(NSEvent*)event {
+    const BOOL previous = self.letheHandlingSendEvent;
+    self.letheHandlingSendEvent = YES;
+    [super sendEvent:event];
+    self.letheHandlingSendEvent = previous;
+}
+
+@end
+
 int main(int argc, char** argv) {
+    // Chromium's native macOS sandbox and Lethe's host Seatbelt are both
+    // process-scoped and cannot be nested. Prefer Chromium's dedicated
+    // renderer/GPU/network sandbox for Blink; keep the older host Seatbelt
+    // available as an explicit compatibility mode.
+    const char* nativeSandboxEnv = std::getenv("LETHE_CEF_NATIVE_SANDBOX");
+    const bool nativeSandbox = !nativeSandboxEnv ||
+        std::string(nativeSandboxEnv) != "0";
+    if (nativeSandbox && !std::getenv("LETHE_SANDBOX")) {
+        setenv("LETHE_SANDBOX", "0", 1);
+    }
+
     // newArgv MUST outlive boot.init and the CEF main loop. The earlier
     // scope-block died before boot.init was called and argv[3] then
     // pointed to freed memory, which made _platform_strlen SIGSEGV.
@@ -75,9 +117,7 @@ int main(int argc, char** argv) {
     newArgv.assign(argv, argv + argc);
     newArgv.push_back(const_cast<char*>("--disable-process-singleton"));
     newArgv.push_back(const_cast<char*>("--disable-default-apps"));
-    newArgv.push_back(const_cast<char*>("--no-sandbox"));
     newArgv.push_back(const_cast<char*>("--disable-dev-shm-usage"));
-    newArgv.push_back(const_cast<char*>("--disable-gpu-sandbox"));
     argv = newArgv.data();
     argc = static_cast<int>(newArgv.size());
     // Step 1: parse argv, start the engine, start the policy proxy. This
@@ -108,13 +148,27 @@ int main(int argc, char** argv) {
     // applicationDidFinishLaunching after NSApplication is set up. The
     // delegate shuts CEF + the bootstrap down on terminate.
     @autoreleasepool {
-        NSApplication* app = [NSApplication sharedApplication];
+        // CEF's macOS event bridge requires a CefAppProtocol NSApplication;
+        // instantiate the subclass before CEFInitialize creates any Views
+        // windows.
+        NSApplication* app = [LetheCefApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
         LetheCefAppDelegate* delegate = [[LetheCefAppDelegate alloc]
             initWithContext:&boot.ctx app:cefApp client:client
                        argc:argc argv:argv];
         app.delegate = delegate;
-        [app run];
+        // CEF's macOS message loop owns the NSApplication event loop. Do not
+        // call -[NSApplication run] and then nest CefRunMessageLoop from the
+        // application delegate; that leaves CEF shutdown inside an AppKit
+        // launch-notification stack and can retain browser-context observers.
+        [delegate initializeCEF];
+        std::cout << "[lethe-cef] CefRunMessageLoop..." << std::endl;
+        CefRunMessageLoop();
+        std::cout << "[lethe-cef] CefShutdown..." << std::endl;
+        CefShutdown();
+        const int e2eRc = LetheCefAutomation::shared()->exitCode();
+        boot.shutdown();
+        return e2eRc;
     }
     boot.shutdown();
     return 0;

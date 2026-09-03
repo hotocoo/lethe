@@ -5,9 +5,9 @@
 // Window" come from AppKit and behave like every other Mac browser.
 
 #import "ui/mac/LetheShell.h"
+#import "ui/mac/LetheDownloads.h"
 #import "ui/mac/LetheBookmarks.h"
 #import "ui/mac/LetheHistory.h"
-#import "ui/mac/LetheDownloads.h"
 #import "ui/mac/LethePermissions.h"
 #import "ui/mac/LethePreferences.h"
 #import "ui/mac/LethePluginLoader.h"
@@ -77,13 +77,7 @@ static NSString* const kQuietPageStyle =
     NSView* findBar_;
     NSTextField* findField_;
     NSTextField* findStatus_;
-    // Unique per-BWC names for the "bookmarks" and "perms" script message
-    // handlers. The shared userContentController can only have one object
-    // registered per name; suffixing with a counter lets every BWC register
-    // its own handler. The injected JS reads the right name from
-    // window.__letheHandlerNames injected at doc-start (see webView:
-    // didStartProvisionalNavigation). The names are also stored so the
-    // dealloc can remove them.
+    // Unique per-BWC names for the permissions/plugin script handlers.
     NSArray* messageHandlerNames_;    NSLayoutConstraint* findBarHeight_;
     NSMutableArray<WKDownload*>* downloads_;
     BOOL observing_;
@@ -93,7 +87,36 @@ static NSString* const kQuietPageStyle =
     BOOL readerFetching_;
     NSString* readerSourceUrl_;
     NSString* internalPageUrl_;   // address shown while an internal page is up
+    NSResponder* windowActionProxy_;
 }
+@end
+
+// AppKit's native tab-strip buttons send their actions through the responder
+// chain. NSWindowController is not itself an NSResponder, so those actions
+// can stop at NSWindow instead of reaching this controller. Keep the native
+// tab strip, but insert a tiny responder that forwards its actions here.
+@interface LetheWindowActionProxy : NSResponder
+@property(nonatomic, weak) BrowserWindowController* owner;
+@end
+
+@implementation LetheWindowActionProxy
+
+- (void)newWindowForTab:(id)sender { [_owner newWindowForTab:sender]; }
+- (void)selectNextTab:(id)sender { [_owner.window selectNextTab:sender]; }
+- (void)selectPreviousTab:(id)sender { [_owner.window selectPreviousTab:sender]; }
+- (void)toggleTabOverview:(id)sender {
+    NSWindow* window = _owner.window;
+    SEL action = @selector(toggleTabOverview:);
+    if ([window respondsToSelector:action])
+        [window performSelector:action withObject:sender];
+}
+- (void)showTabOverview:(id)sender {
+    NSWindow* window = _owner.window;
+    SEL action = @selector(showTabOverview:);
+    if ([window respondsToSelector:action])
+        [window performSelector:action withObject:sender];
+}
+
 @end
 
 @implementation BrowserWindowController
@@ -150,6 +173,11 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
         window.titleVisibility = NSWindowTitleHidden;
         window.titlebarAppearsTransparent = YES;
         window.toolbarStyle = NSWindowToolbarStyleUnifiedCompact;
+        LetheWindowActionProxy* actionProxy = [[LetheWindowActionProxy alloc] init];
+        actionProxy.owner = self;
+        actionProxy.nextResponder = window.nextResponder;
+        window.nextResponder = actionProxy;
+        windowActionProxy_ = actionProxy;
         [window center];
         [window setFrameAutosaveName:@"LetheBrowserWindow"];
 
@@ -186,21 +214,17 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
             // fixed low-entropy profile.
             webView_.customUserAgent = @(lethe::stealthUserAgentString());
         }
-        // The userContentController is shared across all BWCs so that the
-        // tracker rules compile once. The trade-off is that
-        // addScriptMessageHandler: requires a unique name PER HANDLER
-        // OBJECT - WebKit throws if a different object tries to register
-        // a name that is already taken. Solution: give this BWC a unique
-        // name by suffixing a per-instance counter. The JS calls
-        // webkit.messageHandlers["bookmarks-<suffix>"] via the global
-        // window.__letheHandlerNames() we inject at doc-start.
+        // The shared userContentController needs unique names per handler
+        // object. Keep permissions/plugin messaging isolated per tab.
         static NSUInteger s_handlerCounter = 0;
         const NSUInteger n = ++s_handlerCounter;
         NSString* bmName = [NSString stringWithFormat:@"bookmarks-%lu", (unsigned long)n];
         NSString* pmName = [NSString stringWithFormat:@"perms-%lu", (unsigned long)n];
-        messageHandlerNames_ = @[bmName, pmName];
+        NSString* plName = [NSString stringWithFormat:@"plugins-%lu", (unsigned long)n];
+        messageHandlerNames_ = @[bmName, pmName, plName];
         [webView_.configuration.userContentController addScriptMessageHandler:self name:bmName];
         [webView_.configuration.userContentController addScriptMessageHandler:self name:pmName];
+        [webView_.configuration.userContentController addScriptMessageHandler:self name:plName];
         [self buildChrome];
         [self startObserving];
     }
@@ -220,8 +244,8 @@ static NSString* const kLetheToolbarForward = @"LetheToolbarForward";
 static NSString* const kLetheToolbarReload = @"LetheToolbarReload";
 static NSString* const kLetheToolbarAddress = @"LetheToolbarAddress";
 static NSString* const kLetheToolbarReader = @"LetheToolbarReader";
-static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
 static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
+static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
      itemForItemIdentifier:(NSToolbarItemIdentifier)identifier
@@ -329,13 +353,12 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
 }
 
 // Keep the pill wide: window width minus the fixed edges (traffic lights,
-// nav buttons, reader, bookmark, spacing). The toolbar centers the flexible
+// nav buttons, reader, settings, spacing). The toolbar centers the flexible
 // space around it.
 - (void)layoutAddressPill {
     if (!addressPillWidth_ || !self.window) return;
     const CGFloat w = self.window.contentView.bounds.size.width;
-    // Traffic lights ~70 + back/fwd/reload ~96 + reader/bookmark/settings
-    // ~100 + gaps.
+    // Traffic lights + navigation + reader/settings + gaps.
     CGFloat pill = w - 316.0;
     if (pill < 220) pill = 220;
     addressPillWidth_.constant = pill;
@@ -560,76 +583,19 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
     internalPageUrl_ = @"";
     readerActive_ = NO;
     std::vector<lethe::SpeedDialItem> bm;
-    NSArray<LetheBookmark*>* allB = [[LetheBookmarks shared] all];
-    NSUInteger n = MIN((NSUInteger)8, allB.count);
-    for (NSUInteger i = 0; i < n; i++) {
-        bm.push_back({std::string(allB[i].title.UTF8String ?: ""),
-                     std::string(allB[i].url.UTF8String ?: "")});
+    for (LetheBookmark* b in [[LetheBookmarks shared] all]) {
+        if (bm.size() >= 8) break;
+        bm.push_back({std::string(b.title.UTF8String ?: ""), std::string(b.url.UTF8String ?: "")});
     }
     std::vector<lethe::SpeedDialItem> rc;
-    NSArray<LetheHistoryEntry*>* allH = [[LetheHistory shared] allEntries];
-    NSUInteger m = MIN((NSUInteger)8, allH.count);
-    for (NSUInteger i = 0; i < m; i++) {
-        rc.push_back({std::string(allH[i].title.UTF8String ?: ""),
-                     std::string(allH[i].url.UTF8String ?: "")});
+    for (LetheHistoryEntry* h in [[LetheHistory shared] allEntries]) {
+        if (rc.size() >= 8) break;
+        rc.push_back({std::string(h.title.UTF8String ?: ""), std::string(h.url.UTF8String ?: "")});
     }
     [webView_ loadHTMLString:@(lethe::renderNewTabPage(rc, bm).c_str()) baseURL:nil];
     [self updateTitle];
     [self updateAddress];
     [self focusAddressBar:nil];
-}
-
-- (void)renderBookmarksPage {
-    NSMutableString* rows = [NSMutableString string];
-    NSArray<LetheBookmark*>* all = [[LetheBookmarks shared] all];
-    for (LetheBookmark* b in all) {
-        NSString* esc = [b.title stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
-        esc = [esc stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
-        esc = [esc stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
-        NSString* urlEsc = [b.url stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
-        [rows appendFormat:@"\n          <li><a href=\"%@\">%@</a><br><span class=\"u\">%@</span>\n                       <button class=\"rm\" data-url=\"%@\">Remove</button></li>", urlEsc, esc, urlEsc, urlEsc];
-    }
-    NSString* body = all.count ? [NSString stringWithFormat:@"<ul>%@</ul>", rows]
-                                : @"<p class=\"empty\">No bookmarks yet. Press Cmd+D to bookmark the current page.</p>";
-    NSString* html = [NSString stringWithFormat:@"\n        <!doctype html><meta charset=\"utf-8\">\n        <title>Bookmarks</title>\n        <style>\n          :root{color-scheme:light dark}\n          body{font:15px/1.6 -apple-system,system-ui,sans-serif;max-width:720px;margin:0 auto;padding:56px 32px;color:#1b1e21;background:#fafafa}\n          @media(prefers-color-scheme:dark){body{background:#16181a;color:#dcdfe2}}\n          h1{font-size:26px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}\n          p.sub{opacity:.6;margin:0 0 28px}\n          ul{list-style:none;padding:0;margin:0}\n          li{padding:12px 2px;border-bottom:1px solid rgba(128,128,128,.22)}\n          li a{color:#295770;text-decoration:none;font-weight:500;font-size:15px}\n          @media(prefers-color-scheme:dark){li a{color:#8cbad0}}\n          li a:hover{text-decoration:underline}\n          .u{opacity:.55;font-size:12px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}\n          .rm{float:right;background:none;border:none;padding:2px 6px;color:#b3261e;cursor:pointer;font-size:12px}\n          .rm:hover{text-decoration:underline}\n          .empty{opacity:.55;font-style:italic}\n        </style>\n        <h1>Bookmarks</h1>\n        <p class=\"sub\">%lu saved. Cmd+D toggles the bookmark on the current page.</p>\n        %@\n        <script>\n        document.addEventListener('click', function(e){\n          if (e.target.classList.contains('rm')) {\n            const u = e.target.getAttribute('data-url');\n            (window.webkit.messageHandlers[%@] || {postMessage:function(){}}).postMessage({op:\"remove\", url:u});\n          }\n        });\n        </script>\n      ", (unsigned long)all.count, body, messageHandlerNames_.firstObject ?: @"bookmarks"];
-    internalPageUrl_ = @"lethe://bookmarks";
-    [webView_ loadHTMLString:html baseURL:nil];
-    [self updateTitle];
-    [self updateAddress];
-}
-
-
-- (void)renderHistoryPage {
-    NSArray<LetheHistoryEntry*>* entries = [[LetheHistory shared] allEntries];
-    NSDateFormatter* fmt = [[NSDateFormatter alloc] init];
-    fmt.dateStyle = NSDateFormatterShortStyle;
-    fmt.timeStyle = NSDateFormatterShortStyle;
-    NSMutableString* rows = [NSMutableString string];
-    NSString* lastDay = nil;
-    for (LetheHistoryEntry* h in entries) {
-        NSString* day = [fmt stringFromDate:h.visitedAt];
-        if (![day isEqualToString:lastDay]) {
-            if (lastDay) [rows appendString:@"</ul>"];
-            [rows appendFormat:@"<h2>%@</h2><ul>", day];
-            lastDay = day;
-        }
-        NSString* esc = [h.title stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
-        esc = [esc stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
-        esc = [esc stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
-        NSString* urlEsc = [h.url stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
-        NSString* time = [[NSDateFormatter localizedStringFromDate:h.visitedAt dateStyle:NSDateFormatterNoStyle timeStyle:NSDateFormatterShortStyle] stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
-        [rows appendFormat:@"<li><a href=\"%@\">%@</a><br><span class=\"u\">%@</span> <span class=\"t\">%@</span></li>", urlEsc, esc, urlEsc, time];
-    }
-    if (lastDay) [rows appendString:@"</ul>"];
-    NSString* body = entries.count ? rows : @"<p class=\"empty\">No history yet.</p>";
-    NSString* html = [NSString stringWithFormat:@"<!doctype html><meta charset=\"utf-8\"><title>History</title>"
-        @"%@"
-        @"<h1>History</h1><p class=\"empty\" style=\"margin:0 0 8px\">%lu entries. \\u2318Y opens this page.</p>%@",
-        kQuietPageStyle, (unsigned long)entries.count, body];
-    internalPageUrl_ = @"lethe://history";
-    [webView_ loadHTMLString:html baseURL:nil];
-    [self updateTitle];
-    [self updateAddress];
 }
 
 - (void)renderPermissionsPage {
@@ -659,7 +625,7 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
         @"<script>document.addEventListener('click',function(e){"
         @"if(e.target.classList.contains('rm')){var u=e.target.getAttribute('data-host'),t=e.target.getAttribute('data-type');"
         @"(window.webkit.messageHandlers[%@]||{postMessage:function(){}}).postMessage({op:'clear',host:u,type:t});}"
-        @"});</script>", kQuietPageStyle, body, messageHandlerNames_.lastObject ?: @"perms"];
+        @"});</script>", kQuietPageStyle, body, messageHandlerNames_.count > 1 ? messageHandlerNames_[1] : @"perms"];
     internalPageUrl_ = @"lethe://permissions";
     [webView_ loadHTMLString:html baseURL:nil];
     [self updateTitle];
@@ -668,7 +634,7 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
 
 // lethe://plugins - every feature of the browser, packaged as a plugin,
 // rendered straight from the PluginRegistry plus the script plugins on
-// disk. Toggling posts back over the bookmarks message channel; the op
+// disk. Toggling posts back over the permissions message channel; the op
 // persists through LethePreferences so the Settings window, this page and
 // the registry never disagree.
 - (void)renderPluginsPage {
@@ -735,7 +701,7 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
         @"(window.webkit.messageHandlers[%@]||{postMessage:function(){}})"
         @".postMessage({op:'plugin-toggle',id:id,file:f});}"
         @"});</script>",
-        kQuietPageStyle, body, messageHandlerNames_.firstObject ?: @"bookmarks"];
+        kQuietPageStyle, body, messageHandlerNames_.lastObject ?: @"plugins"];
     internalPageUrl_ = @"lethe://plugins";
     [webView_ loadHTMLString:html baseURL:nil];
     [self updateTitle];
@@ -896,17 +862,6 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
     if (dir) [[NSWorkspace sharedWorkspace] openURL:dir];
 }
 
-- (void)showWebInspector:(id)sender {
-    (void)sender;
-    SEL sel = NSSelectorFromString(@"_openInspector");
-    if ([webView_ respondsToSelector:sel]) {
-        #pragma clang diagnostic push
-        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [webView_ performSelector:sel];
-        #pragma clang diagnostic pop
-    }
-}
-
 - (void)printPage:(id)sender {
     (void)sender;
     NSPrintInfo* info = [[NSPrintInfo sharedPrintInfo] copy];
@@ -966,18 +921,78 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
     NSString* title = webView_.title.length ? webView_.title : url;
     BOOL added = [[LetheBookmarks shared] toggleURL:url title:title];
     [self refreshBookmarkIcon];
-    NSString* symbol = added ? @"bookmark.fill" : @"bookmark";
-    NSImage* img = [NSImage imageWithSystemSymbolName:symbol
-                          accessibilityDescription:added ? @"Bookmarked" : @"Bookmark"];
-    bookmarkButton_.image = img;
+    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:(added ? @"bookmark.fill" : @"bookmark")
+                                      accessibilityDescription:(added ? @"Bookmarked" : @"Bookmark")];
 }
 
 - (void)refreshBookmarkIcon {
     NSString* url = webView_.URL.absoluteString;
     BOOL has = url.length && [[LetheBookmarks shared] containsURL:url];
-    NSString* symbol = has ? @"bookmark.fill" : @"bookmark";
-    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:symbol
-                              accessibilityDescription:has ? @"Bookmarked" : @"Bookmark"];
+    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:(has ? @"bookmark.fill" : @"bookmark")
+                                      accessibilityDescription:(has ? @"Bookmarked" : @"Bookmark")];
+}
+
+- (void)renderBookmarksPage {
+    NSMutableString* rows = [NSMutableString string];
+    NSArray<LetheBookmark*>* all = [[LetheBookmarks shared] all];
+    for (LetheBookmark* b in all) {
+        NSString* esc = [b.title stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        esc = [esc stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
+        esc = [esc stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
+        NSString* urlEsc = [b.url stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
+        [rows appendFormat:@"\n          <li><a href=\"%@\">%@</a><br><span class=\"u\">%@</span>\n                       <button class=\"rm\" data-url=\"%@\">Remove</button></li>", urlEsc, esc, urlEsc, urlEsc];
+    }
+    NSString* body = all.count ? [NSString stringWithFormat:@"<ul>%@</ul>", rows]
+                                : @"<p class=\"empty\">No bookmarks yet. Press Cmd+D to bookmark the current page.</p>";
+    NSString* html = [NSString stringWithFormat:@"\n        <!doctype html><meta charset=\"utf-8\">\n        <title>Bookmarks</title>\n        <style>\n          :root{color-scheme:light dark}\n          body{font:15px/1.6 -apple-system,system-ui,sans-serif;max-width:720px;margin:0 auto;padding:56px 32px;color:#1b1e21;background:#fafafa}\n          @media(prefers-color-scheme:dark){body{background:#16181a;color:#dcdfe2}}\n          h1{font-size:26px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}\n          p.sub{opacity:.6;margin:0 0 28px}\n          ul{list-style:none;padding:0;margin:0}\n          li{padding:12px 2px;border-bottom:1px solid rgba(128,128,128,.22)}\n          li a{color:#295770;text-decoration:none;font-weight:500;font-size:15px}\n          @media(prefers-color-scheme:dark){li a{color:#8cbad0}}\n          li a:hover{text-decoration:underline}\n          .u{opacity:.55;font-size:12px;font-family:ui-monospace,Menlo,monospace;word-break:break-all}\n          .rm{float:right;background:none;border:none;padding:2px 6px;color:#b3261e;cursor:pointer;font-size:12px}\n          .rm:hover{text-decoration:underline}\n          .empty{opacity:.55;font-style:italic}\n        </style>\n        <h1>Bookmarks</h1>\n        <p class=\"sub\">%lu saved. Cmd+D toggles the bookmark on the current page.</p>\n        %@\n        <script>\n        document.addEventListener('click', function(e){\n          if (e.target.classList.contains('rm')) {\n            const u = e.target.getAttribute('data-url');\n            (window.webkit.messageHandlers[%@] || {postMessage:function(){}}).postMessage({op:\"remove\", url:u});\n          }\n        });\n        </script>\n      ", (unsigned long)all.count, body, messageHandlerNames_.firstObject ?: @"bookmarks"];
+    internalPageUrl_ = @"lethe://bookmarks";
+    [webView_ loadHTMLString:html baseURL:nil];
+    [self updateTitle];
+    [self updateAddress];
+}
+
+- (void)renderHistoryPage {
+    NSArray<LetheHistoryEntry*>* entries = [[LetheHistory shared] allEntries];
+    NSDateFormatter* fmt = [[NSDateFormatter alloc] init];
+    fmt.dateStyle = NSDateFormatterShortStyle;
+    fmt.timeStyle = NSDateFormatterShortStyle;
+    NSMutableString* rows = [NSMutableString string];
+    NSString* lastDay = nil;
+    for (LetheHistoryEntry* h in entries) {
+        NSString* day = [fmt stringFromDate:h.visitedAt];
+        if (![day isEqualToString:lastDay]) {
+            if (lastDay) [rows appendString:@"</ul>"];
+            [rows appendFormat:@"<h2>%@</h2><ul>", day];
+            lastDay = day;
+        }
+        NSString* esc = [h.title stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+        esc = [esc stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
+        esc = [esc stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
+        NSString* urlEsc = [h.url stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
+        NSString* time = [[NSDateFormatter localizedStringFromDate:h.visitedAt dateStyle:NSDateFormatterNoStyle timeStyle:NSDateFormatterShortStyle] stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
+        [rows appendFormat:@"<li><a href=\"%@\">%@</a><br><span class=\"u\">%@</span> <span class=\"t\">%@</span></li>", urlEsc, esc, urlEsc, time];
+    }
+    if (lastDay) [rows appendString:@"</ul>"];
+    NSString* body = entries.count ? rows : @"<p class=\"empty\">No history yet.</p>";
+    NSString* html = [NSString stringWithFormat:@"<!doctype html><meta charset=\"utf-8\"><title>History</title>"
+        @"%@"
+        @"<h1>History</h1><p class=\"empty\" style=\"margin:0 0 8px\">%lu entries. \\u2318Y opens this page.</p>%@",
+        kQuietPageStyle, (unsigned long)entries.count, body];
+    internalPageUrl_ = @"lethe://history";
+    [webView_ loadHTMLString:html baseURL:nil];
+    [self updateTitle];
+    [self updateAddress];
+}
+
+- (void)showWebInspector:(id)sender {
+    (void)sender;
+    SEL sel = NSSelectorFromString(@"_openInspector");
+    if ([webView_ respondsToSelector:sel]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [webView_ performSelector:sel];
+        #pragma clang diagnostic pop
+    }
 }
 
 - (void)showFindBar:(id)sender {
@@ -1205,9 +1220,7 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
     [self updateTitle];
     [self updateAddress];
     NSString* url = webView_.URL.absoluteString;
-    if (url.length && [url hasPrefix:@"http"]) {
-        [[LetheHistory shared] recordVisit:url title:webView_.title ?: url];
-    }
+    if (url.length && [url hasPrefix:@"http"]) [[LetheHistory shared] recordVisit:url title:webView_.title ?: url];
 }
 
 - (void)handleLoadError:(NSError*)error {
@@ -1517,13 +1530,16 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
 }
 
 - (void)dealloc {
+    if (windowActionProxy_ && self.window.nextResponder == windowActionProxy_)
+        self.window.nextResponder = windowActionProxy_.nextResponder;
     [self stopObserving];
     // Drop the per-BWC script message handlers from the shared controller
     // so the names can be reused by another tab.
-    if (webView_ && messageHandlerNames_.count == 2) {
+    if (webView_ && messageHandlerNames_.count == 3) {
         WKUserContentController* uc = webView_.configuration.userContentController;
         [uc removeScriptMessageHandlerForName:messageHandlerNames_[0]];
         [uc removeScriptMessageHandlerForName:messageHandlerNames_[1]];
+        [uc removeScriptMessageHandlerForName:messageHandlerNames_[2]];
     }
 }
 
@@ -1533,27 +1549,27 @@ static NSString* const kLetheToolbarSettings = @"LetheToolbarSettings";
     NSDictionary* body = [msg.body isKindOfClass:[NSDictionary class]] ? msg.body : nil;
     NSString* op = body[@"op"];
     if ([msg.name isEqualToString:messageHandlerNames_.firstObject]) {
-        // bookmarks handler (also carries the lethe://plugins ops)
         NSString* url = body[@"url"];
         if ([op isEqualToString:@"remove"] && url.length) {
             [[LetheBookmarks shared] removeURL:url];
-            if ([internalPageUrl_ isEqualToString:@"lethe://bookmarks"]) {
-                [self renderBookmarksPage];
-            }
-        } else if ([op isEqualToString:@"plugin-toggle"]) {
-            [self togglePluginWithId:body[@"id"] file:body[@"file"]];
-            if ([internalPageUrl_ isEqualToString:@"lethe://plugins"]) {
-                [self renderPluginsPage];
-            }
+            if ([internalPageUrl_ isEqualToString:@"lethe://bookmarks"]) [self renderBookmarksPage];
         }
-    } else if ([msg.name isEqualToString:messageHandlerNames_.lastObject]) {
-        // perms handler
+    } else if ([msg.name isEqualToString:messageHandlerNames_[1]]) {
+        // permissions handler
         NSString* host = body[@"host"];
         NSString* type = body[@"type"];
         if ([op isEqualToString:@"clear"] && host.length && type.length) {
             [[LethePermissions shared] clearforHost:host type:type];
             if ([internalPageUrl_ isEqualToString:@"lethe://permissions"]) {
                 [self renderPermissionsPage];
+            }
+        }
+    } else if ([msg.name isEqualToString:messageHandlerNames_.lastObject]) {
+        // plugins handler
+        if ([op isEqualToString:@"plugin-toggle"]) {
+            [self togglePluginWithId:body[@"id"] file:body[@"file"]];
+            if ([internalPageUrl_ isEqualToString:@"lethe://plugins"]) {
+                [self renderPluginsPage];
             }
         }
     }

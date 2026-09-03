@@ -6,17 +6,16 @@
 # version for the host platform and unpacks it into third_party/cef/ with the
 # layout the root CMakeLists expects (include/, libcef_dll/, Release/).
 #
-# Pin rationale (2026-08-29): CEF 151 carries upstream cef#4001 - the
-# browser-info handshake race that leaves every frame in a NEW renderer
-# process without browser info (proposed fix declined upstream; reproduces
-# 100% on M4 Max). CEF 135 predates the regression and loads real pages
-# through the policy proxy. Revisit when a release ships the fix.
+# Pin rationale (2026-09-02): CEF 151 is the validated Blink release used by
+# Lethe's macOS Blink shell. Cold multi-process startup, authenticated proxy
+# navigation, YouTube DOM execution, private-network blocking, and the full
+# basic e2e checklist pass on Apple Silicon.
 #
 # Usage: scripts/fetch_cef.sh
 
 cd "$(dirname "$0")/.."
 
-CEF_VERSION="135.0.22+g442c600+chromium-135.0.7049.115"
+CEF_VERSION="151.3.24+g2384915+chromium-151.0.7922.174"
 
 case "$(uname -s)-$(uname -m)" in
     Darwin-arm64) PLATFORM="macosarm64" ;;

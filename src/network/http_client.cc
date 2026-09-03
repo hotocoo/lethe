@@ -2228,6 +2228,14 @@ public:
         if (cli_->socketFd_ >= 0) ::shutdown(cli_->socketFd_, SHUT_WR);
     }
 
+    void cancel() override {
+        if (!cli_) return;
+        // Wake a direct TCP/TLS read immediately. The owning DialStreamImpl
+        // remains responsible for closeConnection() in its destructor.
+        if (cli_->socketFd_ >= 0)
+            ::shutdown(cli_->socketFd_, SHUT_RDWR);
+    }
+
 private:
     std::unique_ptr<HttpClient> cli_;
 };

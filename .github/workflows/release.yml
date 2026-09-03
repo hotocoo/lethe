@@ -21,7 +21,7 @@ env:
 
 jobs:
   macos:
-    name: macOS DMG (arm64)
+    name: macOS DMG — WebKit (arm64)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +48,45 @@ jobs:
           gh release view "$TAG" >/dev/null 2>&1 || \
             gh release create "$TAG" --title "Lethe $TAG" --generate-notes
           gh release upload "$TAG" dist/*.dmg --clobber
+
+  macos-blink:
+    name: macOS DMG — Blink/CEF (arm64)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - name: Install dependencies
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          brew install cmake ninja pkg-config openssl@3
+      - name: Fetch pinned CEF
+        run: |
+          chmod +x scripts/fetch_cef.sh
+          scripts/fetch_cef.sh
+      - name: Build CEF wrapper
+        run: |
+          cmake -S third_party/cef -B third_party/cef/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DPROJECT_ARCH=arm64
+          cmake --build third_party/cef/build --target libcef_dll_wrapper -j "$(sysctl -n hw.ncpu)"
+      - name: Configure, build, test
+        run: |
+          cmake -S . -B build-cef -DCMAKE_BUILD_TYPE=Release -G Ninja \
+            -DLETHE_WITH_CEF=ON
+          cmake --build build-cef -j "$(sysctl -n hw.ncpu)"
+          cd build-cef && ctest --output-on-failure
+      - name: Package Blink DMG
+        run: |
+          chmod +x scripts/bundle_mac_libs.sh scripts/package_cef_mac_app.sh
+          scripts/package_cef_mac_app.sh build-cef
+      - name: Attach Blink artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Lethe $TAG" --generate-notes
+          gh release upload "$TAG" dist/*-blink-*.dmg --clobber
 
   linux:
     name: Linux tarball (${{ matrix.id }})

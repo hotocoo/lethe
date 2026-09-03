@@ -3,6 +3,11 @@
 #import "ui/mac/LethePluginLoader.h"
 #import "ui/mac/LethePreferences.h"
 
+// Shared browser media scaler script. The plugin loader owns the shared
+// WKUserContentController's remove/rebuild cycle, so it must restore this
+// non-plugin script after clearing the old plugin scripts.
+extern NSString* LetheMediaUpscalerScript(void);
+
 NSString* const LethePluginsFolderChangedNotification =
     @"LethePluginsFolderChangedNotification";
 
@@ -92,6 +97,11 @@ NSString* const LethePluginsFolderChangedNotification =
     // No other component adds user scripts, so removing all is exactly our
     // previous set. (WebKit has no per-script removal in this SDK.)
     [ucc removeAllUserScripts];
+    WKUserScript* media = [[WKUserScript alloc]
+        initWithSource:LetheMediaUpscalerScript()
+          injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+       forMainFrameOnly:YES];
+    [ucc addUserScript:media];
     for (LethePluginScript* p in [self scanPlugins]) {
         if (!p.enabled) continue;
         NSString* folder = [LethePluginLoader pluginsFolder];

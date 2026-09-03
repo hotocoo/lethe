@@ -31,46 +31,78 @@ engine family as Chrome).
 - **Eval round-trip.** The renderer answers the browser's `lethe:eval`
   process messages (CefV8Context eval + reply), so the e2e / bench
   driver works against lethe-cef.
-- **Proxy auth plumbing (BROKEN in current builds).** `GetAuthCredentials`
+- **Clean browser teardown.** Initial native browser creation is deferred
+  until the CEF/AppKit message loop is running. This avoids the macOS
+  pre-run-loop native-window close path that could reach `DoClose` without
+  ever delivering `OnBeforeClose`.
+- **Native browser chrome + shortcuts.** CEF Alloy windows get Lethe's
+  native macOS address/navigation chrome and subsequent CEF browsers join
+  the selected native window tab group. Cmd+T/L/R/Shift+R/W and Cmd+[/]
+  are handled at the CEF keyboard layer so they still work with renderer
+  focus; key actions are gated to raw key-down events to prevent duplicate
+  tab creation. The browser-client tab anchor is also repaired when the
+  active/first tab closes, so a later popup/Cmd+T still joins the surviving
+  native tab group.
+- **Native Chromium sandbox.** macOS Helper now initializes
+  `CefScopedSandboxContext` before dynamically loading CEF. Helpers resolve
+  one shared framework copy from the parent bundle; duplicate framework
+  loading is removed. Native CEF sandbox is default. Set
+  `LETHE_CEF_NATIVE_SANDBOX=0` for legacy Lethe Seatbelt mode.
+- **Download + permission boundaries.** Downloads are constrained to
+  `~/Downloads`, filenames are sanitized, each transfer is capped at
+  512 MiB, and privileged permission prompts fail closed until explicit UI
+  approval exists.
+- **Proxy auth + CONNECT works.** `GetAuthCredentials`
   is wired to answer the policy proxy's 407 with the per-launch token
-  (only ever to 127.0.0.1 on our own port), and `OnBeforeResourceLoad`
-  stamps a pre-emptive Proxy-Authorization on every request. However,
-  in current builds (CEF 135 and 151), the credentials are NOT being
-  attached to the CONNECT tunnel: every request reaches the proxy with
-  no credential, the proxy 407s, and the navigation fails with
-  ERR_INVALID_ARGUMENT. The `GetAuthCredentials` callback is never
-  invoked, and the `--proxy-auth` switch (if real) does not help.
-  This blocks real https page loads through the policy proxy.
+  (only ever to 127.0.0.1 on our own port). The browser-info startup fix
+  keeps the renderer handshake alive long enough for authenticated CONNECT.
+  Repeated cold CEF launches complete external HTTPS page loads.
 - **Sandbox.** The shared Seatbelt profile honors
   `LETHE_SANDBOX_EXTRA_WRITE_DIRS` for the CEF user-data dir.
 
-## What is still broken (round-3 findings)
+## Current limitations
 
-Real https page loads are unreliable; about:blank and the in-process
-paths work. Two intermittent failure points, both inside CEF/Chromium
-plumbing rather than Lethe's stack:
+Real HTTPS page loads work through policy-proxy authentication. Blink boots,
+native Chromium sandboxing works, and the shared basic e2e checklist now
+passes on cold launches.
 
-1. **CEF frame handshake is flaky.** CEF's renderer normally answers
-   the browser's "new browser info" request per frame; in this build
-   the reply intermittently never arrives (`Timeout of new browser
-   info response for frame ... (has_rfh=1)`). While a frame has no
-   browser info, `CefFrame::LoadURL` is silently dropped and the proxy
-   auth challenge is not routed to `GetAuthCredentials` (no frame to
-   route through), so the CONNECT is 407'd in a loop and the
-   navigation hangs or dies with ERR_INVALID_AUTH_CREDENTIALS. In runs
-   where the handshake completes, the same navigation gets through the
-   tunnel with the pre-emptive credentials.
-2. **Cert verify can hang under the inherited Seatbelt.** With the
-   tunnel established, the network service's cert-verifier job
-   sometimes waits with no network activity until the 30 s connect-job
-   timeout (net_error -7). Removing `disable-component-update` (the
-   builtin verifier waits for Chrome root-store data that pipeline
-   delivers) did not fully eliminate it. Suspected: the browser
-   process's Seatbelt profile is inherited by every helper and
-   something in the macOS trustd / root-store path needs a write or
-   XPC the profile gates. Running with `--disable-sandbox` changes the
-   failure mode (fast 407 instead of a hang), which keeps the sandbox
-   in the suspect list.
+1. **Browser-info handshake remains a regression risk.** CEF's renderer
+   browser-info acknowledgement can be delayed on cold macOS launches.
+   Current build disables the default timeout so slow-but-valid startup is not
+   converted into dropped navigation. The latest three pageload runs completed
+   all 8/8 sites with zero timeouts; a fresh startup+pageload run also completed
+   8/8 with zero timeouts.
+2. **Outer Seatbelt + native CEF sandbox cannot be combined.** macOS does
+   not support nested sandbox initialization. Blink therefore defaults to
+   Chromium's dedicated sandbox; Lethe's older Seatbelt remains explicit.
+
+3. **E2E screenshots use the Blink DevTools capture path.** macOS CoreGraphics
+   snapshots of CEF Alloy accelerated surfaces can capture the desktop or an
+   incomplete AppKit host instead of the renderer surface. `screenshot` now
+   calls `Page.captureScreenshot` and writes the returned PNG, which keeps the
+   artifact deterministic and renderer-backed.
+
+4. **Renderer eval is navigation-tolerant.** JS-heavy pages can perform a
+   post-load renderer navigation after `wait` (YouTube does this in the
+   current CEF build). `assert-js` therefore polls with short eval timeouts
+   instead of holding one renderer-context request for the full five-second
+   timeout.
+
+## E2E and benchmark verification
+
+- **G2 basic e2e:** `tests/e2e/basic.lethe` completed with exit code 0.
+  This covers HTTPS navigation, link navigation, history, address-bar search,
+  CEF tabs plus native AppKit tab-group creation/removal, YouTube DOM/JS execution, private-network blocking, `.invalid`
+  special-use blocking, reader-command compatibility, and `target=_blank` tabs.
+  The latest run also completed final browser teardown, reached `CefShutdown`,
+  shut down the shared engine, and exited 0 with no new `lethe-cef*.ips` report.
+- **H1 benchmark:** `tools/bench/bench.mjs` accepts `--browser lethe-cef` and
+  dispatches it through the same benchmark path as the other Lethe variants.
+  Latest `startup,pageload` run: startup 249 ms, 8/8 page loads, 0 timeouts,
+  exit 0.
+- **Proxy concurrency:** automatic policy-proxy worker capacity is now bounded
+  at 8-16 workers instead of 4-8, preventing media-heavy Blink pages from
+  occupying every worker and starving the next top-level navigation.
 
 Ruled out (round 3): missing renderer resources (ICU / V8 snapshot /
 paks all present in every bundle), crash of the renderer (no .ips, and
@@ -83,27 +115,19 @@ not verified to survive the tunnel either).
 
 ## Next steps (for a later round)
 
-1. Compare against the pristine cefclient binary from the same CEF
-   dist behind the same policy proxy: if cefclient also 407-loops, the
-   frame-handshake flake is upstream and worth a CEF issue; if it
-   loads, diff the app/bootstrap settings against ours.
-2. Instrument the Seatbelt theory for the cert-verify hang: run the
-   sandboxed shell with `sandbox_compile_file`-style deny logging
-   (`LETHE_DEBUG=1` + `log stream --predicate 'sender == "Sandbox"'`)
-   during a hang, and/or temporarily allow `~/Library/Keychains`
-   writes.
-3. Consider bumping CEF (the dist is 151.3.24+chromium-151.0.7922.174);
-   the frame-handshake code moved upstream more than once.
-4. Once real pages load: re-run the e2e suite (G2) and add lethe-cef
-   as a third browser in tools/bench (H1).
+1. Compare against pristine cefclient behind the same policy proxy if
+   browser-info handshake regressions return.
+2. Replace the HTTP loopback proxy capability mechanism with a
+   Chromium-compatible authenticated transport, or move policy proxy into
+   a separately privileged process with OS-level IPC capability.
 
 ## Driver notes
 
 - `CefBrowserProcessHandler` used to be null (never instantiated);
   `OnBeforeChildProcessLaunch` / `OnContextInitialized` now work.
-- The e2e driver navigates via the renderer
-  (`ExecuteJavaScript location.assign`) because `CefFrame::LoadURL` is
-  dropped while the frame handshake is in flight; the driver waits for
-  the first main-frame commit before the first load.
+- The e2e driver uses native `CefFrame::LoadURL` after the initial browser
+  frame is ready. This preserves browser-process navigation semantics for
+  downloads and media while the driver tracks pending navigation until the
+  corresponding load events arrive.
 - `--single-process` loads pages (useful as a navigation sanity check)
   but is not a supported shipping mode.
