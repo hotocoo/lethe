@@ -13,6 +13,28 @@ id<MTLDevice> device() {
     return d;
 }
 
+// MetalFX resource creation is expensive enough to be visible when this
+// path is used for video. Reuse the complete scaler pipeline for a stable
+// source/output size instead of allocating textures, a queue and a scaler
+// for every decoded frame. The API is currently consumed by the renderer's
+// serial media path, so a single cached entry is sufficient and bounded.
+struct SpatialScalerCache {
+    NSUInteger sw = 0;
+    NSUInteger sh = 0;
+    NSUInteger dw = 0;
+    NSUInteger dh = 0;
+    id<MTLTexture> input = nil;
+    id<MTLTexture> output = nil;
+    id<MTLTexture> readable = nil;
+    id<MTLCommandQueue> queue = nil;
+    id<MTLFXSpatialScaler> scaler = nil;
+};
+
+SpatialScalerCache& cache() {
+    static SpatialScalerCache c;
+    return c;
+}
+
 bool makeTexture(id<MTLDevice> d, NSUInteger width, NSUInteger height,
                  MTLTextureUsage usage, MTLStorageMode storageMode,
                  id<MTLTexture>* out) {
@@ -41,63 +63,68 @@ extern "C" bool lethe_metalfx_upscale_rgba8(const uint8_t* src,
     if (!d || ![MTLFXSpatialScalerDescriptor supportsDevice:d]) return false;
 
     @autoreleasepool {
-        MTLTextureUsage inputUsage = MTLTextureUsageShaderRead;
-        MTLTextureUsage outputUsage = MTLTextureUsageShaderWrite | MTLTextureUsageShaderRead;
-        id<MTLTexture> input = nil;
-        id<MTLTexture> output = nil;
-        // The CPU uploads the decoded RGBA frame through replaceRegion:, so
-        // the input must be CPU-visible. MetalFX can sample it directly from
-        // shared storage on Apple Silicon. Keep the scaler output private so
-        // MetalFX can use the optimal GPU storage mode, then blit it to the
-        // shared readback texture below.
-        if (!makeTexture(d, sw, sh, inputUsage, MTLStorageModeShared, &input) ||
-            !makeTexture(d, dw, dh, outputUsage, MTLStorageModePrivate, &output)) return false;
+        SpatialScalerCache& c = cache();
+        if (c.sw != sw || c.sh != sh || c.dw != dw || c.dh != dh ||
+            !c.input || !c.output || !c.readable || !c.queue || !c.scaler) {
+            c = SpatialScalerCache{};
 
-        [input replaceRegion:MTLRegionMake2D(0, 0, sw, sh)
-                 mipmapLevel:0 withBytes:src bytesPerRow:sw * 4];
+            // The CPU uploads the decoded RGBA frame through replaceRegion:,
+            // so the input must be CPU-visible. Keep the scaler output private
+            // for optimal GPU access, then blit it to the shared readback
+            // texture required by the C++ RGBA API.
+            if (!makeTexture(d, sw, sh, MTLTextureUsageShaderRead,
+                             MTLStorageModeShared, &c.input) ||
+                !makeTexture(d, dw, dh,
+                             MTLTextureUsageShaderWrite | MTLTextureUsageShaderRead,
+                             MTLStorageModePrivate, &c.output)) return false;
 
-        MTLFXSpatialScalerDescriptor* desc = [MTLFXSpatialScalerDescriptor new];
-        desc.inputWidth = sw;
-        desc.inputHeight = sh;
-        desc.outputWidth = dw;
-        desc.outputHeight = dh;
-        desc.colorTextureFormat = MTLPixelFormatRGBA8Unorm;
-        desc.outputTextureFormat = MTLPixelFormatRGBA8Unorm;
-        if ([desc respondsToSelector:@selector(colorProcessingMode)]) {
-            desc.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeLinear;
+            MTLTextureDescriptor* readDesc = [MTLTextureDescriptor
+                texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                              width:dw height:dh mipmapped:NO];
+            readDesc.usage = MTLTextureUsageShaderRead;
+            readDesc.storageMode = MTLStorageModeShared;
+            c.readable = [d newTextureWithDescriptor:readDesc];
+            c.queue = [d newCommandQueue];
+            if (!c.readable || !c.queue) return false;
+
+            MTLFXSpatialScalerDescriptor* desc = [MTLFXSpatialScalerDescriptor new];
+            desc.inputWidth = sw;
+            desc.inputHeight = sh;
+            desc.outputWidth = dw;
+            desc.outputHeight = dh;
+            desc.colorTextureFormat = MTLPixelFormatRGBA8Unorm;
+            desc.outputTextureFormat = MTLPixelFormatRGBA8Unorm;
+            if ([desc respondsToSelector:@selector(colorProcessingMode)]) {
+                desc.colorProcessingMode = MTLFXSpatialScalerColorProcessingModeLinear;
+            }
+            c.scaler = [desc newSpatialScalerWithDevice:d];
+            if (!c.scaler) return false;
+            c.sw = sw; c.sh = sh; c.dw = dw; c.dh = dh;
+            c.scaler.colorTexture = c.input;
+            c.scaler.inputContentWidth = sw;
+            c.scaler.inputContentHeight = sh;
+            c.scaler.outputTexture = c.output;
         }
-        id<MTLFXSpatialScaler> scaler = [desc newSpatialScalerWithDevice:d];
-        if (!scaler) return false;
 
-        scaler.colorTexture = input;
-        scaler.inputContentWidth = sw;
-        scaler.inputContentHeight = sh;
-        scaler.outputTexture = output;
+        [c.input replaceRegion:MTLRegionMake2D(0, 0, sw, sh)
+                   mipmapLevel:0 withBytes:src bytesPerRow:sw * 4];
 
-        id<MTLCommandQueue> queue = [d newCommandQueue];
-        id<MTLCommandBuffer> cb = [queue commandBuffer];
-        [scaler encodeToCommandBuffer:cb];
+        id<MTLCommandBuffer> cb = [c.queue commandBuffer];
+        [c.scaler encodeToCommandBuffer:cb];
         [cb commit];
         [cb waitUntilCompleted];
         if (cb.status != MTLCommandBufferStatusCompleted) return false;
 
-        // Private output is copied through a temporary shared texture so the
-        // C++ media API can consume a normal RGBA8 frame.
-        MTLTextureDescriptor* readDesc = [MTLTextureDescriptor
-            texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-                                          width:dw height:dh mipmapped:NO];
-        readDesc.usage = MTLTextureUsageShaderRead;
-        readDesc.storageMode = MTLStorageModeShared;
-        id<MTLTexture> readable = [d newTextureWithDescriptor:readDesc];
-        if (!readable) return false;
-        id<MTLCommandBuffer> copyCB = [queue commandBuffer];
+        // Reuse the shared readback texture as well; this avoids a second
+        // allocation per frame while preserving the existing API contract.
+        id<MTLCommandBuffer> copyCB = [c.queue commandBuffer];
         id<MTLBlitCommandEncoder> blit = [copyCB blitCommandEncoder];
-        [blit copyFromTexture:output toTexture:readable];
+        [blit copyFromTexture:c.output toTexture:c.readable];
         [blit endEncoding];
         [copyCB commit];
         [copyCB waitUntilCompleted];
         if (copyCB.status != MTLCommandBufferStatusCompleted) return false;
-        [readable getBytes:dst bytesPerRow:dw * 4
+        [c.readable getBytes:dst bytesPerRow:dw * 4
                   fromRegion:MTLRegionMake2D(0, 0, dw, dh) mipmapLevel:0];
         return true;
     }

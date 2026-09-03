@@ -195,7 +195,7 @@ NSString* LetheMediaUpscalerScript(void) {
     scheduleVideo(e);
   }
 
-  function tick(){ raf=0; if(mode===0)return;
+  function scan(){ raf=0; if(mode===0)return;
     // Drop detached media and their overlay canvases. This also prevents a
     // navigation-heavy page from accumulating stale GPU contexts.
     activeEntries.forEach(function(e){ if(!e.el.isConnected) remove(e); });
@@ -205,8 +205,11 @@ NSString* LetheMediaUpscalerScript(void) {
     // than losing playback/fullscreen/quality controls.
     if(el instanceof HTMLVideoElement && el.controls) return;
     setup(el);
-  }); raf=setTimeout(tick,50); }
-  function start(){ if(!raf) raf=setTimeout(tick,0); }
+  }); }
+  // Coalesce DOM/scroll/resize/load churn into one scan per animation frame.
+  // Video frames already have their own decoded-frame callback, so an idle
+  // page no longer pays for a periodic full-media scan every 50 ms.
+  function start(){ if(!raf) raf=requestAnimationFrame(scan); }
 
   window.__letheMediaUpscalerSetMode=function(m){
     mode=m|0;
@@ -231,6 +234,9 @@ NSString* LetheMediaUpscalerScript(void) {
   };
   new MutationObserver(function(){start();}).observe(document.documentElement,{subtree:true,childList:true});
   window.addEventListener('resize',start,{passive:true}); window.addEventListener('scroll',start,{passive:true});
+  document.addEventListener('load',start,true);
+  document.addEventListener('loadeddata',start,true);
+  start();
 })();
 )JS") stringByReplacingOccurrencesOfString:@"__LETHE_INITIAL_MODE__"
                     withString:[NSString stringWithFormat:@"%ld", (long)initialMode]];
