@@ -29,9 +29,10 @@ public:
     MediaUpscalerMode requestedMode() const { return requestedMode_; }
     MediaUpscalerMode activeMode() const { return activeMode_; }
 
-    // Upscale one tightly-packed RGBA8 frame. The same API is used for still
+    // Scale one tightly-packed RGBA8 frame. The same API is used for still
     // images and video frames, so callers do not need separate media paths.
-    // src and dst may not overlap.
+    // src and dst may not overlap; overlapping buffers are rejected rather
+    // than relying on undefined behavior in the GPU upload or memcpy path.
     bool upscaleRGBA8(const uint8_t* src, size_t srcWidth, size_t srcHeight,
                       uint8_t* dst, size_t dstWidth, size_t dstHeight);
 

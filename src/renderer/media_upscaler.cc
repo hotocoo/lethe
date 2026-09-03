@@ -91,8 +91,24 @@ bool MediaUpscaler::upscaleRGBA8(const uint8_t* src, size_t sw, size_t sh,
     const size_t dstPixels = dw * dh;
     if (srcPixels > std::numeric_limits<size_t>::max() / 4 ||
         dstPixels > std::numeric_limits<size_t>::max() / 4) return false;
+    const size_t srcBytes = srcPixels * 4;
+    const size_t dstBytes = dstPixels * 4;
+
+    // The API is intentionally synchronous, and both the CPU fallback and
+    // Metal upload/readback assume disjoint buffers. Avoid pointer subtraction
+    // (which is only defined for pointers into the same allocation) and use
+    // uintptr_t interval arithmetic with explicit overflow guards instead.
+    // If either endpoint cannot be represented safely, fail closed.
+    const uintptr_t srcBegin = reinterpret_cast<uintptr_t>(src);
+    const uintptr_t dstBegin = reinterpret_cast<uintptr_t>(dst);
+    if (srcBegin > std::numeric_limits<uintptr_t>::max() - srcBytes ||
+        dstBegin > std::numeric_limits<uintptr_t>::max() - dstBytes) return false;
+    const uintptr_t srcEnd = srcBegin + srcBytes;
+    const uintptr_t dstEnd = dstBegin + dstBytes;
+    if (srcBegin < dstEnd && dstBegin < srcEnd) return false;
+
     if (sw == dw && sh == dh) {
-        std::memcpy(dst, src, srcPixels * 4);
+        std::memcpy(dst, src, srcBytes);
         return true;
     }
     if (activeMode_ == MediaUpscalerMode::MetalFX) {
