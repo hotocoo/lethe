@@ -24,6 +24,9 @@ jobs:
     name: Prepare GitHub release
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
       - name: Create release once
         env:
           GH_TOKEN: ${{ github.token }}
