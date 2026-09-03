@@ -368,7 +368,23 @@ NSString* LetheMediaUpscalerScript(void) {
     // focus and WebKit keeps requestAnimationFrame running.
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [self buildMenuBar];
-    [self prepareTrackerProtection:^{ [self openInitialWindow]; }];
+    [self prepareTrackerProtection:^{
+        // The full-web shell is only safe when WebKit has accepted the
+        // authenticated policy proxy. Do not create a WKWebView if the
+        // transport boundary could not be installed; otherwise every
+        // subresource would have a direct WebKit network path.
+        if (ctx_->proxyPort > 0) (void)[self dataStore];
+        if (ctx_->proxyPort > 0 && !proxyApplied_) {
+            NSAlert* alert = [[NSAlert alloc] init];
+            alert.messageText = @"Lethe cannot start securely";
+            alert.informativeText = @"WebKit transport enforcement could not be installed. Lethe refuses to run full-web mode without the policy proxy.";
+            [alert addButtonWithTitle:@"Quit"];
+            [alert runModal];
+            [NSApp terminate:nil];
+            return;
+        }
+        [self openInitialWindow];
+    }];
 }
 
 - (void)openInitialWindow {
@@ -451,14 +467,14 @@ NSString* LetheMediaUpscalerScript(void) {
                   << std::endl;
     }
     if (!proxyApplied_ && ctx_->proxyPort > 0) {
-        proxyApplied_ = YES;
         if ([self bindStoreToProxy:dataStore_]) {
+            proxyApplied_ = YES;
             std::cout << "[lethe] WebKit traffic routed through policy proxy "
                          "127.0.0.1:" << ctx_->proxyPort << " (subresource enforcement on)"
                       << std::endl;
         } else {
-            std::cout << "[lethe] macOS < 14: no per-datastore proxy API; "
-                         "navigation gate only" << std::endl;
+            std::cerr << "[lethe] WebKit transport proxy could not be installed; "
+                         "full-web mode will not start" << std::endl;
         }
     }
     return dataStore_;
@@ -480,6 +496,11 @@ NSString* LetheMediaUpscalerScript(void) {
         store.proxyConfigurations = @[pc];
         return YES;
     }
+    // The build target is macOS 14+, so reaching this branch means the
+    // runtime contract has been violated. Never silently fall back to a
+    // navigation-only gate: WebKit subresources would bypass the transport
+    // policy and private-network/VPN controls.
+    NSLog(@"[lethe] FATAL: WebKit transport proxy requires macOS 14+");
     return NO;
 }
 

@@ -58,7 +58,12 @@ if(WIN32)
 endif()
 
 if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0")
+    # WebKit transport enforcement is part of Lethe's security boundary.
+    # WKWebsiteDataStore.proxyConfigurations is available from macOS 14;
+    # shipping a macOS 13 fallback would silently reduce full-web traffic to
+    # navigation-only policy enforcement. Require the API instead of
+    # producing a browser whose subresources can bypass the policy proxy.
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
     enable_language(OBJCXX)
     find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
     find_library(METAL_FRAMEWORK Metal REQUIRED)
