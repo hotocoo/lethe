@@ -1018,6 +1018,23 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
 // so we alert the user; everything else is live.
 - (void)applyPreferences {
     LethePreferences* prefs = [LethePreferences shared];
+    // The document-start script handles new documents, but an existing tab
+    // must change immediately when the setting changes. Keep the WebKit
+    // page-local scaler and native renderer on the same mode. Environment
+    // overrides remain authoritative for deterministic benchmark runs.
+    NSInteger webUpscalerMode = 0;
+    const char* webEnv = getenv("LETHE_UPSCALER");
+    if (webEnv && *webEnv) {
+        std::string v = webEnv;
+        for (char& ch : v) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+        if (v == "linear") webUpscalerMode = 1;
+        else if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr") webUpscalerMode = 2;
+        else if (v == "metalfx-sharp") webUpscalerMode = 3;
+    } else {
+        if (prefs.upscaler == LetheUpscalerLinear) webUpscalerMode = 1;
+        else if (prefs.upscaler == LetheUpscalerFSR1) webUpscalerMode = 2;
+        else if (prefs.upscaler == LetheUpscalerDLSSLike) webUpscalerMode = 3;
+    }
     if (ctx_ && ctx_->engine) {
         lethe::MediaUpscalerMode mode = lethe::MediaUpscalerMode::None;
         const char* env = getenv("LETHE_UPSCALER");
@@ -1031,6 +1048,20 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
         else if (prefs.upscaler == LetheUpscalerFSR1 || prefs.upscaler == LetheUpscalerDLSSLike)
             mode = lethe::MediaUpscalerMode::MetalFX;
         ctx_->engine->renderer()->setMediaUpscaler(mode);
+    }
+    NSString* modeScript = [NSString stringWithFormat:
+        @"window.__letheMediaUpscalerSetMode && window.__letheMediaUpscalerSetMode(%ld);",
+        (long)webUpscalerMode];
+    for (BrowserWindowController* controller in controllers_) {
+        WKWebView* web = controller.webView;
+        if (!web) continue;
+        [web evaluateJavaScript:modeScript completionHandler:^(id result, NSError* error) {
+            // A navigation can race the preference update. The document-start
+            // script applies the persisted mode to the next document, so a
+            // transient evaluation failure is deliberately non-fatal.
+            (void)result;
+            (void)error;
+        }];
     }
     // --- Plugins: the registry is the runtime view of every feature ------
     // 1. Mirror the preference-keyed plugins into the registry.
