@@ -43,6 +43,16 @@ echo "[pkg] self-containment assertion passed"
 # Ad-hoc sign everything we modified (required on Apple Silicon).
 codesign --force --deep --sign - "$APP" 2>&1 | grep -v 'replacing existing signature' || true
 
+# Verify the exact bundle that will enter the DMG.  A successful signing
+# command alone is not enough: nested WebKit helpers and copied dylibs must
+# also form a valid sealed bundle after dependency rewriting.
+if ! codesign --verify --deep --strict --verbose=2 "$APP" >/tmp/lethe-codesign-verify.log 2>&1; then
+  echo "error: codesign verification failed" >&2
+  cat /tmp/lethe-codesign-verify.log >&2
+  exit 1
+fi
+echo "[pkg] strict code-signature verification passed"
+
 # Smoke test: the binary must start with ONLY bundled libraries.
 LOG="/tmp/lethe-dmg-smoke.log"
 perl -e 'alarm 8; exec @ARGV' "$MACOS/lethe" --version >"$LOG" 2>&1 || true
