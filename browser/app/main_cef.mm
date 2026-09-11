@@ -62,9 +62,11 @@ int main(int argc, char** argv) {
     // process-scoped and cannot be nested. Prefer Chromium's dedicated
     // renderer/GPU/network sandbox for Blink; keep the older host Seatbelt
     // available as an explicit compatibility mode.
+    bool nativeSandbox = true;
+#if !defined(NDEBUG)
     const char* nativeSandboxEnv = std::getenv("LETHE_CEF_NATIVE_SANDBOX");
-    const bool nativeSandbox = !nativeSandboxEnv ||
-        std::string(nativeSandboxEnv) != "0";
+    nativeSandbox = !nativeSandboxEnv || std::string(nativeSandboxEnv) != "0";
+#endif
     if (nativeSandbox && !std::getenv("LETHE_SANDBOX")) {
         setenv("LETHE_SANDBOX", "0", 1);
     }
@@ -105,6 +107,16 @@ int main(int argc, char** argv) {
         if ([[NSFileManager defaultManager] fileExistsAtPath:prefs]) {
             setenv("LETHE_PREFS_FILE", [prefs UTF8String] ?: "", 1);
         }
+
+        // If the one-time mTLS identity has been provisioned, make the CA
+        // path deterministic. Missing provisioning remains fail-closed in
+        // PolicyProxyServer rather than falling back to Basic authentication.
+        if (!std::getenv("LETHE_CEF_PROXY_CLIENT_CA")) {
+            NSString* ca = [root stringByAppendingPathComponent:
+                @"CEF Proxy/client-ca.crt"];
+            if ([[NSFileManager defaultManager] fileExistsAtPath:ca])
+                setenv("LETHE_CEF_PROXY_CLIENT_CA", [ca UTF8String] ?: "", 1);
+        }
     }
     // Force the singleton off in argv. The macOS Seatbelt sandbox
     // blocks the singleton lock write; OnBeforeCommandLineProcessing
@@ -142,6 +154,7 @@ int main(int argc, char** argv) {
     // Step 3: run the AppKit / CEF event loop. CefInitialize happens in
     // applicationDidFinishLaunching after NSApplication is set up. The
     // delegate shuts CEF + the bootstrap down on terminate.
+    int e2eRc = 0;
     @autoreleasepool {
         // CEF's macOS event bridge requires a CefAppProtocol NSApplication;
         // instantiate the subclass before CEFInitialize creates any Views
@@ -159,12 +172,19 @@ int main(int argc, char** argv) {
         [delegate initializeCEF];
         std::cout << "[lethe-cef] CefRunMessageLoop..." << std::endl;
         CefRunMessageLoop();
-        std::cout << "[lethe-cef] CefShutdown..." << std::endl;
-        CefShutdown();
-        const int e2eRc = LetheCefAutomation::shared()->exitCode();
-        boot.shutdown();
-        return e2eRc;
+        e2eRc = LetheCefAutomation::shared()->exitCode();
+        // Drop every Objective-C owner of a CEF object while CEF is still
+        // initialized. CefShutdown must run after the last CEF reference dies:
+        // releasing the delegate or draining this pool afterwards destroys CEF
+        // objects on a torn-down context, which trapped inside
+        // objc_autoreleasePoolPop with EXC_BREAKPOINT.
+        app.delegate = nil;
+        delegate = nil;
     }
+    client = nullptr;
+    cefApp = nullptr;
+    std::cout << "[lethe-cef] CefShutdown..." << std::endl;
+    CefShutdown();
     boot.shutdown();
-    return 0;
+    return e2eRc;
 }

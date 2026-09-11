@@ -1,0 +1,25 @@
+# Native chrome click-path audit: every toolbar item, menu item and button
+# must resolve to a live target, and the primary controls must actually act.
+wait 1500
+ui-audit
+load https://example.com
+wait
+ui-audit
+ui-click Reload
+wait
+assert-url-contains example.com
+ui-click Bookmark
+sleep 300
+ui-click Reader View
+sleep 800
+assert-reader on
+ui-click Reader View
+sleep 500
+assert-reader off
+ui-click New Tab
+sleep 400
+assert-tabs 2
+ui-click Back
+sleep 400
+ui-audit
+quit

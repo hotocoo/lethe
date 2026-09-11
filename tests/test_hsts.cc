@@ -287,9 +287,11 @@ LETHE_TEST_CASE(Hsts_E2e_LearnedPolicy_UpgradesPlainHttpBeforeConnect) {
     CHECK_TRUE(tls_test::generateServerCert(caPem, caKeyPem, "sts.internal",
                                             srvCertPem, srvKeyPem));
 
-    tls_test::LoopbackTlsServer origin;
     std::mutex pathsMu;
     std::vector<std::string> tlsPaths;
+    // The TLS server owns a worker thread whose handler captures these
+    // objects. Keep the captured state alive until after the server joins.
+    tls_test::LoopbackTlsServer origin;
     origin.setHandler([&](const std::string& req) {
         std::string path = "/";
         const size_t sp = req.find(' ');
@@ -375,8 +377,9 @@ LETHE_TEST_CASE(Hsts_E2e_Control_NoPolicy_FailsAgainstTlsOnlyOrigin) {
     CHECK_TRUE(tls_test::generateTestCa(caPem, caKeyPem));
     CHECK_TRUE(tls_test::generateServerCert(caPem, caKeyPem, "sts.internal",
                                             srvCertPem, srvKeyPem));
-    tls_test::LoopbackTlsServer origin;
     std::atomic<int> handled{0};
+    // Keep handler state alive until LoopbackTlsServer's worker has joined.
+    tls_test::LoopbackTlsServer origin;
     origin.setHandler([&](const std::string&) {
         handled.fetch_add(1);
         return plainResp(200, "OK", "", "plaintext reached a TLS origin");

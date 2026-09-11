@@ -24,9 +24,12 @@
 //   assert-url-contains <s>   | assert-title-contains <s>
 //   assert-body-contains <s>  | assert-tabs <n> | assert-reader <on|off>
 //   assert-js <code>          JavaScript must evaluate truthy
+//   ui-audit                  every toolbar/menu/button action must resolve
+//   ui-click <name>           click native chrome by label or identifier
 //   quit
 
 #import "ui/mac/LetheShell.h"
+#import "ui/mac/LetheUIAudit.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -93,25 +96,14 @@
     // not steal focus from an interactive user during ordinary runs.
     const char* keepFront = getenv("LETHE_KEEP_FRONT");
     if (keepFront && keepFront[0] && keepFront[0] != '0') {
-        // Repeating bring-forward (the original approach).
-        // Fires once at t=0 before ARC releases the local; the first
-        // makeKeyAndOrderFront is what un-sticks WKWebView.
-        dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,
-                                                          0, 0, dispatch_get_main_queue());
-        dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0),
-                                  2 * NSEC_PER_SEC, 200 * NSEC_PER_MSEC);
-        __weak LetheAutomation* weakSelf = self;
-        dispatch_source_set_event_handler(timer, ^{ [weakSelf keepFront]; });
-        dispatch_resume(timer);
-        std::cout << "[e2e] keep-front: on" << std::endl;
-    }
-    if (keepFront && keepFront[0] && keepFront[0] != '0') {
-        keepFrontTimer_ = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,
-                                                          0, 0, dispatch_get_main_queue());
+        // One timer, retained by the driver. An earlier version created a
+        // second, unretained source here; it fired once and then leaked.
+        keepFrontTimer_ = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+                                                 dispatch_get_main_queue());
         dispatch_source_set_timer(keepFrontTimer_, dispatch_time(DISPATCH_TIME_NOW, 0),
                                   2 * NSEC_PER_SEC, 200 * NSEC_PER_MSEC);
-        __strong LetheAutomation* strongSelf = self;
-        dispatch_source_set_event_handler(keepFrontTimer_, ^{ [strongSelf keepFront]; });
+        __weak LetheAutomation* weakSelf = self;
+        dispatch_source_set_event_handler(keepFrontTimer_, ^{ [weakSelf keepFront]; });
         dispatch_resume(keepFrontTimer_);
         std::cout << "[e2e] keep-front: on" << std::endl;
     }
@@ -394,6 +386,49 @@
         }];
     } else if ([cmd isEqualToString:@"quit"]) {
         [self finishWithMessage:"quit"];
+    } else if ([cmd isEqualToString:@"assert-native-tabs"]) {
+        // AppKit tab groups, not Lethe tabs: a lone window has no tab group
+        // yet still counts as one native tab. Mirrors the CEF driver so both
+        // shells run the same script.
+        NSWindow* w = current_.window;
+        const NSInteger n = w ? MAX(1, (NSInteger)w.tabbedWindows.count) : 0;
+        if (n == arg.integerValue) {
+            [self pass:[NSString stringWithFormat:@"%ld native tabs", (long)n]];
+            [self next];
+        } else {
+            [self fail:[NSString stringWithFormat:@"native-tabs=%ld expected %@", (long)n, arg]];
+        }
+    } else if ([cmd isEqualToString:@"ui-audit"]) {
+        NSArray<NSDictionary*>* entries = [LetheUIAudit auditWindow:current_.window];
+        NSUInteger dead = 0;
+        for (NSString* line in [LetheUIAudit describeEntries:entries]) {
+            std::cout << "[ui] " << line.UTF8String << std::endl;
+        }
+        for (NSDictionary* e in entries) {
+            if (![e[kLetheUIAuditOK] boolValue]) dead++;
+        }
+        if (dead) {
+            [self fail:[NSString stringWithFormat:@"%lu unreachable control(s) of %lu",
+                                                  (unsigned long)dead,
+                                                  (unsigned long)entries.count]];
+        } else {
+            [self pass:[NSString stringWithFormat:@"ui-audit %lu controls reachable",
+                                                  (unsigned long)entries.count]];
+            [self next];
+        }
+    } else if ([cmd isEqualToString:@"ui-click"]) {
+        // Window-scoped AppKit commands (New Tab, Minimize, Full Screen) are
+        // no-ops when the window is not key. A real user always clicks in a
+        // key window; a scripted run does not steal application focus, so
+        // promote the window first and keep the two paths equivalent.
+        [current_.window makeKeyAndOrderFront:nil];
+        NSString* err = nil;
+        if ([LetheUIAudit clickControlNamed:arg inWindow:current_.window error:&err]) {
+            [self pass:[NSString stringWithFormat:@"ui-click %@", arg]];
+            [self later:150];
+        } else {
+            [self fail:err ?: [NSString stringWithFormat:@"ui-click %@ failed", arg]];
+        }
     } else if ([cmd isEqualToString:@"stress"]) {
         [current_ renderStressPage];
         [self later:200];

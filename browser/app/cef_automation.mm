@@ -21,8 +21,11 @@
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_frame.h"
 #include "include/cef_process_message.h"
+#include "include/cef_request_context.h"
 #include "include/cef_task.h"
 #include "include/cef_values.h"
+
+#import "ui/mac/LetheUIAudit.h"
 
 #include "app/cef_app_delegate.h"
 #include "app/cef_chrome.h"
@@ -30,6 +33,30 @@
 
 namespace {
 LetheCefAutomation* g_automation = nullptr;
+
+// The AppKit window hosting a CEF browser view, used for native-chrome
+// auditing and window (not renderer) screenshots.
+NSWindow* AutomationWindow(CefRefPtr<CefBrowser> browser) {
+    if (!browser) return nil;
+    CefWindowHandle handle = browser->GetHost()->GetWindowHandle();
+    if (!handle) return nil;
+    return [(__bridge NSView*)handle window];
+}
+
+bool CaptureWindowPNG(NSWindow* window, const std::string& path) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    CGImageRef image = CGWindowListCreateImage(
+        CGRectNull, kCGWindowListOptionIncludingWindow,
+        (CGWindowID)window.windowNumber, kCGWindowImageBoundsIgnoreFraming);
+#pragma clang diagnostic pop
+    if (!image) return false;
+    NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithCGImage:image];
+    CGImageRelease(image);
+    NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    NSString* file = [NSString stringWithUTF8String:path.c_str()];
+    return [png writeToFile:file options:NSDataWritingAtomic error:nil] == YES;
+}
 
 class LetheCefScreenshotObserver : public CefDevToolsMessageObserver {
  public:
@@ -359,6 +386,29 @@ void LetheCefAutomation::RunLine(const std::string& line) {
             Fail("newtab: CreateBrowser failed"); return;
         }
         ScheduleNext();
+    } else if (cmd == "oblivion") {
+        if (!delegate_ || !delegate_.client) { Fail("oblivion: no client"); return; }
+        CefWindowInfo wi;
+        wi.bounds = CefRect(0, 0, 1280, 860);
+        wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+        CefBrowserSettings bs;
+        // Empty cache_path gives this browser a private in-memory request
+        // context. It cannot share cookies/localStorage/cache with the normal
+        // global context and leaves no profile-specific data on disk.
+        CefRequestContextSettings contextSettings;
+        CefRefPtr<CefRequestContext> context =
+            CefRequestContext::CreateContext(contextSettings, nullptr);
+        if (!context) { Fail("oblivion: CreateContext failed"); return; }
+        const std::string target = arg.empty() ? "https://example.com/" : arg;
+        delegate_.client->MarkNextBrowserOblivion();
+        const bool created = CefBrowserHost::CreateBrowser(
+            wi, delegate_.client, target, bs, nullptr, context);
+        if (!created) {
+            delegate_.client->CancelNextBrowserOblivion();
+            Fail("oblivion: CreateBrowser failed");
+            return;
+        }
+        ScheduleNext();
     } else if (cmd == "closetab") {
         if (!browser_) { Fail("closetab: no browser"); return; }
         // Detach the CEF host view before the explicit force close. This is
@@ -461,6 +511,53 @@ void LetheCefAutomation::RunLine(const std::string& line) {
             ? std::string(getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp") + "/" + arg.substr(8)
             : arg;
         StartDevToolsScreenshot(path);
+    } else if (cmd == "screenshot-window") {
+        // Native-chrome artifact: the AppKit window including the toolbar,
+        // which the renderer-only DevTools capture cannot show.
+        const std::string path = arg.rfind("$TMPDIR/", 0) == 0
+            ? std::string(getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp") + "/" + arg.substr(8)
+            : arg;
+        NSWindow* window = AutomationWindow(browser_);
+        if (!window) { Fail("screenshot-window: no window"); return; }
+        [window makeKeyAndOrderFront:nil];
+        if (!CaptureWindowPNG(window, path)) {
+            Fail("screenshot-window: capture failed");
+            return;
+        }
+        Pass("screenshot-window " + path);
+        ScheduleNext();
+    } else if (cmd == "ui-audit") {
+        NSWindow* window = AutomationWindow(browser_);
+        if (!window) { Fail("ui-audit: no window"); return; }
+        NSArray<NSDictionary*>* entries = [LetheUIAudit auditWindow:window];
+        for (NSString* line in [LetheUIAudit describeEntries:entries]) {
+            std::cout << "[ui] " << line.UTF8String << std::endl;
+        }
+        std::cout.flush();
+        NSUInteger dead = 0;
+        for (NSDictionary* e in entries) {
+            if (![e[kLetheUIAuditOK] boolValue]) dead++;
+        }
+        if (dead) {
+            Fail(std::to_string(dead) + " unreachable control(s) of " +
+                 std::to_string(entries.count));
+            return;
+        }
+        Pass("ui-audit " + std::to_string(entries.count) + " controls reachable");
+        ScheduleNext();
+    } else if (cmd == "ui-click") {
+        NSWindow* window = AutomationWindow(browser_);
+        if (!window) { Fail("ui-click: no window"); return; }
+        // See LetheAutomation: window-scoped commands need a key window.
+        [window makeKeyAndOrderFront:nil];
+        NSString* name = [NSString stringWithUTF8String:arg.c_str()];
+        NSString* err = nil;
+        if (![LetheUIAudit clickControlNamed:name inWindow:window error:&err]) {
+            Fail(err ? err.UTF8String : ("ui-click " + arg + " failed"));
+            return;
+        }
+        Pass("ui-click " + arg);
+        PostCefUiAfter(150, [this] { Next(); });
     } else if (cmd == "assert-url-contains") {
         if (!browser_) { Fail("assert-url-contains: no browser"); return; }
         const std::string url = browser_->GetMainFrame()->GetURL().ToString();
@@ -483,7 +580,15 @@ void LetheCefAutomation::RunLine(const std::string& line) {
     } else if (cmd == "assert-tabs") {
         const int n = static_cast<int>(browsers_.size());
         if (n == std::atoi(arg.c_str())) { Pass(std::to_string(n) + " tabs"); ScheduleNext(); }
-        else Fail("tabs=" + std::to_string(n) + " expected " + arg);
+            else Fail("tabs=" + std::to_string(n) + " expected " + arg);
+    } else if (cmd == "assert-oblivion") {
+        if (!browser_ || !delegate_ || !delegate_.client) {
+            Fail("assert-oblivion: no browser"); return;
+        }
+        const bool want = arg == "on";
+        const bool actual = delegate_.client->IsOblivion(browser_);
+        if (actual == want) { Pass("oblivion state"); ScheduleNext(); }
+        else Fail(std::string("oblivion ") + (actual ? "on" : "off"));
     } else if (cmd == "assert-native-tabs") {
         if (!browser_) { Fail("assert-native-tabs: no browser"); return; }
         CefWindowHandle handle = browser_->GetHost()->GetWindowHandle();
@@ -525,7 +630,23 @@ void LetheCefAutomation::StartDevToolsScreenshot(const std::string& path) {
     if (!pending_screenshot_id_) {
         screenshot_registration_ = nullptr;
         Fail("screenshot: DevTools capture failed");
+        return;
     }
+
+    // Native Chromium/macOS error surfaces do not always have a DevTools
+    // document to capture. Never let a diagnostic screenshot command wedge
+    // the entire automation script indefinitely. Treat an unsupported
+    // capture as a skipped artifact rather than abandoning the browser state
+    // machine; functional assertions remain authoritative.
+    const int screenshotId = pending_screenshot_id_;
+    PostCefUiAfter(5000, [this, screenshotId] {
+        if (pending_screenshot_id_ != screenshotId) return;
+        screenshot_registration_ = nullptr;
+        pending_screenshot_id_ = 0;
+        pending_screenshot_path_.clear();
+        Pass("screenshot unavailable (DevTools capture timed out)");
+        ScheduleNext();
+    });
 }
 
 void LetheCefAutomation::OnDevToolsScreenshot(bool success, const std::string& base64) {

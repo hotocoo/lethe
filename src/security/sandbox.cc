@@ -8,6 +8,7 @@
 //   - Linux: seccomp-bpf default-DENY filter with an explicit syscall
 //     allowlist sized for a networked browser engine.
 
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -41,24 +42,55 @@ std::string seatbeltProfile() {
         "  (subpath \"/private/tmp\")\n"
         "  (subpath \"/var/tmp\")\n"
         "  (regex #\"^/private/var/folders/\")\n"
-        "  (regex #\"^/var/folders/\")\n";
+        "  (regex #\"^/var/folders/\")\n"
+        ")\n";
     const char* home = std::getenv("HOME");
     if (home && *home && std::string(home).find('"') == std::string::npos) {
         const std::string h(home);
-        const char* const kBundle = "org.aletheia.lethe";
-        const std::string paths[] = {
-            h + "/Downloads",
-            h + "/Library/Caches/" + kBundle,
-            h + "/Library/WebKit/" + kBundle,
-            h + "/Library/HTTPStorages/" + kBundle,
-            h + "/Library/Saved Application State/" + kBundle + ".savedState",
-            // CEF helper data: chromium's process singleton + crashpad + cef cache
-            h + "/Library/Application Support/Lethe CEF",
-            h + "/Library/Caches/Lethe CEF",
-        };
-        for (const auto& p : paths) profile += "  (subpath \"" + p + "\")\n";
+        // Web content must not turn the engine into a generic personal-data
+        // reader. Deny the high-value user trees explicitly instead of
+        // denying all of $HOME: the host may still need to load its bundle,
+        // toolchain resources, and test/diagnostic helpers from arbitrary
+        // user-owned paths.
+        profile += "(deny file-read*\n"
+                   "  (subpath \"" + h + "/Documents\")\n"
+                   "  (subpath \"" + h + "/Desktop\")\n"
+                   "  (subpath \"" + h + "/Movies\")\n"
+                   "  (subpath \"" + h + "/Music\")\n"
+                   "  (subpath \"" + h + "/Pictures\")\n"
+                   "  (subpath \"" + h + "/Library/Mail\")\n"
+                   "  (subpath \"" + h + "/Library/Messages\")\n"
+                   "  (subpath \"" + h + "/Library/Safari\")\n"
+                   "  (subpath \"" + h + "/Library/Keychains\")\n"
+                   "  (subpath \"" + h + "/Library/Accounts\")\n"
+                   "  (subpath \"" + h + "/Library/Cookies\")\n"
+                   "  (subpath \"" + h + "/.aws\")\n"
+                   "  (subpath \"" + h + "/.azure\")\n"
+                   "  (subpath \"" + h + "/.config/gcloud\")\n"
+                   "  (subpath \"" + h + "/.kube\")\n"
+                   "  (subpath \"" + h + "/.docker\")\n"
+                   "  (subpath \"" + h + "/.ssh\")\n"
+                   "  (subpath \"" + h + "/.gnupg\")\n"
+                   "  (literal \"" + h + "/.gitconfig\")\n"
+                   ")\n";
+        // Explicitly allow only Lethe-owned state needed by WebKit and the
+        // browser shell. Keep this narrower than $HOME so a compromised page
+        // process cannot turn the app's persistence needs into a general
+        // home-directory write capability.
+        profile += "(allow file-write*\n"
+                   "  (subpath \"" + h + "/Library/WebKit/org.aletheia.lethe\")\n"
+                   "  (subpath \"" + h + "/Library/Application Support/Lethe\")\n"
+                   "  (subpath \"" + h + "/Library/Caches/org.aletheia.lethe\")\n"
+                   ")\n";
+        // A compromised content process should also be unable to enumerate
+        // or modify the user's SSH/Git credentials even if a future code
+        // path accidentally grants a home-directory file capability.
+        profile += "(deny file-write*\n"
+                   "  (subpath \"" + h + "/.ssh\")\n"
+                   "  (subpath \"" + h + "/.gnupg\")\n"
+                   "  (subpath \"" + h + "/.gitconfig\")\n"
+                   ")\n";
     }
-    profile += ")\n";
     return profile;
 }
 #endif
@@ -158,8 +190,8 @@ bool Sandbox::apply() {
     // sandboxed process fails with EPERM (observed on locked-down hosts and
     // GitHub runners). Re-application is a no-op success by definition -
     // the profile is already active.
-    static bool alreadyApplied = false;
-    if (alreadyApplied) {
+    static std::atomic<bool> alreadyApplied{false};
+    if (alreadyApplied.load(std::memory_order_acquire)) {
         return true;
     }
     std::cout << "[lethe] Applying macOS sandbox (Seatbelt)..." << std::endl;
@@ -179,7 +211,7 @@ bool Sandbox::apply() {
         return false;
     }
 #pragma clang diagnostic pop
-    alreadyApplied = true;
+    alreadyApplied.store(true, std::memory_order_release);
     std::cout << "[lethe] Seatbelt profile active (file writes limited to temp, "
                  "~/Downloads and Lethe's own Library subtrees)"
               << std::endl;

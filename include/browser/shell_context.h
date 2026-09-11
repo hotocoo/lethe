@@ -21,6 +21,8 @@ struct ShellContext {
     TLSConfig tls;
     int proxyPort = 0;            // local PolicyProxyServer port (0 = none)
     std::string proxyAuthToken;   // per-launch secret the engine presents to the proxy
+    int httpsProxyPort = 0;       // optional secure HTTP/2 proxy frontend (CEF opt-in)
+    std::string httpsProxySpkiSha256; // base64 SHA-256 SPKI pin for the per-launch proxy cert
     bool httpsFirst = true;       // upgrade top-level http:// to https:// first
     bool trackerBlocking = true;  // built-in third-party tracker rules
     std::shared_ptr<SharedDohCache> dohCache;        // shared by gate, reader, proxy

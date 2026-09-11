@@ -28,9 +28,40 @@
 
 #include "app/cef_automation.h"
 #include "app/cef_chrome.h"
+#import "app/cef_menu.h"
 
 #include "network/policy_proxy.h"
 #include "plugins/plugin_registry.h"
+
+@interface LetheCefHostWindow : NSWindow
+@end
+
+@implementation LetheCefHostWindow
+- (void)newWindowForTab:(id)sender {
+    // AppKit's native tab bar only exposes the + button when the active
+    // window participates in the newWindowForTab: responder action. CEF's
+    // Alloy window has no browser-owned responder for that action, so bridge
+    // it to the same browser-creation path used by File > New Tab / Cmd+T.
+    id delegate = NSApp.delegate;
+    if ([delegate respondsToSelector:@selector(newTabFromMenu:)]) {
+        [delegate newTabFromMenu:sender];
+    }
+}
+
+- (void)setFrame:(NSRect)frameRect display:(BOOL)flag {
+    // AppKit can legitimately issue small intermediate frames while a tab is
+    // being detached/reparented. Do not rewrite those dimensions: minSize
+    // already constrains interactive resizing, and forcing 1280x860 here can
+    // fight AppKit's native tab-group geometry and produce visible jumps.
+    [super setFrame:frameRect display:flag];
+}
+- (void)setFrame:(NSRect)frameRect display:(BOOL)flag animate:(BOOL)animate {
+    [super setFrame:frameRect display:flag animate:animate];
+}
+- (void)setContentSize:(NSSize)size {
+    [super setContentSize:size];
+}
+@end
 
 @implementation LetheCefAppDelegate {
     lethe::ShellContext* _ctx;
@@ -40,6 +71,51 @@
     char** _argv;
 }
 
+static NSWindow* CreateLetheCefWindow(void) {
+    NSWindow* window = [[LetheCefHostWindow alloc]
+        initWithContentRect:NSMakeRect(0, 0, 1280, 860)
+                  styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                             NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
+                    backing:NSBackingStoreBuffered defer:NO];
+    window.releasedWhenClosed = NO;
+    window.minSize = NSMakeSize(480, 320);
+    window.title = @"Lethe";
+    window.titleVisibility = NSWindowTitleHidden;
+    window.titlebarAppearsTransparent = YES;
+    window.toolbarStyle = NSWindowToolbarStyleUnifiedCompact;
+    window.tabbingMode = NSWindowTabbingModePreferred;
+    window.tabbingIdentifier = @"org.aletheia.lethe.cef.browser";
+    // Keep CEF windows on the Space the user is currently viewing. Alloy can
+    // otherwise retain a window on the Space where a previous CEF instance
+    // was created, leaving a healthy browser process/window that appears
+    // unclickable simply because it is not on the active Space.
+    window.collectionBehavior |= NSWindowCollectionBehaviorMoveToActiveSpace;
+    [window center];
+    // CEF's macOS Alloy child-window path requires the host NSWindow to be
+    // ordered before CreateBrowser. Keep this visible during attachment;
+    // LetheCefChromeAttach immediately composes the final chrome over it.
+    [window makeKeyAndOrderFront:nil];
+    return window;
+}
+
+static NSView* CreateLetheCefBrowserContainer(NSWindow* window) {
+    NSView* container = [[NSView alloc] initWithFrame:window.contentView.bounds];
+    container.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [window.contentView addSubview:container];
+    return container;
+}
+
+static void ConfigureLetheCefChildWindow(CefWindowInfo& windowInfo,
+                                         NSView* container) {
+    // Keep CEF's child browser inside an explicitly sized intermediate view.
+    // Passing NSWindow.contentView directly lets the CEF child-window path
+    // participate in the top-level window's fitting-size calculation, which
+    // can collapse the host window horizontally on macOS.
+    windowInfo.SetAsChild((CefWindowHandle)(__bridge void*)container,
+                          CefRect(0, 0, 1280, 860));
+    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+}
+
 - (void)createInitialBrowser {
     // CEF on macOS has a long-standing lifecycle edge case when a native
     // browser is created synchronously before CefRunMessageLoop() starts:
@@ -47,9 +123,12 @@
     // completes destruction. Defer creation onto the main/UI event queue so
     // the browser is created from inside the running CEF/AppKit loop.
     CefWindowInfo windowInfo;
-    CefRect rect(0, 0, 1280, 860);
-    windowInfo.bounds = rect;
-    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+    // Alloy deliberately supplies no Chromium-owned browser chrome. Lethe
+    // owns the complete browser surface (tabs, address bar, navigation,
+    // Settings, and the native tab-group integration) in cef_chrome.mm.
+    NSWindow* hostWindow = CreateLetheCefWindow();
+    NSView* browserContainer = CreateLetheCefBrowserContainer(hostWindow);
+    ConfigureLetheCefChildWindow(windowInfo, browserContainer);
 
     CefBrowserSettings browserSettings;
     browserSettings.background_color = 0xFFFFFFFFu;
@@ -89,8 +168,9 @@
     if (!_client) return;
 
     CefWindowInfo windowInfo;
-    windowInfo.bounds = CefRect(0, 0, 1280, 860);
-    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+    NSWindow* hostWindow = CreateLetheCefWindow();
+    NSView* browserContainer = CreateLetheCefBrowserContainer(hostWindow);
+    ConfigureLetheCefChildWindow(windowInfo, browserContainer);
     CefBrowserSettings settings;
     settings.background_color = 0xFFFFFFFFu;
     if (!lethe::PluginRegistry::instance().enabled("javascript"))
@@ -105,22 +185,56 @@
     std::cout << "[lethe-cef] native Cmd+T -> new tab" << std::endl;
 }
 
+- (void)newOblivionWindowFromMenu:(id)sender {
+    (void)sender;
+    // Oblivion: a private request context with no cache path, so cookies,
+    // localStorage and cache live only in memory and never join the global
+    // profile. Same construction the e2e driver uses for `oblivion`.
+    if (!_client) return;
+    CefWindowInfo windowInfo;
+    NSWindow* hostWindow = CreateLetheCefWindow();
+    NSView* browserContainer = CreateLetheCefBrowserContainer(hostWindow);
+    ConfigureLetheCefChildWindow(windowInfo, browserContainer);
+    CefBrowserSettings settings;
+    settings.background_color = 0xFFFFFFFFu;
+    if (!lethe::PluginRegistry::instance().enabled("javascript"))
+        settings.javascript = STATE_DISABLED;
+    CefRequestContextSettings contextSettings;
+    CefRefPtr<CefRequestContext> context =
+        CefRequestContext::CreateContext(contextSettings, nullptr);
+    if (!context) {
+        std::cerr << "[lethe-cef] oblivion: CreateContext failed" << std::endl;
+        return;
+    }
+    _client->MarkNextBrowserOblivion();
+    if (!CefBrowserHost::CreateBrowser(windowInfo, _client,
+                                       LetheCefNewTabDataUrl(), settings,
+                                       nullptr, context)) {
+        _client->CancelNextBrowserOblivion();
+        std::cerr << "[lethe-cef] oblivion: CreateBrowser failed" << std::endl;
+    }
+}
+
 - (void)installNativeMenu {
-    NSMenu* bar = [[NSMenu alloc] initWithTitle:@"Main Menu"];
-    NSMenuItem* fileHolder = [[NSMenuItem alloc] initWithTitle:@"File"
-                                                       action:nil
-                                                keyEquivalent:@""];
-    NSMenu* file = [[NSMenu alloc] initWithTitle:@"File"];
-    fileHolder.submenu = file;
-    NSMenuItem* newTab = [[NSMenuItem alloc]
-        initWithTitle:@"New Tab"
-               action:@selector(newTabFromMenu:)
-        keyEquivalent:@"t"];
-    newTab.keyEquivalentModifierMask = NSEventModifierFlagCommand;
-    newTab.target = self;
-    [file addItem:newTab];
-    [bar addItem:fileHolder];
-    [NSApp setMainMenu:bar];
+    // The full browser command surface lives in cef_menu.mm so both shells
+    // expose the same menus; this shell only supplies the client-backed
+    // commands (new tab, new Oblivion window).
+    LetheCefInstallMenuBar(self);
+}
+
+- (void)showSettingsFromMenu:(id)sender {
+    (void)sender;
+    LetheCefChromeShowSettings();
+}
+
+- (void)focusAddressFromMenu:(id)sender {
+    (void)sender;
+    LetheCefChromeFocusActiveAddress();
+}
+
+- (void)reloadFromMenu:(id)sender {
+    (void)sender;
+    LetheCefChromeReloadActive();
 }
 
 @synthesize context = _ctx;
@@ -151,10 +265,27 @@
     // before Chromium boots. Chromium's own subprocess sandbox remains on;
     // Lethe's Seatbelt is an additional host-level boundary.
     CefRefPtr<CefCommandLine> global = CefCommandLine::GetGlobalCommandLine();
-    // LETHE_CEF_MIN_SWITCHES=1 (bisect): skip the global-command-line block
-    // entirely (mock keychain still applied by App::OnBeforeCommandLineProcessing).
+    // Debug-only bisect mode. Release builds always install the mandatory
+    // Chromium command-line policy before CefInitialize.
+#if !defined(NDEBUG)
     const bool minSwitches = getenv("LETHE_CEF_MIN_SWITCHES") != nullptr;
+#else
+    const bool minSwitches = false;
+#endif
     if (global && !minSwitches) {
+        // Chromium accepts command-line switches before the embedder gets a
+        // chance to apply its normal policy. Strip security-sensitive
+        // overrides here as well as in OnBeforeCommandLineProcessing so a
+        // launcher cannot smuggle a weaker process/network configuration into
+        // CEF's early initialization path.
+        static constexpr const char* kForbiddenSwitches[] = {
+            "no-sandbox", "disable-setuid-sandbox", "disable-web-security",
+            "allow-file-access-from-files", "disable-site-isolation-trials",
+            "no-proxy-server", "proxy-server", "proxy-bypass-list",
+            "host-resolver-rules",
+        };
+        for (const char* name : kForbiddenSwitches)
+            global->RemoveSwitch(name);
         // Lethe is ephemeral by default: there is no stored password or
         // cookie blob to decrypt. Chromium's OSCrypt would still read the
         // "Chromium Safe Storage" keychain item at startup - a modal
@@ -170,6 +301,13 @@
             global->AppendSwitch("disable-default-apps");
         if (!global->HasSwitch("disable-dev-shm-usage"))
             global->AppendSwitch("disable-dev-shm-usage");
+        // Make the renderer isolation boundary explicit rather than relying
+        // on the Chromium build's default feature configuration. A
+        // compromised cross-origin renderer must not share a process with a
+        // different origin, even if a future CEF upgrade changes defaults.
+        // The extra renderer processes are an intentional security cost.
+        if (!global->HasSwitch("site-per-process"))
+            global->AppendSwitch("site-per-process");
         // Belt and suspenders for the net stack: OnBeforeCommandLineProcessing
         // also appends proxy-server, but Chromium consumes --proxy-server and
         // strips it from the command line handed to child processes. The
@@ -179,21 +317,48 @@
         // the network service dials targets directly and every navigation
         // hangs past OnBeforeBrowse with no OnLoadStart and no OnLoadError.
         if (_ctx && _ctx->proxyPort > 0) {
+            const int proxyPort = _ctx->httpsProxyPort > 0
+                ? _ctx->httpsProxyPort : _ctx->proxyPort;
+            const std::string proxyScheme = _ctx->httpsProxyPort > 0 ? "https" : "http";
             const std::string proxyUrl =
-                "http://127.0.0.1:" + std::to_string(_ctx->proxyPort);
+                proxyScheme + "://127.0.0.1:" + std::to_string(proxyPort);
             if (!global->HasSwitch("proxy-server"))
                 global->AppendSwitchWithValue("proxy-server", proxyUrl);
-            if (!_ctx->proxyAuthToken.empty() && !global->HasSwitch("proxy-auth"))
-                global->AppendSwitchWithValue(
-                    "proxy-auth",
-                    lethe::PolicyProxyServer::basicCredentialFor(
-                        _ctx->proxyAuthToken));
             // Never bypass the proxy for loopback targets: the policy proxy
             // itself is loopback, and Chromium's default bypass list would
             // otherwise let loopback destinations escape the policy gate.
             if (!global->HasSwitch("proxy-bypass-list"))
                 global->AppendSwitchWithValue("proxy-bypass-list", "<-loopback>");
+            // Keep Chromium's resolver from creating a direct DNS path that
+            // bypasses the authenticated proxy. The proxy is the only
+            // component permitted to resolve web destinations (via DoH);
+            // its own loopback endpoint remains resolvable locally.
+            if (!global->HasSwitch("host-resolver-rules"))
+                global->AppendSwitchWithValue(
+                    "host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1");
+
+            if (_ctx->httpsProxyPort > 0 && !_ctx->httpsProxySpkiSha256.empty() &&
+                !global->HasSwitch("ignore-certificate-errors-spki-list")) {
+                global->AppendSwitchWithValue(
+                    "ignore-certificate-errors-spki-list",
+                    _ctx->httpsProxySpkiSha256);
+            }
+
         }
+        // The policy proxy only implements TCP HTTP/CONNECT. Chromium must
+        // never create a direct QUIC/HTTP-3 path around that authenticated
+        // boundary, including during early network-service initialization.
+        if (!global->HasSwitch("disable-quic"))
+            global->AppendSwitch("disable-quic");
+        // WebRTC can establish UDP sockets directly and does not honor an
+        // ordinary HTTP proxy for every candidate path. Lethe's transport
+        // boundary is fail-closed, so forbid non-proxied UDP to prevent a
+        // page from using WebRTC as a network escape hatch.
+        if (!global->HasSwitch("force-webrtc-ip-handling-policy"))
+            global->AppendSwitchWithValue(
+                "force-webrtc-ip-handling-policy", "disable_non_proxied_udp");
+        if (!global->HasSwitch("strict-origin-isolation"))
+            global->AppendSwitch("strict-origin-isolation");
         // Diagnostics: LETHE_CEF_NETLOG=<path> dumps the Chromium net log
         // (proxy config, socket errors) for offline inspection.
         if (const char* netlog = getenv("LETHE_CEF_NETLOG")) {
@@ -204,14 +369,22 @@
     // Keep Chromium's renderer/GPU sandbox enabled by default. If the user
     // explicitly disables native CEF sandboxing, the shared Lethe Seatbelt
     // can be used instead.
+    bool disableNativeSandbox = false;
+#if !defined(NDEBUG)
     const char* nativeSandbox = getenv("LETHE_CEF_NATIVE_SANDBOX");
-    settings.no_sandbox = nativeSandbox && std::string(nativeSandbox) == "0";
+    disableNativeSandbox = nativeSandbox && std::string(nativeSandbox) == "0";
+#endif
+    settings.no_sandbox = disableNativeSandbox;
     // Crash forensics: Chromium CHECK aborts print only through CEF's
     // logging sink. Route it somewhere we can read after a SIGTRAP.
     {
         const char* src = "/tmp/lethe-cef-debug.log";
         cef_string_from_utf8(src, strlen(src), &settings.log_file);
+#if defined(NDEBUG)
+        settings.log_severity = LOGSEVERITY_WARNING;
+#else
         settings.log_severity = LOGSEVERITY_INFO;
+#endif
     }
     // No persistent cache by default: every launch is a fresh profile.
     // The Settings UI can flip this in a follow-up.

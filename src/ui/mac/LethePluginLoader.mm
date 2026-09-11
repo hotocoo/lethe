@@ -23,6 +23,29 @@ NSString* const LethePluginsFolderChangedNotification =
 
 namespace {
 
+struct PluginCacheEntry {
+    LethePluginScript* plugin = nil;
+    off_t size = -1;
+    uint64_t mtimeNs = 0;
+};
+
+static NSMutableDictionary<NSString*, NSValue*>* PluginCache() {
+    static NSMutableDictionary<NSString*, NSValue*>* cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
+    return cache;
+}
+
+static NSValue* BoxPluginCacheEntry(const PluginCacheEntry& entry) {
+    return [NSValue value:&entry withObjCType:@encode(PluginCacheEntry)];
+}
+
+static bool UnboxPluginCacheEntry(NSValue* value, PluginCacheEntry& entry) {
+    if (!value || strcmp(value.objCType, @encode(PluginCacheEntry)) != 0) return false;
+    [value getValue:&entry];
+    return entry.plugin != nil;
+}
+
 // Read a plugin through an already-open descriptor. A pathname-only
 // lstat()+NSData load leaves a TOCTOU window in which a same-user process can
 // swap the file for a symlink or another payload after validation. O_NOFOLLOW
@@ -98,6 +121,7 @@ NSData* ReadPluginFileSecurely(NSString* path) {
         return nil;  // no manifest at all: still a plugin, just unnamed
     }
     LethePluginScript* p = [LethePluginScript new];
+    p.sourceData = d;
     p.fileName = path.lastPathComponent;
     p.name = path.lastPathComponent.stringByDeletingPathExtension;
     p.pluginDescription = @"";
@@ -134,6 +158,29 @@ NSData* ReadPluginFileSecurely(NSString* path) {
         if (![f.pathExtension isEqualToString:@"js"]) continue;
         NSString* path = [folder stringByAppendingPathComponent:f];
 
+        // Directory scans happen on every live preference refresh. Cache the
+        // securely opened bytes and parsed manifest by file version so a
+        // normal Settings refresh does not reopen/reparse every plugin. The
+        // stat is only a metadata check; execution still uses the exact bytes
+        // captured by the previous O_NOFOLLOW/fstat/read operation. If size
+        // or mtime changes, the entry is rebuilt through parseFile().
+        struct stat st{};
+        if (lstat(path.fileSystemRepresentation, &st) != 0 || !S_ISREG(st.st_mode) ||
+            st.st_uid != getuid() || (st.st_mode & (S_IWGRP | S_IWOTH)) != 0 ||
+            st.st_size < 0 || static_cast<uint64_t>(st.st_size) > 1024u * 1024u) {
+            continue;
+        }
+        PluginCacheEntry cached{};
+        NSValue* boxed = PluginCache()[f];
+        const uint64_t mtimeNs = static_cast<uint64_t>(st.st_mtimespec.tv_sec) * 1000000000ULL +
+                                 static_cast<uint64_t>(st.st_mtimespec.tv_nsec);
+        if (UnboxPluginCacheEntry(boxed, cached) && cached.size == st.st_size &&
+            cached.mtimeNs == mtimeNs && cached.plugin.sourceData.length == (NSUInteger)st.st_size) {
+            cached.plugin.enabled = ![disabled containsObject:cached.plugin.fileName];
+            [out addObject:cached.plugin];
+            continue;
+        }
+
         // Script plugins execute with the full authority of the page's
         // JavaScript context. Treat the plugin directory as an integrity
         // boundary: never execute a symlink, a non-regular file, a file owned
@@ -142,7 +189,13 @@ NSData* ReadPluginFileSecurely(NSString* path) {
         // large allocation during startup.
         LethePluginScript* p = [self parseFile:path];
         if (!p) continue;
+        // parseFile() has already performed the secure descriptor read. Keep
+        // those exact bytes so installInto() never performs a second
+        // pathname-based read for an unchanged plugin.
+        if (!p.sourceData || p.sourceData.length != (NSUInteger)st.st_size) continue;
         p.enabled = ![disabled containsObject:p.fileName];
+        PluginCacheEntry fresh{p, st.st_size, mtimeNs};
+        PluginCache()[f] = BoxPluginCacheEntry(fresh);
         [out addObject:p];
     }
     return out;
@@ -159,9 +212,7 @@ NSData* ReadPluginFileSecurely(NSString* path) {
     [ucc addUserScript:media];
     for (LethePluginScript* p in [self scanPlugins]) {
         if (!p.enabled) continue;
-        NSString* folder = [LethePluginLoader pluginsFolder];
-        NSString* path = [folder stringByAppendingPathComponent:p.fileName];
-        NSData* d = ReadPluginFileSecurely(path);
+        NSData* d = p.sourceData;
         if (!d) continue;
         // IIFE wrap: one plugin's top-level names never leak into another's
         // scope or the page's. document-start so plugins see every frame.

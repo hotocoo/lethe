@@ -147,6 +147,29 @@ Raw JSON for every run is under `tools/bench/results/extreme-v2/` and
 
 ## Latest results (2026-09-01)
 
+### CEF network-architecture continuation (2026-09-06)
+
+Fresh 3-run `extreme-net` control on the current CEF build, 3,000 concurrent
+same-origin HTTP fetches per round, M4 Max reference host:
+
+| Browser | Run 1 | Run 2 | Run 3 | Median | p99.9 median |
+|---|---:|---:|---:|---:|---:|
+| Lethe CEF | 8,907 RPS | 9,563 RPS | 9,967 RPS | **9,563 RPS** | **296.6 ms** |
+| Chrome | 11,111 RPS | 11,446 RPS | 11,450 RPS | **11,446 RPS** | **239.1 ms** |
+
+The current CEF path is therefore about 16.4% below Chrome on this fresh
+control; the result confirms that the kqueue HTTP reactor is not the missing
+architecture-level win. The reactor remains opt-in and is not enabled by
+default.
+
+The next architecture candidate is the browser/proxy connection layer, not
+the parser or worker hot path. Chromium's current proxy implementation limits
+HTTP-proxy connections to 32 by default, while Chromium documents that an
+HTTPS proxy using HTTP/2 can avoid that restriction and improve proxy fan-out.
+See Chromium's proxy documentation for the distinction and its current
+`MaxConnectionsPerProxy` behavior. The authenticated Lethe policy boundary
+must remain intact while evaluating an HTTPS/HTTP2 proxy transport.
+
 After optimizing the proxy's `readHead` to use 4KB chunks instead of
 byte-by-byte reads, the latest pageload benchmark shows:
 
@@ -394,3 +417,92 @@ v1.0; the heavy news-site rows (theguardian, cnn, nytimes) in the raw JSON
 show multi-second TTFBs that v1.0 did not see and that match the
 contention window, not any code path in this wave — treat them as noise
 and re-measure in a quiet window before drawing any conclusion from them.
+
+## Wave 2026-09-04: Blink site-isolation baseline
+
+The CEF/Blink shell now explicitly enables Chromium `site-per-process` and
+`strict-origin-isolation` in its default command-line policy. This is a
+security-first process-boundary change; performance acceptance is based on a
+fresh 3-run comparison rather than assuming the switches are free.
+
+Host: Apple M4 Max, 64 GB, macOS 26.5. Lethe CEF: CEF 151.3.24 / Chromium
+151.0.7922.174. Chrome: 152.0.7977.82. Same `startup,pageload,memory` suites,
+3 runs each, fresh profiles.
+
+| Metric | Lethe CEF/Blink | Chrome | Relative |
+|---|---:|---:|---:|
+| Startup median / p95 / p99 | 239 / 270 / 273 ms | 571 / 854 / 879 ms | Lethe 2.39x / 3.16x / 3.22x faster |
+| RSS, all tabs median | 3690 MB | 7153 MB | Lethe 48.4% lower |
+| Processes, median | 31 | 60 | Lethe 48.3% fewer |
+| CPU to load all tabs, median | 19.8 s | 52.6 s | Lethe 62.4% lower |
+
+The adversarial renderer/network probe was also repeated after the isolation
+change. On the identical 252,509-node / 300-request workload, Lethe measured
+132.9 FPS DOM, 144.5 FPS-class WebGL in the earlier isolated run, 144 matrix
+work units, and 2,431 RPS / 118.0 ms p99 on extreme-net; Chrome measured
+132.7 FPS DOM, 144.4 FPS WebGL, 141 matrix work units, and 6,061 RPS /
+45.0 ms p99. Lethe therefore does **not** yet claim overall browser-performance
+superiority: network fan-out remains the largest measured gap, while renderer
+compute/GPU are approximately tied on this workload.
+
+The benchmark reporter now prints startup median/p95/p99 from the actual run
+samples, removing the previous misleading `median/p95/p99` label that only
+reported a median.
+
+## Wave 2026-09-04: policy-proxy fan-out optimization
+
+The Blink proxy path now (1) removes Chromium's implicit loopback proxy
+bypass so local-origin traffic cannot escape the authenticated policy path,
+(2) auto-sizes the request worker pool to 8-16 threads instead of creating a
+thread storm, and (3) keeps body-less HTTP/1.1 GET/HEAD proxy connections
+persistent. Persistent downstream framing is restricted to requests with no
+`Content-Length`/`Transfer-Encoding` and no explicit `Connection: close`; this
+avoids reusing a connection before its request body has been consumed.
+
+Fresh 3-run `extreme-net` comparison on the same Apple M4 Max, 64 GB, with
+300 requests / 307,200 bytes per round and the proxy enabled for Lethe. Each
+browser run contains three independent network rounds; reported values are
+medians across the resulting nine samples.
+
+| Metric | Lethe CEF/Blink + policy proxy | Chrome | Relative |
+|---|---:|---:|---:|
+| Extreme network RPS | **5,263** | 8,646 | Lethe 39.1% lower |
+| Extreme network p99.9 | **52.5 ms** | 30.2 ms | Lethe 73.8% higher |
+
+The persistence change raised the one-run median from 4,237 RPS to 5,217 RPS
+on the same proxy-enabled workload (~23.1% higher throughput). A subsequent
+3-run sweep found 16 workers more stable than 24 workers (24-worker samples
+included a 3,713 RPS outlier), so the automatic 8-16 policy remains in place.
+
+This wave is a measured improvement, not a claim of Chrome superiority. The
+remaining network gap is now the primary performance blocker for the stated
+goal. The security path remains enabled while optimizing it; the benchmark
+does not bypass authentication, private-network policy, DoH policy, VPN
+routing, or TLS verification.
+
+## Wave 2026-09-06: secure HTTP/2 proxy transport groundwork
+
+The next architecture-level optimization is now wired as an opt-in CEF path:
+`LETHE_CEF_HTTPS_PROXY=1`. The policy proxy can provision a per-launch
+loopback TLS certificate, pin that certificate's SPKI in Chromium, and launch
+an HTTP/2-capable `nghttpx` frontend with 1000 concurrent streams and enlarged
+HTTP/2 flow-control windows. The existing authenticated policy proxy remains
+the forwarding/policy backend, so the transport optimization does not replace
+the policy boundary.
+
+The secure frontend is deliberately **fail-closed** until CEF can provide a
+client certificate for proxy authentication. A prototype mruby Basic-auth
+hook was verified against a custom `nghttpx` 1.70.0 build with mruby enabled;
+the frontend negotiated HTTP/2, but the 407 challenge path is not acceptable
+as the authenticated production boundary because Chromium can treat h2 proxy
+Basic-auth challenges as unsupported/fallback-prone. The code therefore
+rejects secure-proxy startup unless `LETHE_CEF_HTTPS_PROXY_AUTH=client-cert`
+is explicitly implemented, rather than risking a direct-navigation escape.
+No secure-proxy performance number is claimed.
+
+Current verification: `cmake --build build-cef-local -j 12` succeeds;
+`./build-cef-local/lethe_tests --filter PolicyProxy_` reports 10/10 passed;
+the pre-existing full suite remains 255/255 passed. The secure-proxy smoke
+test reaches the explicit client-certificate-authentication gate, proving the
+new mode cannot silently weaken the policy boundary while the CEF client-cert
+provisioning piece is still missing.

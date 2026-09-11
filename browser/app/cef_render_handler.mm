@@ -183,16 +183,22 @@ void LetheCefRenderHandler::OnContextCreated(CefRefPtr<CefBrowser> browser,
                                              CefRefPtr<CefV8Context> context) {
     (void)browser; (void)frame;
     if (!context) return;
+    // The embedder bridge is only needed by the top-level automation frame.
+    // Installing it in every iframe creates a V8 function and context-global
+    // property for every renderer context, increasing page startup work and
+    // unnecessarily exposing a privileged embedder surface to third-party
+    // frames. Keep the bridge and script-plugin injection main-frame-only.
+    if (!frame || !frame->IsMain()) return;
     if (!g_handler) g_handler = new LetheEvalHandler();
     context->Enter();
     CefRefPtr<CefV8Value> global = context->GetGlobal();
     CefRefPtr<CefV8Value> fn = CefV8Value::CreateFunction("__letheEval", g_handler);
     global->SetValue("__letheEval", fn, V8_PROPERTY_ATTRIBUTE_READONLY);
     context->Exit();
-    // Script plugins: run at context creation (document start), main
-    // frames only, IIFE-wrapped so plugins cannot see each other's vars.
+    // Script plugins: run at context creation (document start), IIFE-wrapped
+    // so plugins cannot see each other's vars.
     static const std::vector<ScriptPlugin> plugins = scanScriptPlugins();
-    if (plugins.empty() || !frame || !frame->IsMain()) return;
+    if (plugins.empty()) return;
     const std::string url = frame->GetURL().ToString();
     const std::string scheme = url.substr(0, url.find(':'));
     if (scheme != "http" && scheme != "https") return;

@@ -151,6 +151,12 @@ int main(int argc, char** argv) {
         }
         po.privateNet.isolatePrivateNetworks = cfg.isolatePrivateNetworks;
         for (const auto& h : cfg.privateNetworkAllowedHosts) po.privateNet.allowedHosts.insert(h);
+        po.enableHttpReactor = std::getenv("LETHE_PROXY_HTTP_REACTOR") != nullptr &&
+                               !(std::string(std::getenv("LETHE_PROXY_HTTP_REACTOR")) == "0" ||
+                                 std::string(std::getenv("LETHE_PROXY_HTTP_REACTOR")) == "off");
+        po.enableHttpsProxy = std::getenv("LETHE_CEF_HTTPS_PROXY") != nullptr &&
+                              !(std::string(std::getenv("LETHE_CEF_HTTPS_PROXY")) == "0" ||
+                                std::string(std::getenv("LETHE_CEF_HTTPS_PROXY")) == "off");
         po.vpnTunnel = engine.vpnTunnel();
         po.udpTransport = engine.vpnTransport();
         po.relayHost = cfg.vpnConfig.endpointHost;
@@ -158,6 +164,8 @@ int main(int argc, char** argv) {
         if (proxy.start(po)) {
             shell.proxyPort = proxy.port();
             shell.proxyAuthToken = po.authToken;
+            shell.httpsProxyPort = proxy.httpsProxyPort();
+            shell.httpsProxySpkiSha256 = proxy.httpsProxySpkiSha256();
             std::cout << "[lethe] policy proxy listening on 127.0.0.1:" << shell.proxyPort
                       << " (per-launch auth token)" << std::endl;
         } else {

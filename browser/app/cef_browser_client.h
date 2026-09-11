@@ -12,12 +12,15 @@
 
 #include <atomic>
 #include <string>
+#include <unordered_set>
 #include <unordered_map>
 #include <mutex>
 #include <vector>
 
 #include "include/cef_client.h"
+#include "include/cef_display_handler.h"
 #include "include/cef_request_handler.h"
+#include "include/cef_resource_request_handler.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
 #include "include/cef_download_handler.h"
@@ -30,6 +33,7 @@
 #include "app/cef_render_handler.h"
 
 class CefBrowserClient : public CefClient,
+                         public CefDisplayHandler,
                          public CefRequestHandler,
                          public CefResourceRequestHandler,
                          public CefLifeSpanHandler,
@@ -87,8 +91,12 @@ class CefBrowserClient : public CefClient,
 
     CefBrowserClient() = default;
     void SetShellContext(const lethe::ShellContext* ctx) { ctx_ = ctx; }
+    void MarkNextBrowserOblivion() { next_browser_oblivion_ = true; }
+    void CancelNextBrowserOblivion() { next_browser_oblivion_ = false; }
+    bool IsOblivion(CefRefPtr<CefBrowser> browser) const;
 
     // CefClient
+    CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
     CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
     CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
         CefRefPtr<CefBrowser> browser,
@@ -97,25 +105,20 @@ class CefBrowserClient : public CefClient,
         bool is_navigation,
         bool is_download,
         const CefString& request_initiator,
-        bool& disable_default_handling) override {
-        (void)browser; (void)frame; (void)request; (void)is_navigation;
-        (void)is_download; (void)request_initiator;
-        disable_default_handling = false;
-        return this;
-    }
+        bool& disable_default_handling) override;
 
-    // CefResourceRequestHandler - stamp the per-launch proxy token onto
-    // every request. Chromium strips Proxy-Authorization out of CONNECT
-    // tunnel requests (it belongs to the auth system, whose CEF routing
-    // never fires for the tunnel in this build), but it forwards custom
-    // X- headers onto the tunnel, so the policy proxy accepts
-    // X-Lethe-Proxy-Auth as the credential. The header terminates at the
-    // proxy: CONNECT tunnels end there and plain-HTTP requests are
-    // re-fetched internally, so the token never leaves loopback.
-    ReturnValue OnBeforeResourceLoad(CefRefPtr<CefBrowser> browser,
-                                     CefRefPtr<CefFrame> frame,
-                                     CefRefPtr<CefRequest> request,
-                                     CefRefPtr<CefCallback> callback) override;
+    // CefResourceRequestHandler - cancel known third-party tracker requests
+    // before Chromium starts a socket. This is intentionally only a negative
+    // filter: it never rewrites headers or supplies credentials, so the proxy
+    // authentication boundary remains untouched.
+    ReturnValue OnBeforeResourceLoad(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        CefRefPtr<CefRequest> request,
+        CefRefPtr<CefCallback> callback) override;
+
+    static bool IsThirdPartyTrackerRequest(const std::string& url,
+                                           const std::string& initiator);
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
     CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
     CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
@@ -128,6 +131,12 @@ class CefBrowserClient : public CefClient,
                         CefRefPtr<CefRequest> request,
                         bool user_gesture,
                         bool is_redirect) override;
+
+    bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
+                          CefRefPtr<CefFrame> frame,
+                          const CefString& target_url,
+                          WindowOpenDisposition target_disposition,
+                          bool user_gesture) override;
 
     bool OnBeforePopup(CefRefPtr<CefBrowser> browser,
                        CefRefPtr<CefFrame> frame,
@@ -162,6 +171,24 @@ class CefBrowserClient : public CefClient,
                             const CefString& realm,
                             const CefString& scheme,
                             CefRefPtr<CefAuthCallback> callback) override;
+
+    // HTTPS proxy authentication is mTLS. Chromium obtains the private key
+    // from the macOS platform certificate store; this callback only selects
+    // the provisioned Lethe identity and never receives or handles its key.
+    bool OnSelectClientCertificate(
+        CefRefPtr<CefBrowser> browser,
+        bool isProxy,
+        const CefString& host,
+        int port,
+        const X509CertificateList& certificates,
+        CefRefPtr<CefSelectClientCertificateCallback> callback) override;
+
+    // CefDisplayHandler - keep native AppKit tab/window labels useful while
+    // the address field continues to show the actual navigation URL.
+    void OnTitleChange(CefRefPtr<CefBrowser> browser,
+                       const CefString& title) override;
+    void OnLoadingProgressChange(CefRefPtr<CefBrowser> browser,
+                                 double progress) override;
 
     // CefLifeSpanHandler - one NSWindow per top-level browser, single
     // process model: subsequent windows also reuse this client.
@@ -240,6 +267,22 @@ class CefBrowserClient : public CefClient,
     std::string proxy_auth_header_;
     bool quit_when_loaded_ = false;
     int browser_count_ = 0;
+    // HTTPS-first state is per browser/tab. A plain-http continuation is
+    // accepted only for the exact URL Lethe just offered on that tab; a page
+    // cannot manufacture a lethe://allow-http URL for an unrelated host.
+    std::unordered_map<int, std::string> http_fallback_allowed_;
+    // Once the user explicitly accepts the one-shot HTTP continuation, let
+    // CEF own any subsequent origin error page. This preserves the actual
+    // http:// URL in navigation state instead of replacing it with a data:
+    // document when the origin itself returns a malformed/failed response.
+    std::unordered_map<int, std::string> http_fallback_active_;
+    // Main-frame navigations denied synchronously by the embedder can still
+    // produce an ERR_ABORTED callback for the original URL. Remember that
+    // decision so OnLoadError cannot replace our policy block page with the
+    // generic HTTPS-first error surface.
+    std::unordered_map<int, std::string> policy_blocked_urls_;
+    std::unordered_set<int> oblivion_browser_ids_;
+    bool next_browser_oblivion_ = false;
 
     std::mutex evals_mtx_;
     std::unordered_map<std::string, std::string> evals_;

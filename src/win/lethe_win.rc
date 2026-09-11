@@ -1,8 +1,8 @@
 #include <windows.h>
 
-#define LETHE_VERSION_MAJOR 1
-#define LETHE_VERSION_MINOR 3
-#define LETHE_VERSION_PATCH 4
+#define LETHE_VERSION_MAJOR 0
+#define LETHE_VERSION_MINOR 1
+#define LETHE_VERSION_PATCH 1
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION LETHE_VERSION_MAJOR,LETHE_VERSION_MINOR,LETHE_VERSION_PATCH,0
@@ -19,11 +19,11 @@ BEGIN
   BEGIN
    VALUE "CompanyName", "ACOTech"
    VALUE "FileDescription", "Lethe Secure Browser"
-   VALUE "FileVersion", "1.3.4"
+   VALUE "FileVersion", "0.1.1"
    VALUE "InternalName", "lethe-win.exe"
    VALUE "OriginalFilename", "lethe-win.exe"
    VALUE "ProductName", "Lethe"
-   VALUE "ProductVersion", "1.3.4"
+   VALUE "ProductVersion", "0.1.1"
   END
  END
  BLOCK "VarFileInfo"

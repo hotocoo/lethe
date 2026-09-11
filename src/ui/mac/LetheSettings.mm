@@ -17,7 +17,7 @@ NSString* const LetheSettingsDidCloseNotification = @"LetheSettingsDidCloseNotif
 
 static NSButton* makeCheckbox(NSView* parent, NSString* title, BOOL on, SEL action, id target) {
     NSButton* cb = [NSButton buttonWithTitle:title target:target action:action];
-    cb.buttonType = NSSwitchButton;
+    cb.buttonType = NSButtonTypeSwitch;
     cb.state = on ? NSControlStateValueOn : NSControlStateValueOff;
     [parent addSubview:cb];
     return cb;
@@ -510,7 +510,7 @@ static void* kLetheMinYKey = &kLetheMinYKey;
         y -= 56;
 
         sectionHeader(self, @"ENGINE CHOICE", y); y -= 24;
-        NSTextField* h = [NSTextField labelWithString:@"v1.0.0 ships system WebKit and optional Blink with a hardened network and sandbox stack."];
+        NSTextField* h = [NSTextField labelWithString:@"v0.1.1 ships system WebKit and optional Blink with a hardened network and sandbox stack."];
         h.font = [NSFont systemFontOfSize:11]; h.textColor = [NSColor tertiaryLabelColor];
         h.frame = NSMakeRect(20, y, 540, 40);
         h.lineBreakMode = NSLineBreakByWordWrapping;
@@ -546,17 +546,16 @@ static void* kLetheMinYKey = &kLetheMinYKey;
 
 @implementation LetheSettingsShortcuts
 - (instancetype)initWithFrame:(NSRect)frame {
-    NSTextView* tv = [[NSTextView alloc] initWithFrame:frame];
-    if ((self = (LetheSettingsShortcuts*)tv)) {
-        tv.editable = NO; tv.selectable = YES; tv.backgroundColor = [NSColor textBackgroundColor];
-        tv.font = [NSFont userFixedPitchFontOfSize:12] ?: [NSFont systemFontOfSize:12];
-        tv.textContainerInset = NSMakeSize(16, 16);
-        tv.string = [self shortcutList];
+    if ((self = [super initWithFrame:frame])) {
+        self.editable = NO; self.selectable = YES; self.backgroundColor = [NSColor textBackgroundColor];
+        self.font = [NSFont userFixedPitchFontOfSize:12] ?: [NSFont systemFontOfSize:12];
+        self.textContainerInset = NSMakeSize(16, 16);
+        self.string = [self shortcutList];
     }
     return self;
 }
 - (NSString*)shortcutList {
-    return @"Keyboard shortcuts (v1.0.0):\n\n"
+    return @"Keyboard shortcuts (v0.1.1):\n\n"
            @"  Tabs and windows\n"
            @"    Cmd+T            New tab\n"
            @"    Cmd+W            Close current tab / window\n"
@@ -752,9 +751,29 @@ static void* kLetheMinYKey = &kLetheMinYKey;
 @property (nonatomic) NSWindow* window;
 @property (nonatomic) NSTableView* sidebar;
 @property (nonatomic) NSView* contentContainer;
+@property (nonatomic) NSTextField* categoryTitle;
 @property (nonatomic) NSArray* categories;
 @property (nonatomic) NSMutableArray* contentViews;
 @property (nonatomic) NSView* currentContent;
+@end
+
+// Compact, native-looking sidebar row. AppKit's default NSTableView cell
+// wastes horizontal space and makes the selection feel like a legacy list;
+// this keeps the hit target full-width while giving the selected category a
+// restrained system-tint capsule.
+@interface LetheSettingsSidebarRow : NSTableRowView
+@end
+
+@implementation LetheSettingsSidebarRow
+- (void)drawSelectionInRect:(NSRect)dirtyRect {
+    if (self.selectionHighlightStyle == NSTableViewSelectionHighlightStyleNone)
+        return;
+    NSRect r = NSInsetRect(self.bounds, 4.0, 3.0);
+    NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:r xRadius:7.0 yRadius:7.0];
+    [[NSColor colorWithSRGBRed:0.35 green:0.35 blue:0.37 alpha:0.13] setFill];
+    [path fill];
+    (void)dirtyRect;
+}
 @end
 
 @implementation LetheSettings
@@ -788,13 +807,20 @@ static void* kLetheMinYKey = &kLetheMinYKey;
 }
 
 - (void)buildWindow {
-    NSRect frame = NSMakeRect(0, 0, 800, 520);
+    // Give the settings surface enough horizontal breathing room for labels
+    // and enough vertical room that the common panes do not feel like a
+    // compressed utility dialog. The pane content remains scrollable for
+    // deliberately dense categories such as Engine and Privacy.
+    NSRect frame = NSMakeRect(0, 0, 900, 600);
     _window = [[NSWindow alloc] initWithContentRect:frame
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable
         backing:NSBackingStoreBuffered defer:NO];
     _window.title = @"Settings";
     _window.releasedWhenClosed = NO;
-    _window.minSize = NSMakeSize(720, 460);
+    // The content panes use a 540pt readable measure. Keep the minimum window
+    // just wide enough for that measure plus the sidebar/divider/margins so
+    // the right edge never clips on a narrow desktop display.
+    _window.minSize = NSMakeSize(840, 520);
     [_window center];
     [_window setFrameAutosaveName:@"LetheSettingsWindow"];
 
@@ -802,40 +828,63 @@ static void* kLetheMinYKey = &kLetheMinYKey;
 
     NSTextField* title = [NSTextField labelWithString:@"Settings"];
     title.font = [NSFont systemFontOfSize:18 weight:NSFontWeightSemibold];
-    title.frame = NSMakeRect(20, frame.size.height - 40, 200, 26);
+    title.frame = NSMakeRect(24, frame.size.height - 44, 240, 28);
     title.autoresizingMask = NSViewMinYMargin;
     [root addSubview:title];
 
-    NSScrollView* sideSv = [[NSScrollView alloc] initWithFrame:NSMakeRect(20, 20, 180, frame.size.height - 80)];
+    NSScrollView* sideSv = [[NSScrollView alloc] initWithFrame:NSMakeRect(20, 20, 214, frame.size.height - 80)];
     sideSv.hasVerticalScroller = YES;
     sideSv.autoresizingMask = NSViewHeightSizable | NSViewMaxXMargin;
+    sideSv.drawsBackground = NO;
     [root addSubview:sideSv];
     _sidebar = [[NSTableView alloc] initWithFrame:sideSv.bounds];
     _sidebar.headerView = nil;
     _sidebar.dataSource = self;
     _sidebar.delegate = self;
-    _sidebar.rowHeight = 28;
+    _sidebar.rowHeight = 34;
+    _sidebar.intercellSpacing = NSMakeSize(0, 0);
+    _sidebar.selectionHighlightStyle = NSTableViewSelectionHighlightStyleRegular;
+    _sidebar.backgroundColor = [NSColor clearColor];
+    _sidebar.usesAlternatingRowBackgroundColors = NO;
     _sidebar.allowsEmptySelection = NO;
+    _sidebar.style = NSTableViewStylePlain;
     NSTableColumn* c = [[NSTableColumn alloc] initWithIdentifier:@"name"];
-    c.title = @"Category"; c.width = 160; c.resizingMask = NSTableColumnAutoresizingMask;
+    c.title = @"Category"; c.width = 208; c.resizingMask = NSTableColumnAutoresizingMask;
     [_sidebar addTableColumn:c];
     sideSv.documentView = _sidebar;
 
-    _contentContainer = [[NSView alloc] initWithFrame:NSMakeRect(220, 60, frame.size.width - 240, frame.size.height - 80)];
+    // The category title is deliberately quieter than the window title. It
+    // anchors the content column while the pane itself remains scrollable.
+    _categoryTitle = [NSTextField labelWithString:@"General"];
+    _categoryTitle.font = [NSFont systemFontOfSize:17 weight:NSFontWeightSemibold];
+    _categoryTitle.textColor = [NSColor labelColor];
+    _categoryTitle.frame = NSMakeRect(264, frame.size.height - 47, 500, 24);
+    _categoryTitle.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+    [root addSubview:_categoryTitle];
+
+    // A single divider gives the sidebar a stable visual column without
+    // surrounding the actual settings in nested boxes.
+    NSView* divider = [[NSView alloc] initWithFrame:NSMakeRect(244, 20, 1, frame.size.height - 40)];
+    divider.wantsLayer = YES;
+    divider.layer.backgroundColor = [NSColor separatorColor].CGColor;
+    divider.autoresizingMask = NSViewHeightSizable | NSViewMaxXMargin;
+    [root addSubview:divider];
+
+    _contentContainer = [[NSView alloc] initWithFrame:NSMakeRect(264, 48, frame.size.width - 284, frame.size.height - 108)];
     _contentContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [root addSubview:_contentContainer];
 
     NSButton* save = [NSButton buttonWithTitle:@"Save"
                                         target:self action:@selector(saveAll:)];
     save.bezelStyle = NSBezelStyleRounded;
-    save.frame = NSMakeRect(frame.size.width - 200, 16, 80, 28);
+    save.frame = NSMakeRect(frame.size.width - 205, 16, 90, 30);
     save.autoresizingMask = NSViewMinXMargin | NSViewMaxYMargin;
     save.keyEquivalent = @"\r";
     [root addSubview:save];
     NSButton* cancel = [NSButton buttonWithTitle:@"Cancel"
                                           target:self action:@selector(cancel:)];
     cancel.bezelStyle = NSBezelStyleRounded;
-    cancel.frame = NSMakeRect(frame.size.width - 110, 16, 80, 28);
+    cancel.frame = NSMakeRect(frame.size.width - 110, 16, 90, 30);
     cancel.autoresizingMask = NSViewMinXMargin | NSViewMaxYMargin;
     cancel.keyEquivalent = [NSString stringWithFormat:@"%c", 27];
     [root addSubview:cancel];
@@ -877,6 +926,9 @@ static void* kLetheMinYKey = &kLetheMinYKey;
 
 - (void)swapToCategory:(NSInteger)idx {
     if (_currentContent) [_currentContent removeFromSuperview];
+    if (idx >= 0 && idx < (NSInteger)_categories.count) {
+        _categoryTitle.stringValue = _categories[idx];
+    }
     NSView* v = _contentViews[idx];
     // Scroll wrapper: pane frames are full-content-height (see buildWindow).
     NSScrollView* sv = [[NSScrollView alloc]
@@ -892,18 +944,39 @@ static void* kLetheMinYKey = &kLetheMinYKey;
 - (NSInteger)numberOfRowsInTableView:(NSTableView*)tv { return (NSInteger)_categories.count; }
 
 - (NSView*)tableView:(NSTableView*)tv viewForTableColumn:(NSTableColumn*)col row:(NSInteger)row {
-    NSTableCellView* cell = [[NSTableCellView alloc] initWithFrame:NSMakeRect(0, 0, 160, 28)];
+    NSTableCellView* cell = [[NSTableCellView alloc] initWithFrame:NSMakeRect(0, 0, 208, 34)];
+    cell.identifier = @"LetheSettingsSidebarCell";
+    NSString* name = _categories[row];
+    NSArray* symbols = @[@"gear", @"hand.raised", @"checkmark.shield", @"network",
+                         @"cpu", @"puzzlepiece.extension", @"command", @"info.circle"];
+    NSImageView* icon = [[NSImageView alloc] initWithFrame:NSMakeRect(12, 8, 18, 18)];
+    icon.image = [NSImage imageWithSystemSymbolName:symbols[row]
+                              accessibilityDescription:name];
+    icon.contentTintColor = [NSColor secondaryLabelColor];
+    icon.imageScaling = NSImageScaleProportionallyDown;
+    [cell addSubview:icon];
     NSTextField* t = [NSTextField labelWithString:_categories[row]];
     t.font = [NSFont systemFontOfSize:13];
-    t.frame = NSMakeRect(8, 6, 144, 18);
+    t.frame = NSMakeRect(40, 8, 158, 18);
+    t.textColor = [NSColor labelColor];
     [cell addSubview:t];
     return cell;
+}
+
+- (NSTableRowView*)tableView:(NSTableView*)tableView rowViewForRow:(NSInteger)row {
+    (void)tableView; (void)row;
+    return [[LetheSettingsSidebarRow alloc] initWithFrame:NSZeroRect];
 }
 
 - (void)tableViewSelectionDidChange:(NSNotification*)n {
     (void)n;
     NSInteger row = _sidebar.selectedRow;
-    if (row < 0) return;
+    // NSTableView can emit its initial selection notification while
+    // buildWindow is still adding the table column, before the settings panes
+    // have been constructed. Do not index the empty contentViews array from
+    // that transient callback; showCategory: performs the real selection
+    // swap after buildWindow completes.
+    if (row < 0 || row >= (NSInteger)_contentViews.count) return;
     [self swapToCategory:row];
 }
 

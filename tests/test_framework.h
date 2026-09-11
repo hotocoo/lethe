@@ -37,15 +37,23 @@ public:
         tests_.push_back({name, std::move(fn)});
     }
 
-    int runAll() {
+    int runAll(const std::string& filter = {}) {
         int passed = 0;
         int failed = 0;
         std::vector<std::string> failures;
+        size_t selected = 0;
 
-        std::cout << "Running " << tests_.size() << " test cases..." << std::endl;
+        for (const auto& tc : tests_) {
+            if (filter.empty() || tc.name.find(filter) != std::string::npos) ++selected;
+        }
+
+        std::cout << "Running " << selected << " test cases"
+                  << (filter.empty() ? "" : " matching '" + filter + "'")
+                  << "..." << std::endl;
         std::cout << "========================================" << std::endl;
 
         for (const auto& tc : tests_) {
+            if (!filter.empty() && tc.name.find(filter) == std::string::npos) continue;
             bool ok = true;
             std::string errorMsg;
             try {
@@ -155,4 +163,3 @@ static inline std::string lethe_test_error(const char* check, const char* file, 
 #define CHECK_FALSE(cond) CHECK(!(cond))
 
 #endif // LETHE_TESTS_TEST_FRAMEWORK_H
-

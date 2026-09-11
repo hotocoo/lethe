@@ -79,7 +79,8 @@ private:
                 requests.fetch_add(1);
                 std::string resp =
                     "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: " +
-                    std::to_string(body_.size()) + "\r\n\r\n" + body_;
+                    std::to_string(body_.size()) + "\r\n" + responseHeaders_ +
+                    "\r\n" + body_;
                 ::send(fd, resp.data(), resp.size(), MSG_NOSIGNAL);
             }
             ::close(fd);
@@ -90,10 +91,12 @@ private:
     std::atomic<bool> running_{false};
     std::thread thread_;
     std::string body_ = "proxy-origin-body";
+    std::string responseHeaders_;
     std::string lastRequest_;
 
 public:
     const std::string& lastRequest() const { return lastRequest_; }
+    void setResponseHeaders(std::string headers) { responseHeaders_ = std::move(headers); }
 };
 
 PolicyProxyServer::Options baseOptions(const TLSConfig& tls) {
@@ -127,6 +130,35 @@ std::string readAll(int fd) {
     return out;
 }
 
+// Read exactly one HTTP response. Persistent proxy connections intentionally
+// stay open, so tests must use Content-Length framing rather than waiting for
+// EOF (EOF is the signal for Connection: close only).
+std::string readResponse(int fd) {
+    std::string out;
+    char buf[4096];
+    size_t bodyStart = std::string::npos;
+    size_t contentLength = 0;
+    for (;;) {
+        ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+        if (n <= 0) return out;
+        out.append(buf, static_cast<size_t>(n));
+        if (bodyStart == std::string::npos) {
+            const size_t sep = out.find("\r\n\r\n");
+            if (sep == std::string::npos) continue;
+            bodyStart = sep + 4;
+            const size_t cl = out.find("Content-Length:");
+            if (cl != std::string::npos && cl < sep) {
+                const size_t valueStart = cl + 15;
+                const size_t valueEnd = out.find("\r\n", valueStart);
+                if (valueEnd != std::string::npos)
+                    contentLength = std::stoull(out.substr(valueStart, valueEnd - valueStart));
+            }
+        }
+        if (bodyStart != std::string::npos && out.size() >= bodyStart + contentLength)
+            return out;
+    }
+}
+
 } // namespace
 
 LETHE_TEST_CASE(PolicyProxy_ForwardsPlainGetThroughStack) {
@@ -144,7 +176,7 @@ LETHE_TEST_CASE(PolicyProxy_ForwardsPlainGetThroughStack) {
         "GET http://127.0.0.1:" + std::to_string(origin.port()) +
         "/page HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
     CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
-    const std::string resp = readAll(fd);
+    const std::string resp = readResponse(fd);
     ::close(fd);
     proxy.stop();
 
@@ -153,6 +185,120 @@ LETHE_TEST_CASE(PolicyProxy_ForwardsPlainGetThroughStack) {
     CHECK_TRUE(resp.find("via-proxy") != std::string::npos);
     // Hop-by-hop framing must be re-derived by the proxy, not forwarded.
     CHECK_TRUE(resp.find("Content-Length:") != std::string::npos);
+}
+
+LETHE_TEST_CASE(PolicyProxy_PersistentGetReusesDownstreamConnection) {
+    TinyOrigin origin;
+    CHECK_TRUE(origin.start("<html>persistent</html>"));
+
+    TLSConfig tls;
+    tls.init_modern_tls_config(LETHE_MIN_TLS_VERSION, LETHE_MAX_TLS_VERSION);
+    PolicyProxyServer proxy;
+    CHECK_TRUE(proxy.start(baseOptions(tls)));
+
+    int fd = dial(proxy.port());
+    CHECK_GE(fd, 0);
+    const std::string req =
+        "GET http://127.0.0.1:" + std::to_string(origin.port()) +
+        "/page HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: keep-alive\r\n\r\n";
+    CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
+    const std::string first = readResponse(fd);
+    CHECK_TRUE(first.find("200 OK") != std::string::npos);
+    CHECK_TRUE(first.find("Connection: keep-alive") != std::string::npos);
+
+    CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
+    const std::string second = readResponse(fd);
+    CHECK_TRUE(second.find("200 OK") != std::string::npos);
+    CHECK_TRUE(second.find("persistent") != std::string::npos);
+
+    ::close(fd);
+    proxy.stop();
+    CHECK_EQ(origin.requests.load(), 2);
+}
+
+LETHE_TEST_CASE(PolicyProxy_HttpReactorForwardsPolicyGatedGet) {
+    TinyOrigin origin;
+    CHECK_TRUE(origin.start("reactor-body"));
+
+    TLSConfig tls;
+    tls.init_modern_tls_config(LETHE_MIN_TLS_VERSION, LETHE_MAX_TLS_VERSION);
+    PolicyProxyServer::Options o = baseOptions(tls);
+    o.enableHttpReactor = true;
+    PolicyProxyServer proxy;
+    CHECK_TRUE(proxy.start(o));
+
+    int fd = dial(proxy.port());
+    CHECK_GE(fd, 0);
+    const std::string req =
+        "GET http://127.0.0.1:" + std::to_string(origin.port()) +
+        "/reactor HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+    CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
+    const std::string resp = readResponse(fd);
+    ::close(fd);
+    proxy.stop();
+
+    CHECK_EQ(origin.requests.load(), 1);
+    CHECK_TRUE(resp.find("200 OK") != std::string::npos);
+    CHECK_TRUE(resp.find("reactor-body") != std::string::npos);
+    CHECK_TRUE(resp.find("Connection: close") == std::string::npos);
+}
+
+LETHE_TEST_CASE(PolicyProxy_StripsHopByHopResponseHeaders) {
+    TinyOrigin origin;
+    CHECK_TRUE(origin.start("hop-by-hop"));
+    origin.setResponseHeaders(
+        "Keep-Alive: timeout=5\r\n"
+        "Proxy-Authenticate: Basic realm=\"origin\"\r\n"
+        "Proxy-Authorization: Basic leaked\r\n"
+        "TE: trailers\r\n"
+        "Trailer: X-Future\r\n"
+        "Upgrade: websocket\r\n");
+
+    TLSConfig tls;
+    tls.init_modern_tls_config(LETHE_MIN_TLS_VERSION, LETHE_MAX_TLS_VERSION);
+    PolicyProxyServer proxy;
+    CHECK_TRUE(proxy.start(baseOptions(tls)));
+
+    int fd = dial(proxy.port());
+    CHECK_GE(fd, 0);
+    const std::string req =
+        "GET http://127.0.0.1:" + std::to_string(origin.port()) +
+        "/page HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
+    const std::string resp = readAll(fd);
+    ::close(fd);
+    proxy.stop();
+
+    CHECK_TRUE(resp.find("hop-by-hop") != std::string::npos);
+    CHECK_TRUE(resp.find("Keep-Alive:") == std::string::npos);
+    CHECK_TRUE(resp.find("Proxy-Authenticate:") == std::string::npos);
+    CHECK_TRUE(resp.find("Proxy-Authorization:") == std::string::npos);
+    CHECK_TRUE(resp.find("TE:") == std::string::npos);
+    CHECK_TRUE(resp.find("Trailer:") == std::string::npos);
+    CHECK_TRUE(resp.find("Upgrade:") == std::string::npos);
+    CHECK_TRUE(resp.find("Content-Length:") != std::string::npos);
+}
+
+LETHE_TEST_CASE(PolicyProxy_StopClosesIdlePersistentConnections) {
+    TLSConfig tls;
+    tls.init_modern_tls_config(LETHE_MIN_TLS_VERSION, LETHE_MAX_TLS_VERSION);
+    PolicyProxyServer::Options o = baseOptions(tls);
+    o.workerThreads = 2;
+    PolicyProxyServer proxy;
+    CHECK_TRUE(proxy.start(o));
+
+    int a = dial(proxy.port());
+    int b = dial(proxy.port());
+    CHECK_GE(a, 0);
+    CHECK_GE(b, 0);
+    ::usleep(20000);
+    proxy.stop();
+
+    char byte = 0;
+    CHECK_EQ(::recv(a, &byte, 1, 0), static_cast<ssize_t>(0));
+    CHECK_EQ(::recv(b, &byte, 1, 0), static_cast<ssize_t>(0));
+    ::close(a);
+    ::close(b);
 }
 
 LETHE_TEST_CASE(PolicyProxy_RefusesNonHttpSchemes) {
@@ -443,7 +589,7 @@ LETHE_TEST_CASE(PolicyProxy_AuthToken_RefusesUnauthenticatedPeers) {
     req = "GET " + target + " HTTP/1.1\r\nHost: 127.0.0.1\r\nproxy-authorization: " +
           PolicyProxyServer::basicCredentialFor(o.authToken) + "\r\n\r\n";
     CHECK_TRUE(send(fd, req.data(), (int)req.size(), 0) == (ssize_t)req.size());
-    resp = readAll(fd);
+    resp = readResponse(fd);
     ::close(fd);
 
     // 4. A peer that never authenticates is dropped after three tries.

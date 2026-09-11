@@ -8,15 +8,17 @@ bool SharedDohCache::lookup(const std::string& provider, const std::string& host
                             std::string& outIp) {
     if (ttl_.count() <= 0) return false;
     const auto now = std::chrono::steady_clock::now();
-    std::lock_guard<std::mutex> lock(mu_);
-    auto it = entries_.find(key(provider, host));
-    if (it == entries_.end()) { stats_.misses++; return false; }
+    std::shared_lock<std::shared_mutex> lock(mu_);
+    const DohKeyView key{provider, host};
+    auto it = entries_.find(key);
+    if (it == entries_.end()) { misses_.fetch_add(1, std::memory_order_relaxed); return false; }
     if (now >= it->second.expires) {
-        entries_.erase(it);
-        stats_.misses++;
+        // Do not upgrade the lock on the read hot path. Writers already reap
+        // expired entries when the configured capacity is reached.
+        misses_.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    stats_.hits++;
+    hits_.fetch_add(1, std::memory_order_relaxed);
     outIp = it->second.ip;
     return true;
 }
@@ -25,38 +27,38 @@ void SharedDohCache::store(const std::string& provider, const std::string& host,
                            const std::string& ip) {
     if (ttl_.count() <= 0 || ip.empty()) return;
     const auto now = std::chrono::steady_clock::now();
-    std::lock_guard<std::mutex> lock(mu_);
-    if (entries_.size() >= maxEntries_) {
+    std::unique_lock<std::shared_mutex> lock(mu_);
+    if (totalEntriesLocked() >= maxEntries_) {
         evictExpiredLocked(now);
         // A burst that still exceeds the cap starts over rather than
         // growing without bound; correctness never depends on the cache.
-        if (entries_.size() >= maxEntries_) entries_.clear();
+        if (totalEntriesLocked() >= maxEntries_) entries_.clear();
     }
-    entries_[key(provider, host)] = Entry{ip, now + ttl_};
+    entries_.insert_or_assign(DohKey{provider, host}, Entry{ip, now + ttl_});
 }
 
 void SharedDohCache::storeNegative(const std::string& provider, const std::string& host) {
     if (ttl_.count() <= 0 || negativeTtl_.count() <= 0) return;
     const auto now = std::chrono::steady_clock::now();
-    std::lock_guard<std::mutex> lock(mu_);
-    if (entries_.size() >= maxEntries_) {
+    std::unique_lock<std::shared_mutex> lock(mu_);
+    if (totalEntriesLocked() >= maxEntries_) {
         evictExpiredLocked(now);
-        if (entries_.size() >= maxEntries_) entries_.clear();
+        if (totalEntriesLocked() >= maxEntries_) entries_.clear();
     }
-    entries_[key(provider, host)] = Entry{"", now + negativeTtl_};
+    entries_.insert_or_assign(DohKey{provider, host}, Entry{"", now + negativeTtl_});
 }
 
 bool SharedDohCache::lookupBootstrap(const std::string& provider,
                                      std::vector<std::string>& outIps) {
     if (ttl_.count() <= 0) return false;
     const auto now = std::chrono::steady_clock::now();
-    std::lock_guard<std::mutex> lock(mu_);
+    // Bootstrap answers are immutable until expiry. This is a read-heavy
+    // path during cold fan-out, so an exclusive lock would unnecessarily
+    // serialize independent workers while they copy the same provider IPs.
+    std::shared_lock<std::shared_mutex> lock(mu_);
     auto it = bootstrap_.find(provider);
     if (it == bootstrap_.end()) return false;
-    if (now >= it->second.expires || it->second.ips.empty()) {
-        bootstrap_.erase(it);
-        return false;
-    }
+    if (now >= it->second.expires || it->second.ips.empty()) return false;
     outIps = it->second.ips;
     return true;
 }
@@ -64,24 +66,28 @@ bool SharedDohCache::lookupBootstrap(const std::string& provider,
 void SharedDohCache::storeBootstrap(const std::string& provider,
                                     const std::vector<std::string>& ips) {
     if (ttl_.count() <= 0 || ips.empty()) return;
-    std::lock_guard<std::mutex> lock(mu_);
+    std::unique_lock<std::shared_mutex> lock(mu_);
     bootstrap_[provider] = Bootstrap{ips, std::chrono::steady_clock::now() + ttl_};
 }
 
 void SharedDohCache::clear() {
-    std::lock_guard<std::mutex> lock(mu_);
+    std::unique_lock<std::shared_mutex> lock(mu_);
     entries_.clear();
     bootstrap_.clear();
 }
 
 size_t SharedDohCache::size() const {
-    std::lock_guard<std::mutex> lock(mu_);
-    return entries_.size();
+    std::shared_lock<std::shared_mutex> lock(mu_);
+    return totalEntriesLocked();
 }
 
 SharedDohCache::Stats SharedDohCache::stats() const {
-    std::lock_guard<std::mutex> lock(mu_);
-    return stats_;
+    return Stats{hits_.load(std::memory_order_relaxed),
+                 misses_.load(std::memory_order_relaxed)};
+}
+
+size_t SharedDohCache::totalEntriesLocked() const {
+    return entries_.size();
 }
 
 void SharedDohCache::evictExpiredLocked(std::chrono::steady_clock::time_point now) {

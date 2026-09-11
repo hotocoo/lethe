@@ -41,6 +41,14 @@ typedef NS_ENUM(NSInteger, LetheSearchEngine) {
 @property (nonatomic) BOOL blockThirdPartyCookies; // default YES; only relevant when persistent
 @property (nonatomic) BOOL blockReferer;          // strip Referer on cross-origin nav
 @property (nonatomic) BOOL blockWebRTC;           // WebRTC exposes local IPs; leak prevention
+// Built-in threat scanner. siteGuard assesses every top-level navigation
+// locally (no lookup service, no URL ever leaves the machine); downloadGuard
+// scans finished downloads for known signatures, presentation attacks and
+// risky archive structure; quarantineThreats moves a blocked download into
+// Lethe's quarantine folder instead of leaving it in ~/Downloads.
+@property (nonatomic) BOOL siteGuard;
+@property (nonatomic) BOOL downloadGuard;
+@property (nonatomic) BOOL quarantineThreats;
 
 // Data
 @property (nonatomic) BOOL persistentCookies;      // keep cookies/site data between runs

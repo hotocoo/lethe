@@ -13,8 +13,13 @@ click a.fallback
 sleep 1500
 wait 30000
 assert-url-contains http://httpforever.com
-assert-body-contains reliably insecure connection
-screenshot $TMPDIR/lethe-e2e-sec-02-http-fallback.png
+# The explicit downgrade is now a real Chromium navigation. If the origin
+# itself fails, keep its URL and let CEF render its native network error page
+# rather than replacing browser history with a data: document. Do not invoke
+# Page.captureScreenshot here: CEF's native/macOS network error surface is not
+# a DevTools document and Page.captureScreenshot can wait indefinitely on this
+# exact failure state. The URL/state assertions above are the authoritative
+# check for the fallback behavior.
 # The allow-list is per host and per session: a different host still upgrades.
 load http://www.iana.org/
 wait

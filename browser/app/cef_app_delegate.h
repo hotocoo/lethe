@@ -25,6 +25,7 @@
 // event loop; it must not be nested inside applicationDidFinishLaunching.
 - (void)initializeCEF;
 - (void)newTabFromMenu:(id)sender;
+- (void)newOblivionWindowFromMenu:(id)sender;
 - (void)applicationWillTerminate:(NSNotification*)notification;
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)app;
 @property (nonatomic, readonly) lethe::ShellContext* context;

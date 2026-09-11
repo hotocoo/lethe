@@ -1,0 +1,7 @@
+# Visual smoke test for the native browser chrome.
+wait 1500
+screenshot $TMPDIR/lethe-ui-newtab.png
+load https://example.com
+wait
+screenshot $TMPDIR/lethe-ui-example.png
+quit

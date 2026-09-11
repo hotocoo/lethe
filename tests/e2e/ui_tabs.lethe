@@ -1,0 +1,12 @@
+wait 500
+assert-tabs 1
+screenshot $TMPDIR/lethe-ui-tabs-single.png
+newtab https://example.com
+wait
+assert-tabs 2
+screenshot $TMPDIR/lethe-ui-tabs-multi.png
+closetab
+sleep 300
+assert-tabs 1
+screenshot $TMPDIR/lethe-ui-tabs-single-after-close.png
+quit

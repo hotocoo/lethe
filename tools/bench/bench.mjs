@@ -23,6 +23,46 @@ import http from 'node:http';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
 
+// macOS keeps a per-launch clone of an app bundle under the confidential
+// darwin cache dir (<darwin-user-dir>/X/<bundle-id>.code_sign_clone) and only
+// removes it when the process exits through the normal path. A benchmark run
+// that kills the browser, or a shell that crashes, leaks one clone per launch
+// -- roughly 1.5 GB for lethe-cef and 1.6 GB for Chrome. Hundreds of runs fill
+// the disk. Sweep the clones of the bundles we launched after every run.
+const CODE_SIGN_CLONE_DIR = process.env.TMPDIR ? resolve(process.env.TMPDIR, '..', 'X') : null;
+const CLONE_BUNDLE_IDS = ['org.aletheia.lethe', 'org.aletheia.lethe.cef', 'com.google.Chrome'];
+
+function cloneDirs() {
+  if (process.platform !== 'darwin' || !CODE_SIGN_CLONE_DIR) return [];
+  if (!existsSync(CODE_SIGN_CLONE_DIR)) return [];
+  return readdirSync(CODE_SIGN_CLONE_DIR)
+    .filter(name => CLONE_BUNDLE_IDS.some(id => name === `${id}.code_sign_clone` ||
+      name.startsWith(`${id}.helper`) && name.endsWith('.code_sign_clone')))
+    .map(name => join(CODE_SIGN_CLONE_DIR, name));
+}
+
+// Snapshot before launch so the sweep can only ever remove clones this run
+// created. A clone belonging to a browser the user started stays untouched.
+function snapshotCodeSignClones() {
+  const seen = new Set();
+  for (const dir of cloneDirs()) {
+    for (const entry of readdirSync(dir)) seen.add(join(dir, entry));
+  }
+  return seen;
+}
+
+function sweepCodeSignClones(before) {
+  let removed = 0;
+  for (const dir of cloneDirs()) {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (before.has(path)) continue;
+      try { rmSync(path, { recursive: true, force: true }); removed++; } catch {}
+    }
+  }
+  return removed;
+}
+
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => {
   if (!a.startsWith('--')) return [];
   const [k, v] = a.slice(2).split('=');
@@ -50,6 +90,23 @@ const JETSTREAM_URL = 'https://browserbench.org/JetStream2.2/';
 const JETSTREAM_TIMEOUT = 20 * 60 * 1000;
 const MOTIONMARK_URL = 'https://browserbench.org/MotionMark1.3.2/';
 const MOTIONMARK_TIMEOUT = 15 * 60 * 1000;
+function medianNumbers(values) {
+  const v = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+}
+function aggregateExtremeNet(rounds) {
+  const samples = rounds.filter(v => typeof v === 'string').map(v => {
+    const rps = v.match(/rps=([0-9.]+)/)?.[1];
+    const p999 = v.match(/p99\.9=([0-9.]+)/)?.[1];
+    return { rps: Number(rps), p999: Number(p999) };
+  });
+  const rps = medianNumbers(samples.map(s => s.rps));
+  const p999 = medianNumbers(samples.map(s => s.p999));
+  if (rps === null || p999 === null) return null;
+  return `net n=${samples.length} rps=${rps.toFixed(0)} p99.9=${p999.toFixed(1)}ms`;
+}
 // Blender's Big Buck Bunny (public, stable id), played muted for 20 s.
 const YOUTUBE_URL = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';
 const YOUTUBE_4K_URL = 'https://www.youtube.com/watch?v=LXb3EKWsInQ';  // "Costa Rica in 4K" public 4K HDR sample (60fps, no sign-in)
@@ -264,7 +321,7 @@ requestAnimationFrame(tick);
 //    stack (and, on Lethe, the policy proxy). The harness serves N small
 //    files from a local origin; the page fetches them all concurrently and
 //    reports completion time + bytes. This is the proxy's real-world torture.
-const EXTREME_NET_COUNT = 300;
+const EXTREME_NET_COUNT = Number(process.env.LETHE_EXTREME_NET_COUNT || 300);
 const EXTREME_NET_BYTES = 1024; // per file
 function extremeNetPageUrl(base) {
   return base + '/xnet.html';
@@ -626,6 +683,7 @@ async function runLethe(steps, { noProxy, binOverride }) {
   const env = { ...process.env, ...EXTRA_ENV };
   if (env.LETHE_KEEP_FRONT === undefined) env.LETHE_KEEP_FRONT = '1';
   if (cefProfile) env.LETHE_CEF_USER_DATA_DIR = cefProfile;
+  const clonesBefore = snapshotCodeSignClones();
   const child = spawn(bin, argv, { stdio: ['ignore', 'pipe', 'pipe'], env });
   const pid = child.pid;
   const isOurs = r => r.pid === pid ||
@@ -654,6 +712,7 @@ async function runLethe(steps, { noProxy, binOverride }) {
   child.stdout.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { onLine(buf.slice(0, i)); buf = buf.slice(i + 1); } });
   child.stderr.on('data', d => events.log.push(String(d).trimEnd()));
   await new Promise(res => child.on('exit', code => { events.exitCode = code; res(); }));
+  events.codeSignClonesSwept = sweepCodeSignClones(clonesBefore);
   rmSync(dir, { recursive: true, force: true });
   if (cefProfile) rmSync(cefProfile, { recursive: true, force: true });
   return events;
@@ -685,6 +744,7 @@ class Cdp {
 async function runChrome(steps) {
   if (!existsSync(CHROME_BIN)) throw new Error(`chrome binary missing: ${CHROME_BIN}`);
   const profile = mkdtempSync(join(tmpdir(), 'chrome-bench-'));
+  const clonesBefore = snapshotCodeSignClones();
   const t0 = performance.now();
   const child = spawn(CHROME_BIN, [
     `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--no-first-run',
@@ -766,6 +826,8 @@ async function runChrome(steps) {
     cdp.close();
     await Promise.race([new Promise(r => child.on('exit', r)), sleep(5000)]);
     try { child.kill('SIGKILL'); } catch {}
+    await sleep(200);
+    events.codeSignClonesSwept = sweepCodeSignClones(clonesBefore);
     rmSync(profile, { recursive: true, force: true });
   }
   return events;
@@ -804,6 +866,7 @@ async function main() {
     const ev = BROWSER === 'chrome' ? await runChrome(steps)
              : BROWSER === 'lethe-cef' ? await runLethe(steps, { noProxy: false, binOverride: LETHE_CEF_BIN })
              : await runLethe(steps, { noProxy: BROWSER === 'lethe-noproxy' });
+    const netRounds = [0,1,2].map(i => ev.results.find(r => r.key === `extreme:net${i}`)?.value ?? null);
     const doc = {
       browser: BROWSER, label: LABEL, env: EXTRA_ENV, browserArgs: EXTRA_ARGS, version, run, startedAt: started.toISOString(), host: hostInfo(),
       suites: SUITES, sites: SITES, startupMs: ev.startupMs, exitCode: ev.exitCode, failure: ev.failure || null, timeouts: ev.timeouts || 0,
@@ -818,12 +881,16 @@ async function main() {
         dom:   ev.results.find(r => r.key === 'extreme:dom')?.value ?? null,
         js:    ev.results.find(r => r.key === 'extreme:js')?.value ?? null,
         webgl: ev.results.find(r => r.key === 'extreme:webgl')?.value ?? null,
-        net:   ev.results.find(r => r.key === 'extreme:net')?.value ?? null,
-        netRounds: [0,1,2].map(i => ev.results.find(r => r.key === `extreme:net${i}`)?.value ?? null),
+        net:   aggregateExtremeNet(netRounds),
+        netRounds,
       },
       memory: ev.marks,
     };
-    if (ev.failure) doc.log = ev.log.slice(-40);
+    // Keep a bounded execution trace in every artifact. A benchmark that
+    // exits cleanly but produces no metric is otherwise indistinguishable
+    // from a valid empty suite, making CEF automation failures harder to
+    // diagnose than real performance regressions.
+    doc.log = ev.log.slice(-80);
     const file = join(OUT, `${started.toISOString().replace(/[:.]/g, '-')}-${LABEL}-run${run}.json`);
     writeFileSync(file, JSON.stringify(doc, null, 2));
     const mem = doc.memory.find(m => m.name === 'memory:all-tabs');
@@ -837,6 +904,10 @@ async function main() {
       `  extreme[dom]=${doc.extreme.dom ?? 'n/a'}  extreme[js]=${doc.extreme.js ?? 'n/a'}` +
       `  extreme[webgl]=${doc.extreme.webgl ?? 'n/a'}  extreme[net]=${doc.extreme.net ?? 'n/a'}` +
       `  exit=${doc.exitCode}${doc.failure ? '  FAIL: ' + doc.failure : ''}`);
+    if (doc.extreme.net === null && SUITES.includes('extreme-net')) {
+      console.log('[bench]   extreme-net produced no metric; browser trace tail:');
+      for (const line of doc.log.slice(-20)) console.log(`[bench]     ${line}`);
+    }
     console.log(`[bench]   -> ${file}`);
   }
   closeExtremeServer();

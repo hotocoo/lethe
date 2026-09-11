@@ -115,32 +115,11 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
         if (!a.empty() && a[0] != '-') cfg.initialUrl = normalizeAddressInput(a);
     }
 
-    std::cout << "Lethe Browser v" LETHE_VERSION;
-    if (!engineName.empty()) std::cout << " (" << engineName << ")";
-    std::cout << std::endl;
-
-    if (engine.initialize(cfg) != 0) {
-        std::cerr << "[lethe] Engine init failed" << std::endl;
-        return 1;
-    }
-
-    ctx.tls.init_modern_tls_config(LETHE_MIN_TLS_VERSION, LETHE_MAX_TLS_VERSION);
-    if (!cfg.caBundlePath.empty()) ctx.tls.setCaBundlePath(cfg.caBundlePath);
-
-    ctx.engine = &engine;
-    ctx.persistent = persistent;
-    ctx.e2eScript = e2eScript;
-    ctx.httpsFirst = httpsFirst;
-    ctx.trackerBlocking = trackerBlock;
-    if (trackerBlock && std::getenv("LETHE_TRACKER_BLOCK")) ctx.trackerBlocking = !envOff("LETHE_TRACKER_BLOCK");
-    if (httpsFirst && std::getenv("LETHE_HTTPS_FIRST")) ctx.httpsFirst = !envOff("LETHE_HTTPS_FIRST");
-
     // ---- Plugins: persisted user toggles beat defaults and env ------------
     // Every shell-level feature is a PluginSpec; the registry is the single
     // table of what exists, what it defaults to and what the user chose.
-    // The mirror below runs AFTER env so a settings toggle wins over the
-    // environment, and BEFORE the engine/proxy are built so restart-flagged
-    // plugins (proxy, DoH, VPN, sandboxing) shape this launch.
+    // Resolve these before engine initialization so disabled restart-scoped
+    // features never allocate or initialize their underlying stack.
     loadPluginOverrides();
     {
         PluginRegistry& reg = PluginRegistry::instance();
@@ -161,6 +140,26 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
         // Engine
         if (!reg.enabled("hardware-accel")) cfg.useHardwareAcceleration = false;
     }
+
+    std::cout << "Lethe Browser v" LETHE_VERSION;
+    if (!engineName.empty()) std::cout << " (" << engineName << ")";
+    std::cout << std::endl;
+
+    if (engine.initialize(cfg) != 0) {
+        std::cerr << "[lethe] Engine init failed" << std::endl;
+        return 1;
+    }
+
+    ctx.tls.init_modern_tls_config(LETHE_MIN_TLS_VERSION, LETHE_MAX_TLS_VERSION);
+    if (!cfg.caBundlePath.empty()) ctx.tls.setCaBundlePath(cfg.caBundlePath);
+
+    ctx.engine = &engine;
+    ctx.persistent = persistent;
+    ctx.e2eScript = e2eScript;
+    ctx.httpsFirst = httpsFirst;
+    ctx.trackerBlocking = trackerBlock;
+    if (trackerBlock && std::getenv("LETHE_TRACKER_BLOCK")) ctx.trackerBlocking = !envOff("LETHE_TRACKER_BLOCK");
+    if (httpsFirst && std::getenv("LETHE_HTTPS_FIRST")) ctx.httpsFirst = !envOff("LETHE_HTTPS_FIRST");
     // Built-in VPN: defaults ON. LETHE_VPN=0 to disable entirely; the
     // fail-closed loopback tunnel keeps every byte on the policy path
     // until a real endpoint is set via LETHE_VPN_ENDPOINT=host:port.
@@ -189,7 +188,7 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
     if (getenv("LETHE_DEBUG")) {
         std::cout << "[lethe] Checking LETHE_DOH_PERSISTENT_CACHE: " << (envOff("LETHE_DOH_PERSISTENT_CACHE") ? "off" : "on") << std::endl;
     }
-    if (!envOff("LETHE_DOH_PERSISTENT_CACHE")) {
+    if (!cfg.dnsProvider.empty() && !envOff("LETHE_DOH_PERSISTENT_CACHE")) {
         // Use Lethe's Caches directory (sandbox-allowed)
         const std::string cachePath =
             std::string(getenv("HOME") ? getenv("HOME") : "/tmp") +
@@ -234,6 +233,13 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
             const int n = std::atoi(wt);
             if (n > 0) po.workerThreads = static_cast<size_t>(n);
         }
+        // Experimental shared kqueue HTTP forwarding reactor. Keep the
+        // default worker path until the reactor has passed parity/perf
+        // verification; benchmark runs opt in explicitly.
+        po.enableHttpReactor = std::getenv("LETHE_PROXY_HTTP_REACTOR") != nullptr &&
+                               !envOff("LETHE_PROXY_HTTP_REACTOR");
+        po.enableHttpsProxy = std::getenv("LETHE_CEF_HTTPS_PROXY") != nullptr &&
+                              !envOff("LETHE_CEF_HTTPS_PROXY");
         po.vpnTunnel = engine.vpnTunnel();
         po.udpTransport = engine.vpnTransport();
         po.relayHost = cfg.vpnConfig.endpointHost;
@@ -247,6 +253,8 @@ int ShellBootstrap::init(int argc, char** argv, const std::string& engineName) {
         if (proxy.start(po)) {
             ctx.proxyPort = proxy.port();
             ctx.proxyAuthToken = po.authToken;
+            ctx.httpsProxyPort = proxy.httpsProxyPort();
+            ctx.httpsProxySpkiSha256 = proxy.httpsProxySpkiSha256();
             std::cout << "[lethe] policy proxy listening on 127.0.0.1:" << ctx.proxyPort
                       << " (per-launch auth token)" << std::endl;
         } else {

@@ -19,6 +19,8 @@ typedef NS_ENUM(NSInteger, LetheDownloadState) {
 @property (nonatomic) int64_t bytesExpected;   // -1 if unknown
 @property (nonatomic) LetheDownloadState state;
 @property (nonatomic, copy, nullable) NSString* errorMessage;
+// Set by the built-in scanner when a finished download raised findings.
+@property (nonatomic, copy, nullable) NSString* threatSummary;
 @end
 
 extern NSString* const LetheDownloadsDidChangeNotification;

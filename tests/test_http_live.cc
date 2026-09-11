@@ -418,6 +418,181 @@ LETHE_TEST_CASE(HttpLive_CustomHeaders) {
     client.shutdown();
 }
 
+LETHE_TEST_CASE(HttpLive_RejectsHeaderInjection) {
+    TestHttpServer server;
+    CHECK_TRUE(server.start(0));
+    server.setHandler([](const std::string&) {
+        return buildHttpResponse(200, "OK", "should-not-matter");
+    });
+
+    TLSConfig tls;
+    HttpClient client;
+    CHECK_TRUE(client.initialize(tls));
+
+    HttpRequest req;
+    req.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+    req.headers["X-Test"] = "safe\r\nX-Injected: yes";
+    HttpResponse resp = client.sendRequest(req);
+
+    CHECK_FALSE(resp.success);
+    CHECK_EQ(resp.error, "Invalid HTTP request header");
+    client.shutdown();
+}
+
+LETHE_TEST_CASE(HttpLive_RejectsMalformedAuthorityPort) {
+    TLSConfig tls;
+    HttpClient client;
+    CHECK_TRUE(client.initialize(tls));
+
+    HttpRequest req;
+    req.url = "http://example.com:not-a-port/";
+    HttpResponse resp = client.sendRequest(req);
+
+    CHECK_FALSE(resp.success);
+    CHECK_EQ(resp.error, "Invalid URL: " + req.url);
+    client.shutdown();
+}
+
+LETHE_TEST_CASE(HttpLive_RejectsUnbracketedIpv6Authority) {
+    TLSConfig tls;
+    HttpClient client;
+    CHECK_TRUE(client.initialize(tls));
+
+    HttpRequest req;
+    req.url = "http://::1/";
+    HttpResponse resp = client.sendRequest(req);
+
+    CHECK_FALSE(resp.success);
+    CHECK_EQ(resp.error, "Invalid URL: " + req.url);
+    client.shutdown();
+}
+
+LETHE_TEST_CASE(HttpLive_RejectsAmbiguousResponseFraming) {
+    TestHttpServer server;
+    CHECK_TRUE(server.start(0));
+    server.setHandler([](const std::string&) {
+        // Conflicting Content-Length fields must never be collapsed to the
+        // last map entry: an intermediary and the client could otherwise
+        // disagree about where this response ends.
+        return std::string("HTTP/1.1 200 OK\r\n") +
+               "Content-Length: 1\r\n" +
+               "Content-Length: 9\r\n" +
+               "Connection: close\r\n\r\n" +
+               "smuggled";
+    });
+
+    TLSConfig tls;
+    HttpClient client;
+    CHECK_TRUE(client.initialize(tls));
+
+    HttpRequest req;
+    req.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+    HttpResponse resp = client.sendRequest(req);
+
+    CHECK_FALSE(resp.success);
+    CHECK_EQ(resp.error, "Conflicting Content-Length headers");
+    client.shutdown();
+}
+
+LETHE_TEST_CASE(HttpLive_ParsesMultiChunkResponse) {
+    TestHttpServer server;
+    CHECK_TRUE(server.start(0));
+    server.setHandler([](const std::string&) {
+        // Multiple chunks must be accumulated in order. This specifically
+        // guards the proxy's response parser from replacing the entity body
+        // on every chunk instead of appending to it.
+        return std::string("HTTP/1.1 200 OK\r\n") +
+               "Transfer-Encoding: chunked\r\n" +
+               "Connection: close\r\n\r\n" +
+               "5\r\nhello\r\n" +
+               "6\r\n world\r\n" +
+               "0\r\n\r\n";
+    });
+
+    TLSConfig tls;
+    HttpClient client;
+    CHECK_TRUE(client.initialize(tls));
+
+    HttpRequest req;
+    req.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+    HttpResponse resp = client.sendRequest(req);
+
+    CHECK_TRUE(resp.success);
+    CHECK_EQ(std::string(resp.body.begin(), resp.body.end()), "hello world");
+    client.shutdown();
+}
+
+LETHE_TEST_CASE(HttpLive_RejectsOversizedDeclaredBody) {
+    TestHttpServer server;
+    CHECK_TRUE(server.start(0));
+    server.setHandler([](const std::string&) {
+        return std::string("HTTP/1.1 200 OK\r\n") +
+               "Content-Length: 33554433\r\n" +
+               "Connection: close\r\n\r\n";
+    });
+
+    TLSConfig tls;
+    HttpClient client;
+    CHECK_TRUE(client.initialize(tls));
+
+    HttpRequest req;
+    req.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+    HttpResponse resp = client.sendRequest(req);
+
+    CHECK_FALSE(resp.success);
+    CHECK_EQ(resp.error, "Response Content-Length exceeds 32 MiB limit");
+    client.shutdown();
+}
+
+LETHE_TEST_CASE(HttpLive_RejectsTruncatedResponseHeaders) {
+    TestHttpServer server;
+    CHECK_TRUE(server.start(0));
+    server.setHandler([](const std::string&) {
+        // The peer closes immediately after a field line. EOF is not the
+        // header terminator and must not be reinterpreted as an EOF-delimited
+        // response body.
+        return std::string("HTTP/1.1 200 OK\r\n") +
+               "Content-Type: text/plain\r\n";
+    });
+
+    TLSConfig tls;
+    HttpClient client;
+    CHECK_TRUE(client.initialize(tls));
+
+    HttpRequest req;
+    req.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+    HttpResponse resp = client.sendRequest(req);
+
+    CHECK_FALSE(resp.success);
+    CHECK_EQ(resp.error, "Unexpected EOF while reading response headers");
+    client.shutdown();
+}
+
+LETHE_TEST_CASE(HttpLive_RejectsExcessiveResponseHeaders) {
+    TestHttpServer server;
+    CHECK_TRUE(server.start(0));
+    server.setHandler([](const std::string&) {
+        std::string response = "HTTP/1.1 200 OK\r\n";
+        for (int i = 0; i < 4097; ++i) {
+            response += "X-Lethe-" + std::to_string(i) + ": 1\r\n";
+        }
+        response += "Content-Length: 0\r\n\r\n";
+        return response;
+    });
+
+    TLSConfig tls;
+    HttpClient client;
+    CHECK_TRUE(client.initialize(tls));
+
+    HttpRequest req;
+    req.url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+    HttpResponse resp = client.sendRequest(req);
+
+    CHECK_FALSE(resp.success);
+    CHECK_EQ(resp.error, "Too many response headers");
+    client.shutdown();
+}
+
 LETHE_TEST_CASE(HttpLive_GzipDecompression) {
     std::string original = "This is a longer body that should be gzip compressed for the test. "
                            "Repeating to make it long enough: 0123456789 0123456789 0123456789.";
@@ -685,4 +860,3 @@ LETHE_TEST_CASE(SearchLive_ReadPage_EndToEnd) {
 
     client.shutdown();
 }
-

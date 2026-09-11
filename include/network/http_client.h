@@ -40,6 +40,10 @@ struct PolicyStream {
     virtual ~PolicyStream() = default;
     virtual ssize_t read(uint8_t* buf, size_t len, int timeoutMs) = 0;
     virtual bool write(const uint8_t* buf, size_t len) = 0;
+    // Native descriptor for a direct raw TCP stream. -1 for relay-backed or
+    // otherwise descriptor-less streams. This is only for the proxy's
+    // poll-driven splice; policy decisions still happen before exposure.
+    virtual int nativeFd() const { return -1; }
     // Half-close our side: END frame on a relay, shutdown(SHUT_WR) direct.
     virtual void shutdownWrite() = 0;
     // Interrupt a blocking read without transferring ownership of the
@@ -65,7 +69,9 @@ enum class ReferrerPolicy {
 struct HttpRequest {
     std::string url;
     HttpMethod method = HttpMethod::GET;
-    std::map<std::string, std::string> headers;
+    // Transparent comparator lets hot-path lookups use string_view without
+    // constructing a temporary std::string for every header access.
+    std::map<std::string, std::string, std::less<>> headers;
     std::string body;
     std::chrono::seconds timeout = std::chrono::seconds(30);
     // Top-level site ("https://example.com") used to partition cookies.
@@ -91,7 +97,7 @@ struct HttpRequest {
 
 struct HttpResponse {
     int statusCode = 0;
-    std::map<std::string, std::string> headers;
+    std::map<std::string, std::string, std::less<>> headers;
     std::vector<char> body;
     bool success = false;
     std::string error;
@@ -221,6 +227,7 @@ public:
     // explicit hostnames can be re-admitted via PrivateNetworkPolicy.
     void setPrivateNetworkPolicy(PrivateNetworkPolicy policy) {
         privateNetGuard_.setPolicy(std::move(policy));
+        ++privatePolicyGeneration_;
     }
     const PrivateNetworkPolicy& privateNetworkPolicy() const {
         return privateNetGuard_.policy();
@@ -461,6 +468,7 @@ private:
     std::vector<uint8_t> ioBuf_;
     size_t ioBufPos_ = 0;
 
+
     // Keep-alive state.
     std::string kaScheme_;
     std::string kaHost_;
@@ -472,6 +480,12 @@ private:
     bool peerAllowsKeepAlive_ = true;  // no "Connection: close" in response
     bool http10Peer_ = false;          // HTTP/1.0 responses default to close
     bool bodyUntilEof_ = false;        // EOF-delimited body burns the conn
+    // Policy results fixed when this keep-alive connection was established.
+    // Private-network policy changes are versioned, while VPN connectivity
+    // remains mutable and is checked on every reuse.
+    bool kaViaVpn_ = false;
+    uint64_t privatePolicyGeneration_ = 0;
+    uint64_t kaPrivatePolicyGeneration_ = 0;
 #ifdef HAVE_OPENSSL
     SSL* ssl_ = nullptr;
     SSL_CTX* sslCtx_ = nullptr;

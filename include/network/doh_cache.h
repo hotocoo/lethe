@@ -13,11 +13,15 @@
 // the provider), answers are keyed by provider so a provider change never
 // serves stale data, and entries expire after the TTL. Thread-safe.
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <map>
+#include <atomic>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace lethe {
@@ -26,7 +30,9 @@ class SharedDohCache {
 public:
     explicit SharedDohCache(std::chrono::seconds ttl = std::chrono::seconds(300),
                             size_t maxEntries = 4096)
-        : ttl_(ttl), maxEntries_(maxEntries) {}
+        : ttl_(ttl), maxEntries_(maxEntries) {
+        entries_.reserve(std::min<size_t>(maxEntries_, size_t{4096}));
+    }
 
     // Resolved answers ------------------------------------------------
     // true when an entry exists. outIp is the address, or "" for a cached
@@ -54,6 +60,50 @@ public:
     std::chrono::seconds ttl() const { return ttl_; }
 
 private:
+    struct DohKey {
+        std::string provider;
+        std::string host;
+    };
+    struct DohKeyView {
+        std::string_view provider;
+        std::string_view host;
+    };
+    struct DohKeyHash {
+        using is_transparent = void;
+
+        static size_t mix(std::string_view value, size_t hash) noexcept {
+            for (unsigned char c : value) {
+                hash ^= c;
+                hash *= (sizeof(size_t) == 8 ? 1099511628211ULL : 16777619U);
+            }
+            return hash;
+        }
+        size_t operator()(const DohKeyView& key) const noexcept {
+            size_t hash = sizeof(size_t) == 8 ? 1469598103934665603ULL : 2166136261U;
+            hash = mix(key.provider, hash);
+            hash ^= 0xff;
+            hash *= (sizeof(size_t) == 8 ? 1099511628211ULL : 16777619U);
+            return mix(key.host, hash);
+        }
+        size_t operator()(const DohKey& key) const noexcept {
+            return (*this)(DohKeyView{key.provider, key.host});
+        }
+    };
+    struct DohKeyEqual {
+        using is_transparent = void;
+        bool operator()(const DohKeyView& a, const DohKeyView& b) const noexcept {
+            return a.provider == b.provider && a.host == b.host;
+        }
+        bool operator()(const DohKey& a, const DohKeyView& b) const noexcept {
+            return a.provider == b.provider && a.host == b.host;
+        }
+        bool operator()(const DohKeyView& a, const DohKey& b) const noexcept {
+            return a.provider == b.provider && a.host == b.host;
+        }
+        bool operator()(const DohKey& a, const DohKey& b) const noexcept {
+            return a.provider == b.provider && a.host == b.host;
+        }
+    };
     struct Entry {
         std::string ip;
         std::chrono::steady_clock::time_point expires{};
@@ -62,18 +112,28 @@ private:
         std::vector<std::string> ips;
         std::chrono::steady_clock::time_point expires{};
     };
-    static std::string key(const std::string& provider, const std::string& host) {
-        return provider + "|" + host;
-    }
     void evictExpiredLocked(std::chrono::steady_clock::time_point now);
+    size_t totalEntriesLocked() const;
 
-    mutable std::mutex mu_;
-    std::map<std::string, Entry> entries_;
-    std::map<std::string, Bootstrap> bootstrap_;
+    // DNS lookups are overwhelmingly reads. A single exclusive mutex made
+    // otherwise-independent proxy workers serialize on every cache hit. Use
+    // shared ownership for the lookup path; expired entries are left for the
+    // next writer to reap instead of upgrading a hot read into an exclusive
+    // lock. This keeps the cache correctness-neutral (it is only an optional
+    // latency optimization) while removing a cross-worker contention point.
+    mutable std::shared_mutex mu_;
+    // Store provider and hostname separately in the owning key, but expose a
+    // transparent view for lookup. This avoids the old provider+"|"+host
+    // temporary allocation without paying for two hash-table lookups as the
+    // nested-map design did. One table lookup is important under browser
+    // fan-out where the same cache is read concurrently by many workers.
+    std::unordered_map<DohKey, Entry, DohKeyHash, DohKeyEqual> entries_;
+    std::unordered_map<std::string, Bootstrap> bootstrap_;
     std::chrono::seconds ttl_;
     std::chrono::seconds negativeTtl_{30};
     size_t maxEntries_;
-    Stats stats_;
+    std::atomic<uint64_t> hits_{0};
+    std::atomic<uint64_t> misses_{0};
 };
 
 } // namespace lethe

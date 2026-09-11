@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.18)
-project(lethe VERSION 1.3.4 LANGUAGES CXX)
+project(lethe VERSION 0.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(BUILD_WITH_SANDBOX "Enable renderer sandboxing" ON)
 option(BUILD_HARDENED "Apply strict compiler hardening" ON)
+option(LETHE_NATIVE_CPU_TUNING "Tune native Apple Silicon builds for the host CPU (non-portable)" OFF)
 option(USE_PREBUILT_CHROMIUM "Use prebuilt Chromium SDK" OFF)
 option(BUILD_TESTS "Build test suite" ON)
 if(WIN32)
@@ -105,6 +106,16 @@ if(BUILD_HARDENED)
         # keep LTO on the GNU/Apple toolchains where it links reliably.
         if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR APPLE)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=auto")
+        endif()
+        # Keep the default artifact portable across Apple Silicon generations.
+        # For a machine-local performance build, -mcpu=native lets clang use
+        # the actual host ISA/scheduler (e.g. M4 AMX/CPU tuning) across both
+        # the WebKit and CEF host binaries. This is deliberately opt-in because
+        # a binary tuned for a newer Apple CPU must not become the shipped
+        # universal ARM artifact by accident.
+        if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$" AND LETHE_NATIVE_CPU_TUNING)
+            add_compile_options(-mcpu=native)
+            add_link_options(-mcpu=native)
         endif()
     endif()
 endif()
@@ -229,6 +240,7 @@ if(BUILD_UI AND APPLE)
     message(STATUS "[lethe] Building GUI application (AppKit + WKWebView)")
     enable_language(OBJCXX)
     find_library(COCOA_FRAMEWORK Cocoa REQUIRED)
+    find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
     find_library(WEBKIT_FRAMEWORK WebKit REQUIRED)
     find_library(NETWORK_FRAMEWORK Network REQUIRED)
     file(GLOB SRC_UI_MAC src/ui/mac/*.mm)
@@ -254,6 +266,13 @@ if(BUILD_UI AND APPLE)
         ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/browser)
     target_link_libraries(lethe PRIVATE lethe_core
         ${COCOA_FRAMEWORK} ${WEBKIT_FRAMEWORK} ${NETWORK_FRAMEWORK})
+    if(BUILD_HARDENED)
+        # LTO performs whole-program optimization, while ld dead-stripping
+        # removes Objective-C++/static-library sections that remain unreachable
+        # at the final Mach-O link. Keep this target-local so the benchmark
+        # executables remain useful for diagnostics.
+        target_link_options(lethe PRIVATE "-Wl,-dead_strip")
+    endif()
     install(TARGETS lethe BUNDLE DESTINATION .)
 
     if(LETHE_WITH_CEF)
@@ -279,8 +298,18 @@ if(BUILD_UI AND APPLE)
             browser/app/cef_app_delegate.mm
             browser/app/cef_browser_client.mm
             browser/app/cef_chrome.mm
+            browser/app/cef_menu.mm
             browser/app/cef_automation.mm
             browser/app/cef_render_handler.mm
+            src/ui/mac/LethePreferences.mm
+            src/ui/mac/LetheBookmarks.mm
+            src/ui/mac/LetheSettings.mm
+            src/ui/mac/LethePermissions.mm
+            src/ui/mac/LethePluginLoader.mm
+            src/ui/mac/LetheUIAudit.mm
+            src/ui/mac/LetheInternalPages.mm
+            src/ui/mac/LetheHistory.mm
+            src/ui/mac/LetheGuard.mm
             browser/app/shell_bootstrap.cc
         )
         set_source_files_properties(
@@ -289,6 +318,16 @@ if(BUILD_UI AND APPLE)
             browser/app/cef_browser_client.mm
             browser/app/cef_automation.mm
             browser/app/cef_render_handler.mm
+            src/ui/mac/LethePreferences.mm
+            src/ui/mac/LetheBookmarks.mm
+            src/ui/mac/LetheSettings.mm
+            src/ui/mac/LethePermissions.mm
+            src/ui/mac/LethePluginLoader.mm
+            src/ui/mac/LetheUIAudit.mm
+            src/ui/mac/LetheInternalPages.mm
+            src/ui/mac/LetheHistory.mm
+            src/ui/mac/LetheGuard.mm
+            browser/app/cef_menu.mm
             PROPERTIES LANGUAGE OBJCXX)
         target_compile_options(lethe-cef PRIVATE -fobjc-arc -Wno-deprecated-declarations)
         set_target_properties(lethe-cef PROPERTIES
@@ -346,9 +385,13 @@ if(BUILD_UI AND APPLE)
         message(STATUS "[lethe-cef] CEF wrapper lib: ${CEF_WRAPPER_LIB}")
         target_link_libraries(lethe-cef PRIVATE
             lethe_core
-            ${COCOA_FRAMEWORK} ${NETWORK_FRAMEWORK}
+            ${COCOA_FRAMEWORK} ${NETWORK_FRAMEWORK} ${WEBKIT_FRAMEWORK}
+            ${QUARTZCORE_FRAMEWORK}
             "${CEF_LIB}"
             "${CEF_WRAPPER_LIB}")
+        if(BUILD_HARDENED)
+            target_link_options(lethe-cef PRIVATE "-Wl,-dead_strip")
+        endif()
         # The CEF framework's other dylibs (libEGL, libGLESv2, etc.) live in
         # Release/Chromium Embedded Framework.framework/Libraries/; rpath
         # gets them from the framework's standard @rpath.

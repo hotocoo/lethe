@@ -14,6 +14,7 @@
 #include "network/vpn/vpn_relay.h"
 
 #include <algorithm>
+#include <charconv>
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -23,8 +24,10 @@
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
+#include <mutex>
 #include <netdb.h>
 #include <sstream>
+#include <unordered_map>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/tcp.h>
@@ -58,13 +61,57 @@ static bool verboseHttpLog() {
 
 namespace {
 
-constexpr size_t kReadChunkSize = 16384;
+#ifdef HAVE_OPENSSL
+// The system trust store and TLS policy are immutable for the lifetime of a
+// normal Lethe process. Rebuilding an SSL_CTX for every short-lived proxy
+// connection is disproportionately expensive on fan-out pages because
+// SSL_CTX_set_default_verify_paths() can traverse the platform trust store.
+// Keep one context per TLS minimum version and hand each connection its own
+// reference. SSL objects remain per-connection, so SNI/session state and
+// certificate-pin checks never cross connection boundaries.
+SSL_CTX* acquireDefaultVerifyContext(int minVer) {
+    static std::mutex mutex;
+    static std::unordered_map<int, SSL_CTX*> contexts;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = contexts.find(minVer);
+    if (it == contexts.end()) {
+        SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+        if (!ctx) return nullptr;
+        const int version = minVer >= 0x0304 ? TLS1_3_VERSION : TLS1_2_VERSION;
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
+        if (SSL_CTX_set_min_proto_version(ctx, version) != 1 ||
+            SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION) != 1 ||
+            !SSL_CTX_set_default_verify_paths(ctx)) {
+            SSL_CTX_free(ctx);
+            return nullptr;
+        }
+        contexts.emplace(minVer, ctx); // process-lifetime reference
+        it = contexts.find(minVer);
+    }
+    SSL_CTX_up_ref(it->second);
+    return it->second;
+}
+#endif
+
+// Most browser responses arrive in bursts larger than a single TLS record.
+// A 64 KiB refill amortizes the rawRead/SSL_read boundary and is still small
+// enough to keep per-client working-set growth negligible.  This matters on
+// the proxy path because every upstream response is copied through one
+// HttpClient before it is emitted to the browser.
+constexpr size_t kReadChunkSize = 64 * 1024;
 constexpr size_t kMaxResponseSize = 32 * 1024 * 1024; // 32 MiB safety cap
+constexpr size_t kMaxHeaderBytes = 256 * 1024;
+constexpr size_t kMaxResponseHeaders = 4096;
 constexpr int kMaxRedirects = 5;
 
 std::string toLowerCopy(std::string s) {
     for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
+}
+
+std::string toLowerCopy(std::string_view s) {
+    std::string out(s);
+    return toLowerCopy(std::move(out));
 }
 
 std::string trimCopy(const std::string& s) {
@@ -74,10 +121,59 @@ std::string trimCopy(const std::string& s) {
     return s.substr(start, end - start + 1);
 }
 
-std::string getHeader(const std::map<std::string, std::string>& headers,
-                      const std::string& name) {
-    auto it = headers.find(toLowerCopy(name));
-    if (it == headers.end()) return "";
+bool hasHttpCtl(const std::string& s) {
+    for (unsigned char c : s) {
+        if (c == '\r' || c == '\n' || c == 0 || c < 0x20 || c == 0x7f) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool validHeaderName(const std::string& name) {
+    if (name.empty()) return false;
+    // RFC 9110 token: separators are not legal in a field name.
+    for (unsigned char c : name) {
+        if (c <= 0x20 || c >= 0x7f) return false;
+        switch (c) {
+        case '(' : case ')' : case '<' : case '>' : case '@' :
+        case ',' : case ';' : case ':' : case '\\' : case '"' :
+        case '/' : case '[' : case ']' : case '?' : case '=' :
+        case '{' : case '}' : case ' ' : case '\t' :
+            return false;
+        default: break;
+        }
+    }
+    return true;
+}
+
+bool parseSizeTStrict(const std::string& input, int base, size_t& out) {
+    // This runs for every fixed-length response.  std::stoull constructs a
+    // trimmed temporary and uses locale-aware machinery; from_chars is
+    // allocation-free and has a deliberately strict end-pointer check.
+    size_t first = 0;
+    while (first < input.size() && (input[first] == ' ' || input[first] == '\t')) ++first;
+    size_t last = input.size();
+    while (last > first && (input[last - 1] == ' ' || input[last - 1] == '\t')) --last;
+    if (first == last) return false;
+    const char* begin = input.data() + first;
+    const char* end = input.data() + last;
+    unsigned long long n = 0;
+    const auto parsed = std::from_chars(begin, end, n, base);
+    if (parsed.ec != std::errc{} || parsed.ptr != end ||
+        n > static_cast<unsigned long long>(SIZE_MAX)) return false;
+    out = static_cast<size_t>(n);
+    return true;
+}
+
+std::string_view getHeader(const std::map<std::string, std::string, std::less<>>& headers,
+                           std::string_view name) {
+    // Response header keys are normalized to lowercase at parse time, and
+    // every internal caller supplies lowercase names. Avoid allocating a
+    // temporary lookup key and copying the value on every framing/security
+    // check; these lookups sit on every HTTP response path.
+    const auto it = headers.find(name);
+    if (it == headers.end()) return {};
     return it->second;
 }
 
@@ -140,7 +236,16 @@ bool HttpClient::initialize(const TLSConfig& tlsConfig) {
     tlsConfig_ = tlsConfig;
 
 #ifdef HAVE_OPENSSL
-    OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
+    // OpenSSL's global initialization is process-wide. Calling it for every
+    // short-lived CONNECT stream adds avoidable synchronization/work exactly
+    // where the proxy is trying to fan out hundreds of browser connections.
+    // Keep the first-client initialization semantics but make subsequent
+    // HttpClient instances allocation-free at this step.
+    static std::once_flag opensslInitOnce;
+    std::call_once(opensslInitOnce, [] {
+        OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS |
+                         OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
+    });
 #endif
 
     if (verboseHttpLog()) std::cout << "[lethe] HTTP client initialized (TLS "
@@ -194,8 +299,25 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
             return resp;
         }
 
-        if (host.empty()) {
+        if (host.empty() || port < 1 || port > 65535) {
             resp.error = "Invalid URL: " + currentUrl;
+            return resp;
+        }
+        if (hasHttpCtl(host) || hasHttpCtl(path)) {
+            resp.error = "Invalid URL: control character in host or path";
+            closeConnection();
+            return resp;
+        }
+        for (const auto& header : currentReq.headers) {
+            if (!validHeaderName(header.first) || hasHttpCtl(header.second)) {
+                resp.error = "Invalid HTTP request header";
+                closeConnection();
+                return resp;
+            }
+        }
+        if (hasHttpCtl(currentReq.referrer)) {
+            resp.error = "Invalid HTTP referrer";
+            closeConnection();
             return resp;
         }
 
@@ -294,12 +416,12 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
         // hops (RFC 6797 forbids learning policy over plain HTTP) and on
         // redirect hops too - a 3xx can carry the header just as well.
         if (hstsEnabled() && scheme == "https") {
-            const std::string sts = getHeader(
+            const std::string_view sts = getHeader(
                 resp.headers, "strict-transport-security");
             if (!sts.empty()) {
                 std::chrono::seconds maxAge{0};
                 bool includeSubDomains = false;
-                if (HstsCache::parseStsHeader(sts, maxAge,
+                if (HstsCache::parseStsHeader(std::string(sts), maxAge,
                                               includeSubDomains)) {
                     hstsCache_->record(host, maxAge, includeSubDomains);
                     if (verboseHttpLog()) {
@@ -325,11 +447,11 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
         // governs every later hop - mirroring how a document's policy
         // governs its subresource requests. A header with no recognized
         // token leaves the active policy untouched.
-        const std::string rpHeader =
+        const std::string_view rpHeader =
             getHeader(resp.headers, "referrer-policy");
         if (!rpHeader.empty()) {
             ReferrerPolicy learned;
-            if (parseReferrerPolicy(rpHeader, learned)) {
+            if (parseReferrerPolicy(std::string(rpHeader), learned)) {
                 chainPolicy = learned;
             } else {
                 if (verboseHttpLog()) {
@@ -341,7 +463,7 @@ HttpResponse HttpClient::sendRequest(const HttpRequest& req) {
 
         // Follow redirects.
         if (resp.statusCode >= 300 && resp.statusCode < 400) {
-            std::string location = getHeader(resp.headers, "location");
+            std::string location(getHeader(resp.headers, "location"));
             if (location.empty()) {
                 resp.error = "Redirect without Location header";
                 return resp;
@@ -568,26 +690,47 @@ void HttpClient::dohCacheStore(const std::string& host, const std::string& ip) {
 }
 
 bool HttpClient::dohCacheLookup(const std::string& host, std::string& outIp) {
-    if (sharedDoh_ && sharedDoh_->lookup(dohProvider_, host, outIp)) return true;
-    if (persistentDoh_ && persistentDoh_->lookup(host, outIp)) {
-        if (getenv("LETHE_DEBUG")) {
-            std::cout << "[lethe-http][doh] " << host << " -> " << outIp << " (persistent cache)" << std::endl;
+    // The per-client cache is thread-confined and lock-free. Check it before
+    // the shared cache: proxy fan-out creates many short-lived clients, and
+    // making every repeat lookup take the shared-cache mutex turns a cheap
+    // hash lookup into cross-thread synchronization. The local TTL is the
+    // freshness boundary, so a hit is semantically equivalent to a shared
+    // hit while avoiding that contention.
+    const auto now = std::chrono::steady_clock::now();
+    auto it = dohCache_.find(host);
+    if (it != dohCache_.end()) {
+        if (now < it->second.expires) {
+            outIp = it->second.ip;
+            return true;
         }
-        // Promote to in-memory cache for faster subsequent lookups.
+        dohCache_.erase(it);
+    }
+
+    // The process-wide cache is the normal cross-client fast path. Do not
+    // consult the disk-backed cache before it: that would take its mutex on
+    // every cache hit and largely defeat the purpose of SharedDohCache under
+    // browser fan-out. Persistent storage is only the cold-start fallback;
+    // successful reads are promoted into the shared memory cache.
+    if (sharedDoh_ && sharedDoh_->lookup(dohProvider_, host, outIp)) return true;
+
+    if (persistentDoh_ && persistentDoh_->lookup(host, outIp)) {
+        if (verboseHttpLog()) {
+            std::cout << "[lethe-http][doh] " << host << " -> " << outIp
+                      << " (persistent cache)" << std::endl;
+        }
+        if (sharedDoh_) {
+            sharedDoh_->store(dohProvider_, host, outIp);
+        }
+        // Also promote to this client's lock-free cache. This keeps the
+        // persistent fallback off the hot path for subsequent requests that
+        // happen to stay on the same worker.
         if (dohCacheTtl_.count() > 0) {
             dohCache_[host] = DohEntry{outIp, std::chrono::steady_clock::now() + dohCacheTtl_};
         }
         return true;
     }
-    const auto now = std::chrono::steady_clock::now();
-    auto it = dohCache_.find(host);
-    if (it == dohCache_.end()) return false;
-    if (now >= it->second.expires) {
-        dohCache_.erase(it);
-        return false;
-    }
-    outIp = it->second.ip;
-    return true;
+
+    return false;
 }
 
 bool HttpClient::dohResolve(const std::string& host, std::string& outIp) {
@@ -854,6 +997,8 @@ bool HttpClient::connectToHost(const std::string& host, int port,
     kaPort_ = port;
     connectionReusable_ = false;
     connectionReused_ = false;
+    kaPrivatePolicyGeneration_ = privatePolicyGeneration_;
+    kaViaVpn_ = covered;
 
     bool result;
     if (scheme == "https") {
@@ -875,11 +1020,116 @@ bool HttpClient::connectToHost(const std::string& host, int port,
 }
 
 bool HttpClient::openTcp(const std::string& target, int port) {
+    // Numeric destinations are already policy-classified by connectToHost().
+    // Do not send them through getaddrinfo(): even with AI_NUMERICHOST that
+    // path still builds/freeaddrinfo() state on every fresh origin socket.
+    // The proxy's loopback/local benchmark and many real CONNECT targets hit
+    // this path, so connect the sockaddr directly and keep the DNS boundary
+    // unambiguous.
+    auto connectAddress = [&](int family, const sockaddr* address,
+                              socklen_t addressLen) -> int {
+        const int fd = ::socket(family, SOCK_STREAM, IPPROTO_TCP);
+        if (fd < 0) return -1;
+
+        const int flags = ::fcntl(fd, F_GETFL, 0);
+        if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) {
+            ::close(fd);
+            return -1;
+        }
+
+        int crc = ::connect(fd, address, addressLen);
+        if (crc != 0 && errno != EINPROGRESS) {
+            ::close(fd);
+            return -1;
+        }
+        if (crc != 0) {
+            fd_set wfds;
+            FD_ZERO(&wfds);
+            FD_SET(fd, &wfds);
+            timeval tv{};
+            tv.tv_sec = static_cast<time_t>(ioTimeout_.count() / 1000);
+            tv.tv_usec = static_cast<suseconds_t>((ioTimeout_.count() % 1000) * 1000);
+            const int sel = ::select(fd + 1, nullptr, &wfds, nullptr, &tv);
+            if (sel <= 0) {
+                ::close(fd);
+                return -1;
+            }
+            int soError = 0;
+            socklen_t soLen = sizeof(soError);
+            if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &soError, &soLen) != 0 ||
+                soError != 0) {
+                ::close(fd);
+                return -1;
+            }
+        }
+        if (::fcntl(fd, F_SETFL, flags) != 0) {
+            ::close(fd);
+            return -1;
+        }
+        return fd;
+    };
+
+    std::string numericTarget = target;
+    if (numericTarget.size() >= 2 && numericTarget.front() == '[' &&
+        numericTarget.back() == ']') {
+        numericTarget = numericTarget.substr(1, numericTarget.size() - 2);
+    }
+    if (!numericTarget.empty()) {
+        sockaddr_in v4{};
+        v4.sin_family = AF_INET;
+        v4.sin_port = htons(static_cast<uint16_t>(port));
+        if (::inet_pton(AF_INET, numericTarget.c_str(), &v4.sin_addr) == 1) {
+            const int fd = connectAddress(AF_INET,
+                                          reinterpret_cast<const sockaddr*>(&v4),
+                                          sizeof(v4));
+            if (fd >= 0) {
+                // Common post-connect socket policy is applied below.
+                int nodelay = 1;
+                ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+                timeval ioTv{};
+                ioTv.tv_sec = static_cast<time_t>(ioTimeout_.count() / 1000);
+                ioTv.tv_usec = static_cast<suseconds_t>((ioTimeout_.count() % 1000) * 1000);
+                ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &ioTv, sizeof(ioTv));
+                ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &ioTv, sizeof(ioTv));
+                socketFd_ = fd;
+                return true;
+            }
+            return false;
+        }
+
+        sockaddr_in6 v6{};
+        v6.sin6_family = AF_INET6;
+        v6.sin6_port = htons(static_cast<uint16_t>(port));
+        if (::inet_pton(AF_INET6, numericTarget.c_str(), &v6.sin6_addr) == 1) {
+            const int fd = connectAddress(AF_INET6,
+                                          reinterpret_cast<const sockaddr*>(&v6),
+                                          sizeof(v6));
+            if (fd >= 0) {
+                int nodelay = 1;
+                ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+                timeval ioTv{};
+                ioTv.tv_sec = static_cast<time_t>(ioTimeout_.count() / 1000);
+                ioTv.tv_usec = static_cast<suseconds_t>((ioTimeout_.count() % 1000) * 1000);
+                ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &ioTv, sizeof(ioTv));
+                ::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &ioTv, sizeof(ioTv));
+                socketFd_ = fd;
+                return true;
+            }
+            return false;
+        }
+    }
+
     addrinfo hints;
     std::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
+    // Policy-checked hostname resolution has already produced the concrete
+    // destination IP before this function is reached. Tell getaddrinfo()
+    // that explicitly so it cannot consult the system resolver again. This
+    // removes an unnecessary resolver path from every cold origin connection
+    // and makes the DoH-only invariant enforceable at this boundary.
+    if (isIpLiteral(target)) hints.ai_flags |= AI_NUMERICHOST;
 
     addrinfo* res = nullptr;
     std::string portStr = std::to_string(port);
@@ -933,6 +1183,16 @@ bool HttpClient::openTcp(const std::string& target, int port) {
     // through the proxy tunnel. Browsers disable Nagle; so do we.
     int nodelay = 1;
     ::setsockopt(connectedFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+    // The socket is blocking after connect. Put the request timeout directly
+    // on the descriptor so plain HTTP reads/writes do not need a select()
+    // readiness syscall before every recv()/send(). This preserves the same
+    // timeout bound while removing a syscall from each response refill on
+    // the policy-proxy hot path.
+    timeval ioTv{};
+    ioTv.tv_sec = static_cast<time_t>(ioTimeout_.count() / 1000);
+    ioTv.tv_usec = static_cast<suseconds_t>((ioTimeout_.count() % 1000) * 1000);
+    ::setsockopt(connectedFd, SOL_SOCKET, SO_RCVTIMEO, &ioTv, sizeof(ioTv));
+    ::setsockopt(connectedFd, SOL_SOCKET, SO_SNDTIMEO, &ioTv, sizeof(ioTv));
     socketFd_ = connectedFd;
     return true;
 }
@@ -979,26 +1239,34 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
 #ifdef HAVE_OPENSSL
     usingTls_ = true;
 
-        sslCtx_ = SSL_CTX_new(TLS_client_method());
-        if (!sslCtx_) {
-            std::cerr << "[lethe-http] Failed to create SSL context" << std::endl;
-            closeConnection();
-            return false;
-        }
-
         // Version policy: map config codes onto OpenSSL constants.
         // Config uses 0x0303=TLS1.2, 0x0304=TLS1.3 (0x0305 treated as 1.3).
         int minVer = tlsConfig_.getMinVersion();
-        SSL_CTX_set_min_proto_version(
-            sslCtx_, minVer >= 0x0304 ? TLS1_3_VERSION : TLS1_2_VERSION);
-        SSL_CTX_set_max_proto_version(sslCtx_, TLS1_3_VERSION);
+        const std::string& caPath = tlsConfig_.getCaBundlePath();
+        if (tlsConfig_.isVerifyCertificates() && caPath.empty()) {
+            sslCtx_ = acquireDefaultVerifyContext(minVer);
+            if (!sslCtx_) {
+                std::cerr << "[lethe-http] Failed to create shared TLS trust context"
+                          << std::endl;
+                closeConnection();
+                return false;
+            }
+        } else {
+            sslCtx_ = SSL_CTX_new(TLS_client_method());
+            if (!sslCtx_) {
+                std::cerr << "[lethe-http] Failed to create SSL context" << std::endl;
+                closeConnection();
+                return false;
+            }
+            SSL_CTX_set_min_proto_version(
+                sslCtx_, minVer >= 0x0304 ? TLS1_3_VERSION : TLS1_2_VERSION);
+            SSL_CTX_set_max_proto_version(sslCtx_, TLS1_3_VERSION);
 
-        // Certificate verification.
-        if (tlsConfig_.isVerifyCertificates()) {
-            SSL_CTX_set_verify(sslCtx_, SSL_VERIFY_PEER, nullptr);
-            const std::string& caPath = tlsConfig_.getCaBundlePath();
-            if (!caPath.empty()) {
-                if (!SSL_CTX_load_verify_locations(sslCtx_, caPath.c_str(), nullptr)) {
+            // Certificate verification.
+            if (tlsConfig_.isVerifyCertificates()) {
+                SSL_CTX_set_verify(sslCtx_, SSL_VERIFY_PEER, nullptr);
+                if (!caPath.empty() &&
+                    !SSL_CTX_load_verify_locations(sslCtx_, caPath.c_str(), nullptr)) {
                     std::cerr << "[lethe-http] Failed to load CA bundle: " << caPath
                               << std::endl;
                     SSL_CTX_free(sslCtx_);
@@ -1006,20 +1274,9 @@ bool HttpClient::startTls(const std::string& tlsHostname) {
                     closeConnection();
                     return false;
                 }
-            }
-            // Empty caPath => load the system default trust store. Without
-            // this call the context has NO trust anchors at all and every
-            // verified handshake fails closed (previously "SSL error 1").
-            if (caPath.empty() && !SSL_CTX_set_default_verify_paths(sslCtx_)) {
-                std::cerr << "[lethe-http] Failed to load system trust store"
-                          << std::endl;
-                SSL_CTX_free(sslCtx_);
-                sslCtx_ = nullptr;
-                closeConnection();
-                return false;
-            }
-        } else {
+            } else {
             SSL_CTX_set_verify(sslCtx_, SSL_VERIFY_NONE, nullptr);
+            }
         }
 
     ssl_ = SSL_new(sslCtx_);
@@ -1451,6 +1708,8 @@ void HttpClient::closeConnection() {
     kaScheme_.clear();
     kaHost_.clear();
     kaPort_ = 0;
+    kaViaVpn_ = false;
+    kaPrivatePolicyGeneration_ = 0;
 }
 
 // --- Keep-alive connection reuse -------------------------------------------
@@ -1463,13 +1722,10 @@ bool HttpClient::tryReuseConnection(const std::string& scheme,
     if (relayMode_) return false;
     if (kaScheme_ != scheme || kaHost_ != host || kaPort_ != port) return false;
 
-    // Policy re-check on EVERY reuse. The connection may predate a VPN
-    // state change: a kept-alive socket must never become a plaintext
-    // path around the tunnel policy, so a covered destination with the
-    // tunnel down fails closed - exactly like a fresh connect would.
-    const bool covered = vpnTunnel_ &&
-        vpnTunnel_->shouldRouteThroughVpn(kaResolvedTarget_);
-    if (covered && !isVpnActive()) {
+    // The CIDR route classification is fixed for this connection. VPN
+    // connectivity remains mutable, so it is still fail-closed on every
+    // reuse without reparsing every CIDR under the VPN mutex.
+    if (kaViaVpn_ && !isVpnActive()) {
         lastConnectError_ = "Blocked: " + host + " (" + kaResolvedTarget_ +
                             ") requires the VPN tunnel (allowed CIDR match) "
                             "but the tunnel is down";
@@ -1478,25 +1734,18 @@ bool HttpClient::tryReuseConnection(const std::string& scheme,
         return false;
     }
 
-    // Isolation re-check mirrors the VPN one so every entry point into the
-    // network path consults the same policy; it is a cheap classification
-    // of the address this connection was established to.
-    if (kaTargetIsIp_) {
-        const std::string deny =
-            privateNetGuard_.check(host, kaResolvedTarget_);
-        if (!deny.empty()) {
-            lastConnectError_ = deny;
-            std::cerr << "[lethe-http] " << deny << std::endl;
-            closeConnection();
-            return false;
-        }
+    // A policy generation change burns the old socket and forces a fresh
+    // classification before another request can use it.
+    if (kaPrivatePolicyGeneration_ != privatePolicyGeneration_) {
+        closeConnection();
+        return false;
     }
-
     connectionReused_ = true;
     return true;
 }
 
 void HttpClient::finishResponse(HttpResponse& resp) {
+    (void)resp; // response metadata is intentionally not needed for framing
     // Framing decides - not the status code: a fully-framed redirect or
     // error response leaves the connection exactly as reusable as a 200,
     // while an EOF-delimited body or peer "close" burns it either way.
@@ -1618,24 +1867,11 @@ int HttpClient::rawRead(uint8_t* buf, size_t len) {
     }
 #endif
 
-    // Plain TCP with select-based timeout.
-    fd_set rfds;
-    FD_ZERO(&rfds);
-    FD_SET(socketFd_, &rfds);
-    timeval tv;
-    tv.tv_sec = static_cast<time_t>(ioTimeout_.count() / 1000);
-    tv.tv_usec = static_cast<suseconds_t>((ioTimeout_.count() % 1000) * 1000);
-
-    int sel = ::select(socketFd_ + 1, &rfds, nullptr, nullptr, &tv);
-    if (sel < 0) {
-        if (errno == EINTR) return -2;
-        return -1;
-    }
-    if (sel == 0) return -2; // timeout
-
+    // Plain TCP sockets carry SO_RCVTIMEO from openTcp(), so recv() itself
+    // supplies the timeout. Avoid select()+recv() on every refill.
     ssize_t n = ::recv(socketFd_, buf, len, 0);
     if (n < 0) {
-        if (errno == EINTR) return -2;
+        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return -2;
         return -1;
     }
     return static_cast<int>(n);
@@ -1702,19 +1938,36 @@ bool HttpClient::writeAll(const char* data, size_t len) {
 bool HttpClient::readLine(std::string& out) {
     out.clear();
     while (true) {
-        uint8_t c = 0;
-        const int n = bufferedReadByte(c);
+        // Scan the already-refilled I/O buffer in bulk.  The old byte-at-a-
+        // time path called bufferedReadByte() once for every header character,
+        // which made a 7-header / ~200-byte response perform hundreds of
+        // branches and function calls per request.  memchr keeps the same
+        // framing semantics while reducing the common case to one scan and
+        // one append per header line.
+        if (ioBufPos_ < ioBuf_.size()) {
+            const size_t available = ioBuf_.size() - ioBufPos_;
+            const uint8_t* begin = ioBuf_.data() + ioBufPos_;
+            const void* nlPtr = std::memchr(begin, '\n', available);
+            if (nlPtr) {
+                const auto* nl = static_cast<const uint8_t*>(nlPtr);
+                const size_t chunk = static_cast<size_t>(nl - begin);
+                if (out.size() + chunk > 65536) return false;
+                out.append(reinterpret_cast<const char*>(begin), chunk);
+                ioBufPos_ += chunk + 1;
+                if (!out.empty() && out.back() == '\r') out.pop_back();
+                return true;
+            }
+            if (out.size() + available > 65536) return false;
+            out.append(reinterpret_cast<const char*>(begin), available);
+            ioBufPos_ = ioBuf_.size();
+        }
+
+        const int n = fillIoBuf();
         if (n < 0) return false; // error or timeout
         if (n == 0) {
             // EOF: return whatever we have (final line without newline).
             return !out.empty();
         }
-        if (c == '\n') {
-            if (!out.empty() && out.back() == '\r') out.pop_back();
-            return true;
-        }
-        out += static_cast<char>(c);
-        if (out.size() > 65536) return false; // pathological header guard
     }
 }
 
@@ -1732,30 +1985,89 @@ bool HttpClient::readFullResponse(HttpResponse& resp) {
         resp.error = "Failed to read status line";
         return false;
     }
-    std::istringstream iss(statusLine);
-    std::string httpVersion, reason;
-    if (!(iss >> httpVersion >> resp.statusCode >> reason)) {
+    // Avoid std::istringstream/locale setup on every response. The status
+    // line has a deliberately tiny grammar here: HTTP/<version> <3-digit
+    // status> [reason]. The proxy sees thousands of these on its hot path.
+    const size_t statusSpace = statusLine.find(' ');
+    if (statusSpace == std::string::npos ||
+        statusSpace == 0 || statusSpace + 1 >= statusLine.size()) {
         resp.error = "Malformed status line: " + statusLine;
         return false;
     }
-    http10Peer_ = (httpVersion.rfind("HTTP/1.0", 0) == 0);
-
-    // Headers until the blank line.
-    std::string line;
-    while (readLine(line) && !line.empty()) {
-        size_t colon = line.find(':');
-        if (colon != std::string::npos) {
-            std::string key = toLowerCopy(trimCopy(line.substr(0, colon)));
-            std::string value = trimCopy(line.substr(colon + 1));
-            if (key == "set-cookie") {
-                // The headers map collapses repeated names; cookies are
-                // per-name state and must survive individually.
-                resp.setCookieHeaders.push_back(value);
-            }
-            resp.headers[key] = value;
-        }
+    const std::string_view httpVersion(statusLine.data(), statusSpace);
+    const size_t codeStart = statusSpace + 1;
+    size_t codeEnd = codeStart;
+    while (codeEnd < statusLine.size() &&
+           statusLine[codeEnd] >= '0' && statusLine[codeEnd] <= '9') {
+        ++codeEnd;
     }
+    if (codeEnd - codeStart != 3 ||
+        (codeEnd < statusLine.size() && statusLine[codeEnd] != ' ' &&
+         statusLine[codeEnd] != '\t')) {
+        resp.error = "Malformed status line: " + statusLine;
+        return false;
+    }
+    int statusCode = 0;
+    for (size_t i = codeStart; i < codeEnd; ++i)
+        statusCode = statusCode * 10 + (statusLine[i] - '0');
+    resp.statusCode = statusCode;
+    http10Peer_ = httpVersion == "HTTP/1.0";
 
+    // Headers until the blank line. Bound the complete header section so a
+    // peer cannot consume unbounded memory with thousands of individually
+    // valid 64 KiB field lines.
+    std::string line;
+    size_t headerBytes = statusLine.size() + 2;
+    size_t headerCount = 0;
+    std::string previousContentLength;
+    bool sawContentLength = false;
+    while (true) {
+        // EOF/error before the terminating empty line is not a valid
+        // response. Treating it as the end of headers can silently switch
+        // an incomplete response into EOF-delimited body mode.
+        if (!readLine(line)) {
+            resp.error = "Unexpected EOF while reading response headers";
+            return false;
+        }
+        if (line.empty()) break;
+        headerBytes += line.size() + 2;
+        if (headerBytes > kMaxHeaderBytes) {
+            resp.error = "Response headers too large";
+            return false;
+        }
+        if (++headerCount > kMaxResponseHeaders) {
+            resp.error = "Too many response headers";
+            return false;
+        }
+        size_t colon = line.find(':');
+        if (colon == std::string::npos) {
+            resp.error = "Malformed response header";
+            return false;
+        }
+        std::string key = toLowerCopy(trimCopy(line.substr(0, colon)));
+        std::string value = trimCopy(line.substr(colon + 1));
+        if (!validHeaderName(key) || hasHttpCtl(value)) {
+            resp.error = "Malformed response header";
+            return false;
+        }
+        if (key == "set-cookie") {
+            // The headers map collapses repeated names; cookies are
+            // per-name state and must survive individually.
+            resp.setCookieHeaders.push_back(value);
+        }
+        if (key == "content-length") {
+            // Multiple Content-Length fields are only safe when they agree.
+            // Collapsing an ambiguous pair to the last value can turn a
+            // proxy/client disagreement into request/response smuggling.
+            if (sawContentLength && value != previousContentLength) {
+                resp.error = "Conflicting Content-Length headers";
+                return false;
+            }
+            sawContentLength = true;
+            previousContentLength = value;
+        }
+        resp.headers[key] = value;
+    }
     const std::string connHeader =
         toLowerCopy(getHeader(resp.headers, "connection"));
     if (connHeader.find("close") != std::string::npos) {
@@ -1764,7 +2076,7 @@ bool HttpClient::readFullResponse(HttpResponse& resp) {
 
     // Body.
     std::string transferEncoding = toLowerCopy(getHeader(resp.headers, "transfer-encoding"));
-    std::string contentLengthStr = getHeader(resp.headers, "content-length");
+    std::string contentLengthStr(getHeader(resp.headers, "content-length"));
 
     if (transferEncoding.find("chunked") != std::string::npos) {
         if (!readChunkedBody(resp)) {
@@ -1773,10 +2085,12 @@ bool HttpClient::readFullResponse(HttpResponse& resp) {
         }
     } else if (!contentLengthStr.empty()) {
         size_t contentLength = 0;
-        try {
-            contentLength = std::stoul(contentLengthStr);
-        } catch (...) {
+        if (!parseSizeTStrict(contentLengthStr, 10, contentLength)) {
             resp.error = "Invalid Content-Length: " + contentLengthStr;
+            return false;
+        }
+        if (contentLength > kMaxResponseSize) {
+            resp.error = "Response Content-Length exceeds 32 MiB limit";
             return false;
         }
         if (!readBodyOfLength(resp, contentLength)) {
@@ -1800,20 +2114,22 @@ bool HttpClient::readFullResponse(HttpResponse& resp) {
 }
 
 bool HttpClient::readBodyOfLength(HttpResponse& resp, size_t length) {
-    resp.body.reserve(std::min(length, kMaxResponseSize));
-    size_t remaining = length;
-    std::vector<uint8_t> chunk(kReadChunkSize);
-    while (remaining > 0) {
-        size_t want = std::min(remaining, chunk.size());
-        if (!bufferedReadExact(chunk.data(), want)) return false;
-        resp.body.insert(resp.body.end(),
-                         reinterpret_cast<char*>(chunk.data()),
-                         reinterpret_cast<char*>(chunk.data() + want));
-        remaining -= want;
-        if (resp.body.size() > kMaxResponseSize) {
-            std::cerr << "[lethe-http] Response too large, aborting" << std::endl;
-            return false;
-        }
+    // Content-Length is already bounded by the caller. Read directly into
+    // the response buffer instead of allocating a temporary 16 KiB staging
+    // vector and then copying each refill into resp.body. The old path did
+    // two copies for every fixed-length response (including the tiny payloads
+    // that dominate the proxy benchmark) and created one heap allocation per
+    // response. bufferedReadExact() already handles partial socket reads and
+    // preserves bytes past the response boundary for keep-alive reuse.
+    if (length > kMaxResponseSize) {
+        std::cerr << "[lethe-http] Response too large, aborting" << std::endl;
+        return false;
+    }
+    resp.body.resize(length);
+    if (length == 0) return true;
+    if (!bufferedReadExact(reinterpret_cast<uint8_t*>(resp.body.data()), length)) {
+        resp.body.clear();
+        return false;
     }
     return true;
 }
@@ -1831,9 +2147,7 @@ bool HttpClient::readChunkedBody(HttpResponse& resp) {
         sizeLine = trimCopy(sizeLine);
 
         size_t chunkSize = 0;
-        try {
-            chunkSize = std::stoul(sizeLine, nullptr, 16);
-        } catch (...) {
+        if (!parseSizeTStrict(sizeLine, 16, chunkSize)) {
             std::cerr << "[lethe-http] Invalid chunk size: " << sizeLine << std::endl;
             return false;
         }
@@ -1841,13 +2155,48 @@ bool HttpClient::readChunkedBody(HttpResponse& resp) {
         if (chunkSize == 0) {
             // Trailer section: read until blank line.
             std::string trailer;
-            while (readLine(trailer) && !trailer.empty()) {
-                // ignore trailers
+            size_t trailerBytes = 0;
+            size_t trailerCount = 0;
+            while (true) {
+                if (!readLine(trailer)) return false;
+                if (trailer.empty()) break;
+                trailerBytes += trailer.size() + 2;
+                if (trailerBytes > kMaxHeaderBytes ||
+                    ++trailerCount > kMaxResponseHeaders) {
+                    return false;
+                }
+                // Trailer fields are not exposed by this API, but still
+                // validate their syntax so malformed framing cannot be
+                // smuggled through an otherwise valid chunked response.
+                const size_t colon = trailer.find(':');
+                if (colon == std::string::npos ||
+                    !validHeaderName(trimCopy(trailer.substr(0, colon))) ||
+                    hasHttpCtl(trimCopy(trailer.substr(colon + 1)))) {
+                    return false;
+                }
             }
             return true;
         }
 
-        if (!readBodyOfLength(resp, chunkSize)) return false;
+        if (chunkSize > kMaxResponseSize ||
+            resp.body.size() > kMaxResponseSize - chunkSize) {
+            std::cerr << "[lethe-http] Chunked response exceeds 32 MiB limit" << std::endl;
+            return false;
+        }
+
+        // Append each chunk to the accumulated entity body. The fixed-length
+        // helper intentionally resizes from zero because it is also used for
+        // Content-Length responses; using it here would silently replace all
+        // earlier chunks and corrupt any response split across multiple
+        // frames.
+        const size_t oldSize = resp.body.size();
+        resp.body.resize(oldSize + chunkSize);
+        if (chunkSize > 0 &&
+            !bufferedReadExact(reinterpret_cast<uint8_t*>(resp.body.data() + oldSize),
+                               chunkSize)) {
+            resp.body.resize(oldSize);
+            return false;
+        }
 
         // Consume the CRLF after each chunk (buffered: two bytes, no
         // per-byte syscalls).
@@ -1888,6 +2237,17 @@ void HttpClient::maybeDecompressBody(HttpResponse& resp) {
     std::vector<char> out;
     out.reserve(resp.body.size());
 
+    // Compressed responses can expand far beyond the wire size. Keep the
+    // decompressor bounded as well as the socket reader so a gzip/deflate
+    // bomb cannot consume unbounded memory after the initial response cap.
+    auto appendDecompressed = [&out](const Bytef* data, size_t size) {
+        if (out.size() + size > kMaxResponseSize) {
+            return false;
+        }
+        out.insert(out.end(), data, data + size);
+        return true;
+    };
+
     if (encoding.find("gzip") != std::string::npos) {
         z_stream zs;
         std::memset(&zs, 0, sizeof(zs));
@@ -1908,7 +2268,10 @@ void HttpClient::maybeDecompressBody(HttpResponse& resp) {
                 return; // not actually gzip; keep original body
             }
             size_t have = buf.size() - zs.avail_out;
-            out.insert(out.end(), buf.begin(), buf.begin() + have);
+            if (!appendDecompressed(buf.data(), have)) {
+                inflateEnd(&zs);
+                return;
+            }
         } while (ret != Z_STREAM_END && zs.avail_in > 0);
 
         inflateEnd(&zs);
@@ -1932,7 +2295,10 @@ void HttpClient::maybeDecompressBody(HttpResponse& resp) {
                 return;
             }
             size_t have = buf.size() - zs.avail_out;
-            out.insert(out.end(), buf.begin(), buf.begin() + have);
+            if (!appendDecompressed(buf.data(), have)) {
+                inflateEnd(&zs);
+                return;
+            }
         } while (ret != Z_STREAM_END && zs.avail_in > 0);
 
         inflateEnd(&zs);
@@ -2037,8 +2403,10 @@ void HttpClient::parseUrl(const std::string& url, std::string& scheme,
         rest = url.substr(schemeEnd + 3);
     }
 
-    // Split host[:port] from path.
-    size_t hostEnd = rest.find('/');
+    // Split authority from path/query/fragment. RFC 3986 terminates the
+    // authority at '/', '?' or '#'; treating only '/' as a delimiter can
+    // accidentally feed a query/fragment into the host parser.
+    size_t hostEnd = rest.find_first_of("/?#");
     std::string hostPort = (hostEnd == std::string::npos)
                                ? rest
                                : rest.substr(0, hostEnd);
@@ -2046,22 +2414,79 @@ void HttpClient::parseUrl(const std::string& url, std::string& scheme,
         path = rest.substr(hostEnd);
     }
 
-    // Split host and explicit port.
-    size_t colon = hostPort.find(':');
-    if (colon != std::string::npos) {
-        host = hostPort.substr(0, colon);
-        try {
-            port = std::stoi(hostPort.substr(colon + 1));
-        } catch (...) {
-            port = 0;
+    // Strip userinfo from the authority before interpreting host/port. Use
+    // the LAST '@' so percent/credential-like data cannot shift the host
+    // boundary unexpectedly.
+    const size_t at = hostPort.rfind('@');
+    if (at != std::string::npos) hostPort.erase(0, at + 1);
+
+    // Parse the RFC 3986 authority forms explicitly. IPv6 literals are
+    // bracketed and may contain many colons; only the colon after the closing
+    // bracket can introduce a port. An unbracketed multi-colon authority is
+    // rejected instead of being guessed into a different host/port pair.
+    if (!hostPort.empty() && hostPort.front() == '[') {
+        const size_t close = hostPort.find(']');
+        if (close == std::string::npos || close == 1) {
+            port = -1;
+            return;
+        }
+        host = hostPort.substr(1, close - 1);
+        const std::string_view suffix(hostPort.data() + close + 1,
+                                      hostPort.size() - close - 1);
+        if (!suffix.empty()) {
+            if (suffix.front() != ':') {
+                port = -1;
+                return;
+            }
+            const std::string_view portText = suffix.substr(1);
+            if (portText.empty()) {
+                port = 0; // RFC 3986: empty port is equivalent to default.
+            } else {
+                int parsed = 0;
+                for (char c : portText) {
+                    if (c < '0' || c > '9' || parsed > 6553) {
+                        port = -1;
+                        return;
+                    }
+                    parsed = parsed * 10 + (c - '0');
+                }
+                if (parsed < 1 || parsed > 65535) {
+                    port = -1;
+                    return;
+                }
+                port = parsed;
+            }
         }
     } else {
-        host = hostPort;
+        const size_t firstColon = hostPort.find(':');
+        const size_t lastColon = hostPort.rfind(':');
+        if (firstColon != std::string::npos && firstColon != lastColon) {
+            port = -1; // unbracketed IPv6 / ambiguous authority
+            return;
+        }
+        if (firstColon == std::string::npos) {
+            host = hostPort;
+        } else {
+            host = hostPort.substr(0, firstColon);
+            const std::string_view portText(hostPort.data() + firstColon + 1,
+                                            hostPort.size() - firstColon - 1);
+            if (!portText.empty()) {
+                int parsed = 0;
+                for (char c : portText) {
+                    if (c < '0' || c > '9' || parsed > 6553) {
+                        port = -1;
+                        return;
+                    }
+                    parsed = parsed * 10 + (c - '0');
+                }
+                if (parsed < 1 || parsed > 65535) {
+                    port = -1;
+                    return;
+                }
+                port = parsed;
+            }
+        }
     }
-
-    // Strip userinfo if present.
-    size_t at = host.find('@');
-    if (at != std::string::npos) host = host.substr(at + 1);
 
     // Default ports.
     if (port == 0) {
@@ -2091,41 +2516,68 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
     // Caller-supplied headers always win: a default is emitted only when
     // the request does not already carry that header (case-insensitive),
     // so custom User-Agent / Accept values actually reach the server.
-    auto hasHeader = [&req](const char* name) {
-        const std::string lower = toLowerCopy(name);
-        for (const auto& h : req.headers) {
-            if (toLowerCopy(h.first) == lower) return true;
-        }
-        return false;
-    };
+    // Normalize caller header names once. The old helper lower-cased and
+    // rescanned the entire list for every default header, multiplying the
+    // work on header-heavy requests.
+    bool hasUserAgent = false, hasAccept = false, hasAcceptLanguage = false;
+    bool hasAcceptEncoding = false, hasReferer = false, hasUpgrade = false;
+    bool hasSecFetchSite = false, hasSecFetchMode = false;
+    bool hasSecFetchDest = false, hasSecFetchUser = false, hasConnection = false;
+    bool hasCookie = false;
+    for (const auto& h : req.headers) {
+        const std::string lower = toLowerCopy(h.first);
+        if (lower == "user-agent") hasUserAgent = true;
+        else if (lower == "accept") hasAccept = true;
+        else if (lower == "accept-language") hasAcceptLanguage = true;
+        else if (lower == "accept-encoding") hasAcceptEncoding = true;
+        else if (lower == "referer") hasReferer = true;
+        else if (lower == "upgrade-insecure-requests") hasUpgrade = true;
+        else if (lower == "sec-fetch-site") hasSecFetchSite = true;
+        else if (lower == "sec-fetch-mode") hasSecFetchMode = true;
+        else if (lower == "sec-fetch-dest") hasSecFetchDest = true;
+        else if (lower == "sec-fetch-user") hasSecFetchUser = true;
+        else if (lower == "connection") hasConnection = true;
+        else if (lower == "cookie") hasCookie = true;
+    }
 
+    // Most proxy forwarding requests carry no caller headers/body. Reserve
+    // the common wire size up front so constructing the request does not
+    // repeatedly grow/copy the string for every tiny upstream fetch.
     std::string httpRequest;
+    httpRequest.reserve(512 + path.size() + host.size() + req.body.size());
+    // HTTP/1.1 Host uses the URI's bracketed IP-literal form for IPv6. The
+    // internal URL parser stores the address without brackets so TLS and
+    // numeric policy checks can consume the canonical address directly.
+    const std::string wireHost =
+        host.find(':') != std::string::npos &&
+        !(host.size() >= 2 && host.front() == '[' && host.back() == ']')
+        ? "[" + host + "]" : host;
     httpRequest += method;
     httpRequest += " ";
     httpRequest += path;
     httpRequest += " HTTP/1.1\r\n";
     httpRequest += "Host: ";
-    httpRequest += host;
+    httpRequest += wireHost;
     httpRequest += "\r\n";
-    if (!hasHeader("User-Agent")) {
+    if (!hasUserAgent) {
         httpRequest += "User-Agent: ";
         httpRequest += defaultUserAgent_.empty() ? lethe::USER_AGENT_STRING
                                                 : defaultUserAgent_.c_str();
         httpRequest += "\r\n";
     }
-    if (!hasHeader("Accept")) {
+    if (!hasAccept) {
         httpRequest += "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
     }
-    if (!hasHeader("Accept-Language")) {
+    if (!hasAcceptLanguage) {
         httpRequest += "Accept-Language: en-US,en;q=0.5\r\n";
     }
-    if (!hasHeader("Accept-Encoding")) {
+    if (!hasAcceptEncoding) {
         httpRequest += "Accept-Encoding: gzip, deflate\r\n";
     }
     // --- Navigation request hygiene ---
     // Computed Referer under the active policy; a caller-supplied
     // Referer header wins outright (same precedence as every default).
-    if (!computedReferer.empty() && !hasHeader("Referer")) {
+    if (!computedReferer.empty() && !hasReferer) {
         httpRequest += "Referer: ";
         httpRequest += computedReferer;
         httpRequest += "\r\n";
@@ -2133,27 +2585,27 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
     // Sec-Fetch-* metadata and Upgrade-Insecure-Requests ride only on
     // top-level user navigations; API-style fetches stay wire-compatible.
     if (req.navigationRequest) {
-        if (!hasHeader("Upgrade-Insecure-Requests")) {
+        if (!hasUpgrade) {
             httpRequest += "Upgrade-Insecure-Requests: 1\r\n";
         }
-        if (!hasHeader("Sec-Fetch-Site")) {
+        if (!hasSecFetchSite) {
             httpRequest += "Sec-Fetch-Site: ";
             httpRequest += secFetchSite;
             httpRequest += "\r\n";
         }
-        if (!hasHeader("Sec-Fetch-Mode")) {
+        if (!hasSecFetchMode) {
             httpRequest += "Sec-Fetch-Mode: navigate\r\n";
         }
-        if (!hasHeader("Sec-Fetch-Dest")) {
+        if (!hasSecFetchDest) {
             httpRequest += "Sec-Fetch-Dest: document\r\n";
         }
-        if (!hasHeader("Sec-Fetch-User")) {
+        if (!hasSecFetchUser) {
             httpRequest += "Sec-Fetch-User: ?1\r\n";
         }
     }
     // HTTP/1.1 connections persist by default; say so explicitly unless
     // the caller overrides Connection itself.
-    if (!hasHeader("Connection")) {
+    if (!hasConnection) {
         httpRequest += "Connection: keep-alive\r\n";
     }
 
@@ -2163,7 +2615,7 @@ std::string HttpClient::buildHttpRequest(const HttpRequest& req,
         httpRequest += header.second;
         httpRequest += "\r\n";
     }
-    if (!cookieHeader.empty() && !hasHeader("Cookie")) {
+    if (!cookieHeader.empty() && !hasCookie) {
         httpRequest += "Cookie: ";
         httpRequest += cookieHeader;
         httpRequest += "\r\n";
@@ -2212,6 +2664,13 @@ public:
     bool write(const uint8_t* buf, size_t len) override {
         if (!cli_) return false;
         return cli_->writeAll(reinterpret_cast<const char*>(buf), len);
+    }
+    int nativeFd() const override {
+        // Raw CONNECT deliberately leaves TLS to the browser. Only that
+        // direct TCP descriptor is safe to expose to the proxy multiplexer;
+        // relay/TLS streams remain opaque PolicyStream instances.
+        if (!cli_ || cli_->relayMode_ || cli_->usingTls_) return -1;
+        return cli_->socketFd_;
     }
     void shutdownWrite() override {
         if (!cli_) return;

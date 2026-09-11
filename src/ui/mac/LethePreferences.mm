@@ -6,6 +6,10 @@
 
 #import "ui/mac/LethePreferences.h"
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidChangeNotification";
 
 @implementation LethePreferences {
@@ -30,6 +34,9 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         _blockThirdPartyCookies = YES;
         _blockReferer = YES;
         _blockWebRTC = YES;
+        _siteGuard = YES;
+        _downloadGuard = YES;
+        _quarantineThreats = YES;
 
         // Data.
         _persistentCookies = NO;
@@ -73,6 +80,9 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         NSString* root = [dirs.firstObject stringByAppendingPathComponent:@"Lethe"];
         [[NSFileManager defaultManager] createDirectoryAtPath:root
                                   withIntermediateDirectories:YES attributes:nil error:nil];
+        [[NSFileManager defaultManager]
+            setAttributes:@{ NSFilePosixPermissions: @0700 }
+            ofItemAtPath:root error:nil];
         _path = [root stringByAppendingPathComponent:@"preferences.json"];
         [self load];
     }
@@ -90,6 +100,7 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         @"trackerBlocking", @"httpsFirst", @"httpsOnly", @"stealthUA",
         @"doNotTrack", @"blockFingerprinting", @"blockThirdPartyCookies",
         @"blockReferer", @"blockWebRTC",
+        @"siteGuard", @"downloadGuard", @"quarantineThreats",
         @"persistentCookies",
         @"dohSharedCache", @"dohPool", @"policyProxy", @"isolatePrivateNetworks",
         @"javaScript", @"hardwareAcceleration",
@@ -138,6 +149,7 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         @"trackerBlocking", @"httpsFirst", @"httpsOnly", @"stealthUA",
         @"doNotTrack", @"blockFingerprinting", @"blockThirdPartyCookies",
         @"blockReferer", @"blockWebRTC",
+        @"siteGuard", @"downloadGuard", @"quarantineThreats",
         @"persistentCookies",
         @"dohSharedCache", @"dohPool", @"policyProxy", @"isolatePrivateNetworks",
         @"javaScript", @"hardwareAcceleration",
@@ -159,7 +171,35 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
     [d setObject:@(_policyProxyWorkerThreads) forKey:@"policyProxyWorkerThreads"];
     [d setObject:_pluginOverrides ?: @{} forKey:@"pluginOverrides"];
     [d setObject:_disabledPlugins ?: @[] forKey:@"disabledPlugins"];
-    [d writeToFile:_path atomically:YES];
+    // Preferences can contain user-selected paths and privacy settings. Use a
+    // same-directory mkstemp + fchmod + rename sequence so the replacement is
+    // private from creation, rather than briefly creating a world-readable
+    // file and fixing its mode after the atomic write.
+    NSData* encoded = [NSJSONSerialization dataWithJSONObject:d options:NSJSONWritingPrettyPrinted error:nil];
+    if (!encoded) return;
+    NSString* templatePath = [_path stringByAppendingString:@".tmp.XXXXXX"];
+    char* tempPath = strdup(templatePath.fileSystemRepresentation);
+    if (!tempPath) return;
+    const int fd = mkstemp(tempPath);
+    if (fd < 0) {
+        free(tempPath);
+        return;
+    }
+    bool ok = fchmod(fd, S_IRUSR | S_IWUSR) == 0;
+    const uint8_t* bytes = static_cast<const uint8_t*>(encoded.bytes);
+    NSUInteger remaining = encoded.length;
+    while (ok && remaining > 0) {
+        const ssize_t n = write(fd, bytes, remaining);
+        if (n <= 0) { ok = false; break; }
+        bytes += n;
+        remaining -= static_cast<NSUInteger>(n);
+    }
+    if (ok) ok = fsync(fd) == 0;
+    if (close(fd) != 0) ok = false;
+    if (ok) ok = rename(tempPath, _path.fileSystemRepresentation) == 0;
+    if (!ok) unlink(tempPath);
+    free(tempPath);
+    if (!ok) return;
     [[NSNotificationCenter defaultCenter]
         postNotificationName:LethePreferencesDidChangeNotification object:self];
 }

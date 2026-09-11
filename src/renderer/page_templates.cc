@@ -128,9 +128,10 @@ std::string renderReaderPage(const std::string& url,
 std::string renderNewTabPage(const std::vector<SpeedDialItem>& recent,
                              const std::vector<SpeedDialItem>& bookmarks) {
     const char kStyle[] =
-        "main{text-align:center;padding:64px 32px 24px}"
+        "main{text-align:center;padding:clamp(40px,12vh,96px) 32px 32px}"
+        "main>section{max-width:720px;margin:0 auto}"
         "h1{font-size:34px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px}"
-        ".sub{opacity:.55;margin:0 0 40px}"
+        ".sub{opacity:.55;margin:0 auto 28px;max-width:560px}"
         "kbd{font:inherit;padding:1px 6px;border-radius:5px;"
         "border:1px solid rgba(128,128,128,.4)}"
         "h2{font-size:12px;font-weight:600;opacity:.55;text-transform:uppercase;"
@@ -142,24 +143,19 @@ std::string renderNewTabPage(const std::vector<SpeedDialItem>& recent,
         ".tile .t{font-weight:500;font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
         ".tile .u{font-size:11px;opacity:.5;display:block;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,Menlo,monospace}"
         ".empty{opacity:.5;font-style:italic;text-align:left}"
-        ".shield{max-width:560px;margin:0 auto;text-align:left;"
-        "border:1px solid rgba(128,128,128,.22);border-radius:12px;padding:18px 20px}"
-        ".shield p{margin:7px 0;opacity:.72}"
-        ".ok{font-weight:600}"
-        ".hint{margin-top:28px;opacity:.55}";
+        ".privacy{max-width:720px;margin:0 auto;text-align:left;border-top:1px solid rgba(128,128,128,.22)}"
+        ".feature{display:grid;grid-template-columns:minmax(150px,180px) minmax(0,1fr);gap:24px;padding:14px 0;border-bottom:1px solid rgba(128,128,128,.22);align-items:baseline}"
+        ".feature strong{font-weight:600;font-size:14px}"
+        ".feature span{opacity:.68;font-size:13px;line-height:1.55}"
+        "@media(max-width:700px){main{padding-left:20px;padding-right:20px}.feature{grid-template-columns:1fr;gap:3px;padding:12px 0}.grid{grid-template-columns:1fr}}"
+        ".hint{margin:28px auto 0;opacity:.55;max-width:560px}";
     std::string body = "<h1>Lethe</h1>";
     body += "<p class=\"sub\">Private by default. Type a URL or search in the "
             "address bar (<kbd>⌘L</kbd>).</p>";
-    body += "<section class=\"shield\">"
-            "<p class=\"ok\">Network policy enforced</p>"
-            "<p>HTTPS-first, DNS-over-HTTPS, private-network isolation, and "
-            "authenticated transport policy protect every navigation.</p>"
-            "<p class=\"ok\">Ephemeral site data</p>"
-            "<p>Browsing history, bookmarks, and session restore are available "
-            "from the browser menus and remain under Lethe's local profile.</p>"
-            "<p class=\"ok\">Built-in privacy controls</p>"
-            "<p>Tracker blocking, WebRTC protection, fingerprint reduction, "
-            "and Oblivion windows are available in Settings.</p>";
+    body += "<section class=\"privacy\">"
+            "<div class=\"feature\"><strong>Network policy</strong><span>HTTPS-first, DNS-over-HTTPS, private-network isolation, and authenticated transport policy protect every navigation.</span></div>"
+            "<div class=\"feature\"><strong>Ephemeral site data</strong><span>Browsing history, bookmarks, and session restore remain under Lethe's local profile.</span></div>"
+            "<div class=\"feature\"><strong>Privacy controls</strong><span>Tracker blocking, WebRTC protection, fingerprint reduction, and Oblivion windows are available in Settings.</span></div>";
     auto esc = [](const std::string& s) {
         std::string out; out.reserve(s.size());
         for (char c : s) switch (c) { case '<': out += "&lt;"; break; case '>': out += "&gt;"; break; case '&': out += "&amp;"; break; case '"': out += "&quot;"; break; default: out += c; }
@@ -175,7 +171,7 @@ std::string renderNewTabPage(const std::vector<SpeedDialItem>& recent,
     };
     body += tiles(bookmarks, "Bookmarks");
     body += tiles(recent, "Recent");
-    body += "</section><p class=\"hint\">Lethe exists to give Aletheia a controlled, private path to the web.</p>";
+    body += "</section><p class=\"hint\">A controlled, private path to the web.</p>";
     return page("New Tab", kStyle, body);
 }
 

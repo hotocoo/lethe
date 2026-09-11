@@ -10,7 +10,7 @@
 namespace lethe {
 
 #ifndef LETHE_VERSION
-#define LETHE_VERSION "0.1.0"
+#define LETHE_VERSION "0.1.1"
 #endif
 // Single source of truth is project(lethe VERSION ...) in CMakeLists.txt,
 // injected as LETHE_VERSION; the fallback above only covers ad-hoc builds.

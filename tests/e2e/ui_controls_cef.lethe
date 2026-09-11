@@ -1,0 +1,18 @@
+# Native chrome click-path audit for the Blink (CEF) shell.
+wait 2000
+ui-audit
+load https://example.com
+wait
+ui-audit
+ui-click Reload
+wait
+assert-url-contains example.com
+ui-click Bookmark
+sleep 300
+ui-click Reader View
+sleep 800
+ui-click New Tab
+sleep 800
+assert-tabs 2
+ui-audit
+quit

@@ -88,6 +88,15 @@ passes on cold launches.
    instead of holding one renderer-context request for the full five-second
    timeout.
 
+5. **Secure proxy transport now has the mTLS plumbing.** The CEF request
+   handler selects only the provisioned `Lethe CEF Proxy Client` identity for
+   the loopback HTTPS proxy, while an nghttpx build with mruby requires and
+   verifies that identity against a dedicated client CA. Provision the
+   identity with `tools/provision_cef_proxy_identity.sh`; the private key is
+   kept in the macOS login keychain and is not read by Lethe. End-to-end
+   authenticated CONNECT is still a gate before enabling this transport or
+   claiming a fan-out improvement.
+
 ## E2E and benchmark verification
 
 - **G2 basic e2e:** `tests/e2e/basic.lethe` completed with exit code 0.

@@ -7,18 +7,28 @@
 #include <cctype>
 #include <iostream>
 #include <sstream>
+#include <string_view>
+#include <unordered_set>
 #include <utility>
 
 #include "include/cef_browser.h"
 #include "include/cef_command_line.h"
 #include "include/cef_process_message.h"
+#include "include/cef_task.h"
 #include "include/cef_values.h"
+
+#import <Cocoa/Cocoa.h>
+
+#import "ui/mac/LetheGuard.h"
+#import "ui/mac/LethePreferences.h"
 
 #include "app/cef_automation.h"
 #include "app/cef_chrome.h"
 #include "plugins/plugin_registry.h"
 #include "network/policy_proxy.h"
 #include "security/private_network_guard.h"
+#include "security/tracker_blocklist.h"
+#include "browser/url_input.h"
 #include "renderer/page_templates.h"
 
 namespace {
@@ -47,6 +57,29 @@ std::string blockPageUrl(const std::string& target, const std::string& reason) {
     return "data:text/html;charset=utf-8," + encode(html);
 }
 
+std::string errorPageUrl(const std::string& target,
+                         const std::string& reason,
+                         const std::string& httpFallback) {
+    auto encode = [](const std::string& in) {
+        std::string out;
+        const char hex[] = "0123456789ABCDEF";
+        for (unsigned char c : in) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+                c == '.' || c == '~') {
+                out += static_cast<char>(c);
+            } else {
+                out += '%';
+                out += hex[c >> 4];
+                out += hex[c & 0x0f];
+            }
+        }
+        return out;
+    };
+    const std::string html = lethe::renderErrorPage(target, reason, httpFallback);
+    return "data:text/html;charset=utf-8," + encode(html);
+}
+
 bool hasSuffixInsensitive(std::string value, const std::string& suffix) {
     for (char& c : value)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -54,23 +87,145 @@ bool hasSuffixInsensitive(std::string value, const std::string& suffix) {
     return value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
-}  // namespace
-
-CefBrowserClient::ReturnValue CefBrowserClient::OnBeforeResourceLoad(
-    CefRefPtr<CefBrowser> browser,
-    CefRefPtr<CefFrame> frame,
-    CefRefPtr<CefRequest> request,
-    CefRefPtr<CefCallback> callback) {
-    (void)browser; (void)frame; (void)callback;
-    if (!ctx_ || ctx_->proxyPort <= 0 || ctx_->proxyAuthToken.empty()) {
-        return RV_CONTINUE;
+std::string_view urlHostView(std::string_view url) {
+    const size_t schemeEnd = url.find("://");
+    if (schemeEnd == std::string_view::npos) return {};
+    size_t start = schemeEnd + 3;
+    size_t end = url.find_first_of("/?#", start);
+    if (end == std::string_view::npos) end = url.size();
+    std::string_view authority = url.substr(start, end - start);
+    const size_t at = authority.rfind('@');
+    if (at != std::string_view::npos) authority.remove_prefix(at + 1);
+    if (!authority.empty() && authority.front() == '[') {
+        const size_t close = authority.find(']');
+        if (close == std::string_view::npos) return {};
+        authority = authority.substr(1, close - 1);
+    } else {
+        const size_t colon = authority.rfind(':');
+        if (colon != std::string_view::npos && authority.find(':') == colon)
+            authority = authority.substr(0, colon);
     }
-    // Proxy-Authorization is Chromium-owned and injecting it here produces
-    // ERR_INVALID_ARGUMENT. Do not use a custom header as a substitute:
-    // HTTPS requests are tunneled end-to-end, so such a header would reach
-    // the origin and disclose the per-launch proxy capability.
-    return RV_CONTINUE;
+    return authority;
 }
+
+bool domainMatches(std::string_view host, std::string_view domain) {
+    if (host == domain) return true;
+    return host.size() > domain.size() &&
+           host.compare(host.size() - domain.size(), domain.size(), domain) == 0 &&
+           host[host.size() - domain.size() - 1] == '.';
+}
+
+bool isAllowedResourceScheme(std::string_view url) {
+    const size_t colon = url.find(':');
+    if (colon == std::string_view::npos || colon == 0) return false;
+    // CEF resource loading is broader than top-level navigation. Keep the
+    // renderer's resource surface deliberately small so a page cannot use a
+    // non-web handler (file:, ftp:, custom OS schemes, etc.) as an alternate
+    // path around Lethe's authenticated HTTP/CONNECT policy boundary.
+    const std::string_view scheme = url.substr(0, colon);
+    auto equalInsensitive = [](std::string_view a, std::string_view b) {
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); ++i) {
+            if (std::tolower(static_cast<unsigned char>(a[i])) !=
+                std::tolower(static_cast<unsigned char>(b[i]))) return false;
+        }
+        return true;
+    };
+    return equalInsensitive(scheme, "http") || equalInsensitive(scheme, "https") ||
+           equalInsensitive(scheme, "ws") || equalInsensitive(scheme, "wss") ||
+           equalInsensitive(scheme, "data") || equalInsensitive(scheme, "blob") ||
+           equalInsensitive(scheme, "about");
+}
+
+struct TrackerHash {
+    using is_transparent = void;
+    size_t operator()(std::string_view value) const noexcept {
+        // Hash directly from the URL view and fold ASCII case while hashing.
+        // The old path first allocated a host string and lowercased it, then
+        // hashed that second representation. Tracker matching is case
+        // insensitive by URL semantics, so doing both operations in one pass
+        // removes an allocation and a full host traversal on every resource.
+        size_t hash = sizeof(size_t) == 8 ? 1469598103934665603ULL
+                                          : 2166136261U;
+        for (unsigned char c : value) {
+            if (c >= 'A' && c <= 'Z') c = static_cast<unsigned char>(c + ('a' - 'A'));
+            hash ^= c;
+            hash *= sizeof(size_t) == 8 ? 1099511628211ULL : 16777619U;
+        }
+        return hash;
+    }
+    size_t operator()(const std::string& value) const noexcept {
+        return (*this)(std::string_view(value));
+    }
+};
+
+struct TrackerEqual {
+    using is_transparent = void;
+    bool operator()(std::string_view a, std::string_view b) const noexcept {
+        if (a.size() != b.size()) return false;
+        for (size_t i = 0; i < a.size(); ++i) {
+            unsigned char ac = static_cast<unsigned char>(a[i]);
+            unsigned char bc = static_cast<unsigned char>(b[i]);
+            if (ac >= 'A' && ac <= 'Z') ac = static_cast<unsigned char>(ac + ('a' - 'A'));
+            if (bc >= 'A' && bc <= 'Z') bc = static_cast<unsigned char>(bc + ('a' - 'A'));
+            if (ac != bc) return false;
+        }
+        return true;
+    }
+    bool operator()(const std::string& a, const std::string& b) const noexcept {
+        return (*this)(std::string_view(a), std::string_view(b));
+    }
+};
+
+using TrackerDomainSet = std::unordered_set<std::string, TrackerHash, TrackerEqual>;
+
+const TrackerDomainSet& trackerDomains() {
+    static const TrackerDomainSet domains = [] {
+        TrackerDomainSet out;
+        const auto& list = lethe::builtinTrackerBlocklist();
+        out.reserve(list.domains.size() * 2 + 1);
+        for (const auto& domain : list.domains) out.insert(domain);
+        return out;
+    }();
+    return domains;
+}
+
+bool trackerHost(std::string_view host) {
+    // Avoid repeatedly allocating/erasing strings on the IO hot path. The
+    // blocklist is immutable for the lifetime of the process, so walk suffix
+    // views and use the transparent hash/equality overloads directly.
+    const auto& domains = trackerDomains();
+    while (!host.empty()) {
+        if (domains.find(host) != domains.end()) return true;
+        const size_t dot = host.find('.');
+        if (dot == std::string_view::npos) break;
+        host.remove_prefix(dot + 1);
+    }
+    return false;
+}
+
+class DeferredFrameLoadTask : public CefTask {
+ public:
+    DeferredFrameLoadTask(CefRefPtr<CefFrame> frame, std::string url)
+        : frame_(std::move(frame)), url_(std::move(url)) {}
+    void Execute() override {
+        if (frame_) frame_->LoadURL(url_);
+    }
+ private:
+    CefRefPtr<CefFrame> frame_;
+    std::string url_;
+    IMPLEMENT_REFCOUNTING(DeferredFrameLoadTask);
+};
+
+void LoadBlockPageDeferred(CefRefPtr<CefFrame> frame,
+                           const std::string& url,
+                           const std::string& reason) {
+    if (!frame) return;
+    CefPostTask(TID_UI, new DeferredFrameLoadTask(
+        frame, blockPageUrl(url, reason)));
+}
+
+}  // namespace
 
 void CefBrowserClient::AppBrowserProcessHandler::OnContextInitialized() {
     std::cout << "[lethe-cef] OnContextInitialized (browser process)" << std::endl;
@@ -89,21 +244,105 @@ void CefBrowserClient::App::OnBeforeCommandLineProcessing(
     // and GPU subprocesses inherit Chromium's defaults.
     if (!process_type.empty()) return;
     if (!ctx_) return;
-    // LETHE_CEF_MIN_SWITCHES=1 (bisect): skip every switch except the mock
-    // keychain (the securityd startup block is fatal without it).
+#if !defined(NDEBUG)
+    // Debug-only bisect escape hatch. Release builds must never allow an
+    // environment variable to bypass the browser's mandatory security
+    // switches.
     if (getenv("LETHE_CEF_MIN_SWITCHES")) {
         command_line->AppendSwitch("use-mock-keychain");
         return;
     }
+#endif
+    // Keep the browser policy boundary authoritative even when launchers or
+    // stale preferences carry Chromium switches from another environment.
+    // In particular, never permit an argv switch to disable the renderer
+    // sandbox, weaken same-origin isolation, or bypass the authenticated
+    // policy proxy.
+    static constexpr const char* kForbiddenSwitches[] = {
+        "no-sandbox", "disable-setuid-sandbox", "disable-web-security",
+        "allow-file-access-from-files", "disable-site-isolation-trials",
+        "no-proxy-server", "proxy-server", "proxy-bypass-list",
+        "host-resolver-rules",
+    };
+    for (const char* name : kForbiddenSwitches)
+        command_line->RemoveSwitch(name);
     if (ctx_->proxyPort > 0) {
-        const std::string url = "http://127.0.0.1:" + std::to_string(ctx_->proxyPort);
+        const int proxyPort = ctx_->httpsProxyPort > 0
+            ? ctx_->httpsProxyPort : ctx_->proxyPort;
+        const std::string scheme = ctx_->httpsProxyPort > 0 ? "https" : "http";
+        const std::string url = scheme + "://127.0.0.1:" + std::to_string(proxyPort);
         command_line->AppendSwitchWithValue("proxy-server", url);
-        // DoH-only: tell Chromium not to bypass the proxy's resolver. The
-        // proxy itself is the only thing allowed to open DNS sockets; the
-        // browser subprocess's resolver would defeat that gate.
-        // (Temporarily disabled to bisect the network-service crash.)
-        // command_line->AppendSwitch("host-resolver-rules");
+        // Chromium applies an implicit proxy bypass to loopback destinations.
+        // That would let http://127.0.0.1 and http://localhost escape the
+        // authenticated policy proxy entirely, defeating transport-level
+        // private-network enforcement for local origins. Explicitly remove
+        // that implicit exception; the proxy itself remains loopback-only
+        // and its private-network policy decides which local destinations
+        // are allowed.
+        command_line->AppendSwitchWithValue("proxy-bypass-list", "<-loopback>");
+        // DoH-only: prevent Chromium's own host resolver from opening a
+        // direct DNS socket. All web destinations must remain names at the
+        // authenticated proxy boundary, where Lethe performs DoH resolution
+        // and the private-network/VPN policy check. Loopback is excluded
+        // because the proxy itself is intentionally bound to 127.0.0.1.
+        command_line->AppendSwitchWithValue(
+            "host-resolver-rules", "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1");
+
+        if (ctx_->httpsProxyPort > 0 && !ctx_->httpsProxySpkiSha256.empty() &&
+            !command_line->HasSwitch("ignore-certificate-errors-spki-list")) {
+            // Pin only the ephemeral loopback proxy certificate. This does
+            // not disable normal origin certificate validation.
+            command_line->AppendSwitchWithValue(
+                "ignore-certificate-errors-spki-list",
+                ctx_->httpsProxySpkiSha256);
+        }
+
     }
+
+    // The Lethe proxy is an HTTP/CONNECT boundary and deliberately has no
+    // QUIC/UDP forwarding path. Disable Chromium's direct QUIC transport so
+    // an origin cannot opportunistically escape the authenticated proxy via
+    // HTTP/3. This is a security invariant, not a benchmark/debug switch.
+    command_line->AppendSwitch("disable-quic");
+    // WebRTC has its own UDP candidate path and can otherwise bypass an HTTP
+    // proxy. Keep the browser's network boundary equivalent to the proxy-only
+    // design without disabling WebRTC itself.
+    command_line->AppendSwitchWithValue(
+        "force-webrtc-ip-handling-policy", "disable_non_proxied_udp");
+
+    // Keep Chromium's Network Service out-of-process by default. The local
+    // policy proxy is still the mandatory network boundary, but moving the
+    // Network Service into the browser process removes a Chromium process
+    // isolation boundary and increases the blast radius of a network-service
+    // compromise. The faster in-process path remains available only as an
+    // explicit benchmark/debug opt-in; production browsing keeps the safer
+    // Chromium-style process model.
+#if !defined(NDEBUG)
+    if (getenv("LETHE_CEF_NETWORK_SERVICE_INPROCESS")) {
+        const std::string existingFeatures =
+            command_line->GetSwitchValue("enable-features").ToString();
+        if (existingFeatures.empty()) {
+            command_line->AppendSwitchWithValue("enable-features", "NetworkServiceInProcess");
+        } else if (existingFeatures.find("NetworkServiceInProcess") == std::string::npos) {
+            command_line->AppendSwitchWithValue(
+                "enable-features", existingFeatures + ",NetworkServiceInProcess");
+        }
+    }
+#endif
+
+    // Security baseline for the Blink engine: force Chromium's full site
+    // isolation instead of inheriting whatever process-model default the
+    // embedded CEF release happens to ship. This keeps cross-site documents
+    // out of the same renderer and materially reduces the blast radius of a
+    // renderer compromise. It is intentionally a hard default, not a
+    // performance/debug toggle: memory cost is measured by the benchmark
+    // suite rather than traded away silently for a smaller process count.
+    command_line->AppendSwitch("site-per-process");
+
+    // Keep origin isolation explicit as well. Site-per-process handles the
+    // common web-site boundary; strict origin isolation tightens the process
+    // boundary for origins that would otherwise share a site instance.
+    command_line->AppendSwitch("strict-origin-isolation");
     // Delegate every login / proxy-auth challenge to the embedder's
     // CefRequestHandler::GetAuthCredentials. Without this CEF falls back to
     // Chrome's own login-prompt UI, which does not exist in an embedded
@@ -190,6 +429,17 @@ void CefBrowserClient::App::OnBeforeCommandLineProcessing(
     if (!ctx_->cfg.useHardwareAcceleration) {
         command_line->AppendSwitch("disable-gpu");
         command_line->AppendSwitch("disable-gpu-compositing");
+    } else {
+        // Keep Chromium's GPU path explicit rather than depending on the
+        // CEF/Chromium defaults drifting between embedded releases. These
+        // switches keep raster work on the GPU, allow texture ownership to
+        // move without an extra CPU copy, and move raster tasks off the
+        // renderer main thread. They are only enabled for the normal
+        // hardware-accelerated profile; the software/debug profile above is
+        // deliberately unchanged.
+        command_line->AppendSwitch("enable-gpu-rasterization");
+        command_line->AppendSwitch("enable-zero-copy");
+        command_line->AppendSwitch("enable-oop-rasterization");
     }
 }
 
@@ -201,6 +451,86 @@ bool CefBrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     (void)user_gesture; (void)is_redirect;
     if (!frame || !frame->IsMain()) return false;
     if (!ctx_) return false;
+    if (request) {
+        const std::string url = request->GetURL().ToString();
+        // Built-in site guard, identical to the WebKit shell: a local
+        // structural assessment, a modal the user can override once per
+        // host, and no lookup service anywhere in the path.
+        if ([[LethePreferences shared] siteGuard] &&
+            (url.rfind("https://", 0) == 0 || url.rfind("http://", 0) == 0)) {
+            NSString* target = [NSString stringWithUTF8String:url.c_str()];
+            LetheScanResult* verdict = [LetheGuard assessURL:target];
+            NSString* host = [NSURL URLWithString:target].host ?: @"";
+            if (verdict.blocked && ![LetheGuard isHostAllowed:host]) {
+                if ([LetheGuard presentNavigationWarning:verdict
+                                                  forURL:target
+                                                  window:nil]) {
+                    // The user overrode the warning: reload the same URL now
+                    // that the host is on the session allow-list.
+                    CefPostTask(TID_UI, new DeferredFrameLoadTask(frame, url));
+                }
+                return true;
+            }
+        }
+        if (browser && IsOblivion(browser) &&
+            (url.rfind("http://", 0) == 0 || url.rfind("ws://", 0) == 0)) {
+            LetheCefChromeSetAddress(browser, url);
+            // Defer the replacement document until OnBeforeBrowse returns.
+            // Loading a data: block page synchronously from the cancellation
+            // callback can cause CEF to abort both the blocked request and
+            // the replacement document, leaving the generic error page.
+            LoadBlockPageDeferred(
+                frame, url,
+                "Oblivion windows are https-only: unencrypted (http://) pages are never loaded");
+            return true;
+        }
+        // The error page exposes a private, browser-generated continuation
+        // URL rather than a raw javascript/link escape. Accept it only when
+        // it exactly matches the pending HTTPS-first URL for this tab.
+        if (url.rfind(std::string(lethe::kHttpFallbackScheme) + "://allow-http?u=", 0) == 0) {
+            const std::string fallback = lethe::parseHttpFallbackActionUrl(url);
+            auto it = http_fallback_allowed_.find(browser ? browser->GetIdentifier() : -1);
+            if (!fallback.empty() && it != http_fallback_allowed_.end() && fallback == it->second &&
+                fallback.rfind("http://", 0) == 0) {
+                http_fallback_allowed_.erase(it);
+                http_fallback_active_[browser->GetIdentifier()] = fallback;
+                frame->LoadURL(fallback);
+            } else {
+                frame->LoadURL(blockPageUrl(url, "invalid or expired HTTP fallback"));
+            }
+            return true;
+        }
+
+        const size_t schemeEnd = url.find(':');
+        if (schemeEnd != std::string::npos) {
+            std::string scheme = url.substr(0, schemeEnd);
+            for (char& c : scheme)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            // The top-level browser surface has a deliberately tiny scheme
+            // allowlist. Anything else can hand navigation to an OS protocol
+            // handler or bypass the authenticated HTTP policy boundary.
+            // data: is retained for Lethe-owned internal pages and
+            // about:blank is required by normal popup/document flows.
+            const bool allowedWebScheme = scheme == "http" || scheme == "https";
+            const bool allowedInternalScheme = scheme == "data" ||
+                                                (scheme == "about" &&
+                                                 url == "about:blank");
+            if (!allowedWebScheme && !allowedInternalScheme) {
+                const std::string reason =
+                    "this navigation scheme is not allowed by Lethe";
+                if (const char* debug = std::getenv("LETHE_DEBUG");
+                    debug && *debug && std::string(debug) != "0") {
+                    std::cout << "[lethe-cef] blocked non-web navigation "
+                              << url << std::endl;
+                }
+                if (browser && frame->IsMain())
+                    policy_blocked_urls_[browser->GetIdentifier()] = url;
+                LetheCefChromeSetAddress(browser, url);
+                frame->LoadURL(blockPageUrl(url, reason));
+                return true;
+            }
+        }
+    }
     if (ctx_->cfg.isolatePrivateNetworks && request) {
         const std::string url = request->GetURL().ToString();
         // CEF can resolve IP literals itself before the policy proxy sees the
@@ -234,6 +564,8 @@ bool CefBrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                 "the .invalid special-use domain is reserved and must not resolve";
             std::cout << "[lethe-cef] blocked special-use navigation "
                       << url << " : " << reason << std::endl;
+            if (browser && frame->IsMain())
+                policy_blocked_urls_[browser->GetIdentifier()] = url;
             LetheCefChromeSetAddress(browser, url);
             frame->LoadURL(blockPageUrl(url, reason));
             return true;
@@ -248,8 +580,13 @@ bool CefBrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
             const std::string reason =
                 lethe::PrivateNetworkGuard(std::move(policy)).check(host, canonical);
             if (!reason.empty()) {
-                std::cout << "[lethe-cef] blocked private navigation "
-                          << url << " : " << reason << std::endl;
+                if (const char* debug = std::getenv("LETHE_DEBUG");
+                    debug && *debug && std::string(debug) != "0") {
+                    std::cout << "[lethe-cef] blocked private navigation "
+                              << url << " : " << reason << std::endl;
+                }
+                if (browser && frame->IsMain())
+                    policy_blocked_urls_[browser->GetIdentifier()] = url;
                 LetheCefChromeSetAddress(browser, url);
                 frame->LoadURL(blockPageUrl(url, reason));
                 return true;
@@ -263,6 +600,110 @@ bool CefBrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     // the UI consistent with the WebKit shell's "Blocked by Lethe policy".
     (void)browser; (void)request;
     return false;
+}
+
+CefRefPtr<CefResourceRequestHandler> CefBrowserClient::GetResourceRequestHandler(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request,
+    bool is_navigation,
+    bool is_download,
+    const CefString& request_initiator,
+    bool& disable_default_handling) {
+    (void)frame;
+    (void)is_navigation;
+    (void)is_download;
+    disable_default_handling = false;
+    if (browser && IsOblivion(browser)) return this;
+    if (!request || !ctx_ || !ctx_->trackerBlocking) return nullptr;
+
+    // CEF 151 uses UTF-16 CefString by default. Converting both URL and
+    // initiator to std::string on every resource request allocates twice
+    // before we even know whether the host is in the immutable tracker set.
+    // Convert the URL once, then defer the second conversion until the URL
+    // host is actually a tracker candidate. This keeps ordinary resources on
+    // the cheapest possible negative path while preserving exact matching.
+    const std::string url = request->GetURL().ToString();
+    // Resource-handler installation is also the earliest CEF hook that lets
+    // us reject unsupported schemes before Chromium's network stack creates
+    // a loader. Route those requests through this handler and let
+    // OnBeforeResourceLoad cancel them. Keeping the classification here means
+    // the hot callback below never has to parse/allocate the URL again.
+    if (!isAllowedResourceScheme(url)) return this;
+    const std::string_view host = urlHostView(url);
+    if (host.empty() || !trackerHost(host)) return nullptr;
+
+    const std::string initiator = request_initiator.ToString();
+    const std::string_view initiatorHost = urlHostView(initiator);
+    if (initiatorHost.empty() || domainMatches(host, initiatorHost)) return nullptr;
+    return this;
+}
+
+CefBrowserClient::ReturnValue CefBrowserClient::OnBeforeResourceLoad(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request,
+    CefRefPtr<CefCallback> callback) {
+    (void)callback;
+    if (!request) return RV_CONTINUE;
+    if (browser && IsOblivion(browser)) {
+        const std::string url = request->GetURL().ToString();
+        if (url.rfind("http://", 0) == 0 || url.rfind("ws://", 0) == 0)
+            return RV_CANCEL;
+        return RV_CONTINUE;
+    }
+    if (!ctx_ || !ctx_->trackerBlocking) return RV_CONTINUE;
+
+    // GetResourceRequestHandler already performed the complete tracker
+    // classification before installing this handler. Repeating URL parsing,
+    // host extraction, and the blocklist lookup here doubled the CEF IO-path
+    // work for every blocked resource. At this point the handler exists
+    // specifically because the request was classified as a tracker.
+    if (const char* debug = std::getenv("LETHE_DEBUG");
+        debug && *debug && std::string(debug) != "0") {
+        std::cout << "[lethe-cef] tracker blocked" << std::endl;
+    }
+    return RV_CANCEL;
+}
+
+bool CefBrowserClient::IsThirdPartyTrackerRequest(const std::string& url,
+                                                  const std::string& initiator) {
+    // Keep host parsing view-only. This callback is reached on CEF's IO path
+    // for resource loads, so two temporary host strings per request are pure
+    // allocator pressure before the immutable tracker set is consulted.
+    const std::string_view host = urlHostView(url);
+    const std::string_view initiatorHost = urlHostView(initiator);
+    if (host.empty() || initiatorHost.empty() || domainMatches(host, initiatorHost))
+        return false;
+    return trackerHost(host);
+}
+
+bool CefBrowserClient::OnOpenURLFromTab(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    const CefString& target_url,
+    WindowOpenDisposition target_disposition,
+    bool user_gesture) {
+    (void)target_disposition;
+    (void)user_gesture;
+    if (!browser || !frame || !frame->IsMain()) return false;
+    const std::string action = target_url.ToString();
+    if (action.rfind(std::string(lethe::kHttpFallbackScheme) + "://allow-http?u=", 0) != 0)
+        return false;
+
+    const std::string fallback = lethe::parseHttpFallbackActionUrl(action);
+    const int id = browser->GetIdentifier();
+    auto it = http_fallback_allowed_.find(id);
+    if (fallback.empty() || it == http_fallback_allowed_.end() ||
+        fallback != it->second || fallback.rfind("http://", 0) != 0) {
+        frame->LoadURL(blockPageUrl(action, "invalid or expired HTTP fallback"));
+        return true;
+    }
+
+    http_fallback_allowed_.erase(it);
+    http_fallback_active_[id] = fallback;
+    frame->LoadURL(fallback);
+    return true;
 }
 
 bool CefBrowserClient::OnBeforePopup(
@@ -280,9 +721,24 @@ bool CefBrowserClient::OnBeforePopup(
     CefRefPtr<CefDictionaryValue>& extra_info,
     bool* no_javascript_access) {
     (void)browser; (void)frame; (void)popup_id; (void)target_frame_name;
-    (void)target_disposition; (void)user_gesture; (void)popupFeatures;
+    (void)target_disposition; (void)popupFeatures;
     (void)extra_info; (void)no_javascript_access;
-    std::cout << "[lethe-cef] popup " << target_url.ToString() << std::endl;
+    // Popup creation is a normal browser operation. Avoid unconditional
+    // stdout I/O on this callback: terminal locking becomes measurable when
+    // a page creates several user-initiated windows in quick succession.
+    if (const char* debug = std::getenv("LETHE_DEBUG");
+        debug && *debug && std::string(debug) != "0") {
+        std::cout << "[lethe-cef] popup " << target_url.ToString() << std::endl;
+    }
+    // Match modern browser popup blocking at the embedder boundary: a page
+    // cannot create arbitrary native windows after an unrelated timer,
+    // redirect, or hidden iframe fires. A direct user activation is still
+    // allowed and continues through the normal CEF navigation/policy path.
+    if (!user_gesture) {
+        std::cout << "[lethe-cef] blocked popup without user gesture"
+                  << std::endl;
+        return true;
+    }
     // Use a normal native window and the same client so popup browsers enter
     // the automation browser set and remain behind the same policy handlers.
     windowInfo.bounds = CefRect(0, 0, 1280, 860);
@@ -310,6 +766,16 @@ bool CefBrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
     // CEF reports macOS Command as EVENTFLAG_COMMAND_DOWN. Use the physical
     // Windows key code rather than character output so this remains reliable
     // with non-US keyboard layouts and while an input field has focus.
+    if (!shift && (event.windows_key_code == ',' || event.windows_key_code == 188)) {
+        // Keep CEF's keyboard surface aligned with the native WebKit shell:
+        // Cmd+, must open the same authoritative Settings window instead of
+        // being swallowed by the renderer or depending on an AppKit menu
+        // responder that Alloy does not always expose.
+        LetheCefChromeShowSettings();
+        if (is_keyboard_shortcut) *is_keyboard_shortcut = true;
+        return true;
+    }
+
     if (!shift && event.windows_key_code == 'T') {
         CefWindowInfo windowInfo;
         windowInfo.bounds = CefRect(0, 0, 1280, 860);
@@ -380,25 +846,91 @@ bool CefBrowserClient::GetAuthCredentials(CefRefPtr<CefBrowser> browser,
                                           const CefString& realm,
                                           const CefString& scheme,
                                           CefRefPtr<CefAuthCallback> callback) {
-    std::cout << "[lethe-cef] GetAuthCredentials proxy=" << isProxy
-              << " host=" << host.ToString() << " port=" << port
-              << " scheme=" << scheme.ToString()
-              << " browser=" << (browser ? browser->GetIdentifier() : -1)
-              << std::endl;
-    std::cout.flush();
+    // Proxy authentication is on the network hot path. Do not synchronously
+    // write/flush stdout for every Chromium 407 challenge; keep the
+    // diagnostic available only when explicitly requested.
+    if (const char* debug = std::getenv("LETHE_DEBUG");
+        debug && *debug && std::string(debug) != "0") {
+        std::cout << "[lethe-cef] GetAuthCredentials proxy=" << isProxy
+                  << " host=" << host.ToString() << " port=" << port
+                  << " scheme=" << scheme.ToString()
+                  << " browser=" << (browser ? browser->GetIdentifier() : -1)
+                  << std::endl;
+        std::cout.flush();
+    }
     (void)origin_url; (void)realm; (void)scheme;
     if (!ctx_ || !isProxy) return false;
     // Only ever answer the loopback policy proxy we started ourselves -
     // never volunteer the per-launch token to any other host.
-    if (host.ToString() != "127.0.0.1" || port != ctx_->proxyPort) return false;
+    const int expectedPort = ctx_->httpsProxyPort > 0
+        ? ctx_->httpsProxyPort : ctx_->proxyPort;
+    if (host.ToString() != "127.0.0.1" || port != expectedPort) return false;
     if (ctx_->proxyAuthToken.empty()) return false;
     callback->Continue("lethe", ctx_->proxyAuthToken);
     return true;
 }
 
+bool CefBrowserClient::OnSelectClientCertificate(
+    CefRefPtr<CefBrowser> browser,
+    bool isProxy,
+    const CefString& host,
+    int port,
+    const X509CertificateList& certificates,
+    CefRefPtr<CefSelectClientCertificateCallback> callback) {
+    // Never select a client identity for an origin server. The only mTLS
+    // peer in Lethe's HTTPS-proxy mode is our own loopback frontend.
+    if (!isProxy || !ctx_ || ctx_->httpsProxyPort <= 0 ||
+        host.ToString() != "127.0.0.1" || port != ctx_->httpsProxyPort ||
+        !callback) {
+        return false;
+    }
+
+    if (const char* debug = std::getenv("LETHE_DEBUG");
+        debug && *debug && std::string(debug) != "0") {
+        std::cout << "[lethe-cef] proxy client-certificate request host="
+                  << host.ToString() << " port=" << port
+                  << " candidates=" << certificates.size() << std::endl;
+    }
+
+    // The provisioning path installs an identity with this exact subject.
+    // Do not blindly select the first platform certificate: that could
+    // disclose an unrelated user identity if this callback is reached for a
+    // different proxy request.
+    constexpr std::string_view kClientSubject = "Lethe CEF Proxy Client";
+    for (const auto& cert : certificates) {
+        if (!cert) continue;
+        auto subject = cert->GetSubject();
+        if (!subject) continue;
+        if (subject->GetCommonName().ToString() == kClientSubject) {
+            if (const char* debug = std::getenv("LETHE_DEBUG");
+                debug && *debug && std::string(debug) != "0") {
+                std::cout << "[lethe-cef] selected Lethe proxy client certificate"
+                          << " browser=" << (browser ? browser->GetIdentifier() : -1)
+                          << std::endl;
+            }
+            callback->Select(cert);
+            return true;
+        }
+    }
+
+    // Fail closed: do not let Chromium silently choose another identity or
+    // display a certificate-selection dialog.
+    callback->Select(nullptr);
+    return true;
+}
+
+bool CefBrowserClient::IsOblivion(CefRefPtr<CefBrowser> browser) const {
+    return browser && oblivion_browser_ids_.find(browser->GetIdentifier()) !=
+        oblivion_browser_ids_.end();
+}
+
 void CefBrowserClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     const bool first_browser = browsers_.empty();
     browsers_.push_back(browser);
+    if (next_browser_oblivion_) {
+        oblivion_browser_ids_.insert(browser->GetIdentifier());
+        next_browser_oblivion_ = false;
+    }
     if (first_browser || !browser_) browser_ = browser;
     browser_count_++;
     LetheCefAutomation::shared()->OnBrowserCreated(browser);
@@ -425,12 +957,38 @@ void CefBrowserClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
             // perspective while CEF retains one browser object per tab.
             [parentWindow addTabbedWindow:childWindow
                                   ordered:NSWindowAbove];
+        if (parentWindow.tabGroup && !parentWindow.tabGroup.tabBarVisible) {
+                [parentWindow toggleTabBar:nil];
+        }
+            // AppKit now owns the visible tab strip. Remove the single-tab
+            // compatibility accessory from the grouped windows so the user
+            // sees exactly one tab UI rather than a duplicate native/custom
+            // pair.
+            LetheCefChromeUpdate(browser);
+            std::cout << "[lethe-cef] native tab group windows="
+                      << (parentWindow.tabbedWindows
+                              ? [parentWindow.tabbedWindows count] : 1)
+                      << " tabbar="
+                      << (parentWindow.tabGroup && parentWindow.tabGroup.tabBarVisible ? 1 : 0)
+                      << std::endl;
         }
     }
     std::cout << "[lethe-cef] browser created ("
               << browser->GetIdentifier() << ") windows=" << browser_count_
               << " runtime=" << static_cast<int>(browser->GetHost()->GetRuntimeStyle())
               << std::endl;
+}
+
+void CefBrowserClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
+                                     const CefString& title) {
+    LetheCefChromeSetTitle(browser, title.ToString());
+}
+
+void CefBrowserClient::OnLoadingProgressChange(CefRefPtr<CefBrowser> browser,
+                                               double progress) {
+    // Progress is presentation-only state. Keep it out of navigation policy
+    // and update only the tiny native progress layer in the toolbar.
+    LetheCefChromeSetLoadingProgress(browser, progress);
 }
 
 bool CefBrowserClient::DoClose(CefRefPtr<CefBrowser> browser) {
@@ -453,6 +1011,11 @@ void CefBrowserClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
     // CefShutdown; the client itself otherwise keeps the last closed popup
     // alive even though browser_count_ has reached zero.
     LetheCefChromeDetach(browser);
+    const int closingId = browser ? browser->GetIdentifier() : -1;
+    oblivion_browser_ids_.erase(closingId);
+    http_fallback_allowed_.erase(closingId);
+    http_fallback_active_.erase(closingId);
+    policy_blocked_urls_.erase(closingId);
     if (browser_ && browser &&
         browser_->GetIdentifier() == browser->GetIdentifier()) {
         browser_ = nullptr;
@@ -498,6 +1061,7 @@ void CefBrowserClient::OnLoadStart(CefRefPtr<CefBrowser> browser,
                                    TransitionType transition_type) {
     (void)transition_type;
     if (frame && frame->IsMain()) {
+        LetheCefChromeSetLoading(browser, true);
         LetheCefChromeUpdate(browser);
         main_loading_ = true;
         std::cout << "[e2e] nav " << browser->GetMainFrame()->GetURL().ToString()
@@ -511,6 +1075,7 @@ void CefBrowserClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
                                  int httpStatusCode) {
     (void)browser;
     if (frame && frame->IsMain()) {
+        LetheCefChromeSetLoading(browser, false);
         LetheCefChromeUpdate(browser);
         main_loading_ = false;
         first_load_done_ = true;
@@ -530,8 +1095,83 @@ void CefBrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
                                    ErrorCode errorCode,
                                    const CefString& errorText,
                                    const CefString& failedUrl) {
-    (void)browser;
     if (frame && frame->IsMain()) {
+        const int browserId = browser ? browser->GetIdentifier() : -1;
+        auto blocked = policy_blocked_urls_.find(browserId);
+        if (blocked != policy_blocked_urls_.end() &&
+            blocked->second == failedUrl.ToString()) {
+            const std::string blockedUrl = blocked->second;
+            policy_blocked_urls_.erase(blocked);
+            LetheCefChromeSetLoading(browser, false);
+            LetheCefChromeUpdate(browser);
+            main_loading_ = false;
+            first_load_done_ = true;
+            LetheCefAutomation::shared()->ClearPendingNavigation();
+            frame->LoadURL(blockPageUrl(
+                blockedUrl, "destination rejected by Lethe's network policy"));
+            std::cout << "[lethe-cef] restored policy block page for "
+                      << blockedUrl << " after ERR_ABORTED" << std::endl;
+            std::cout.flush();
+            return;
+        }
+        std::string fallback;
+        if (browser) {
+            const int id = browser->GetIdentifier();
+            const std::string failed = failedUrl.ToString();
+            if (IsOblivion(browser) &&
+                (failed.rfind("http://", 0) == 0 ||
+                 failed.rfind("ws://", 0) == 0)) {
+                http_fallback_allowed_.erase(id);
+                http_fallback_active_.erase(id);
+                frame->LoadURL(blockPageUrl(
+                    failed,
+                    "Oblivion windows are https-only: unencrypted (http://) pages are never loaded"));
+                LetheCefChromeSetLoading(browser, false);
+                LetheCefChromeUpdate(browser);
+                main_loading_ = false;
+                std::cout << "[lethe-cef] Oblivion blocked plaintext navigation "
+                          << failed << std::endl;
+                std::cout.flush();
+                return;
+            }
+            auto active = http_fallback_active_.find(id);
+            if (active != http_fallback_active_.end()) {
+                // The user already explicitly accepted the downgrade. Do not
+                // turn an ordinary origin failure into a Lethe data: page;
+                // keeping the failed URL lets Chromium present its native
+                // error surface and preserves normal browser navigation state.
+                if (failed == active->second) {
+                    http_fallback_active_.erase(active);
+                    // This is a terminal load outcome, not a successful
+                    // navigation. Clear the browser's loading state before
+                    // returning so the omnibox spinner does not remain stuck
+                    // and the next user navigation is not mistaken for the
+                    // previous fallback request. The URL itself is left
+                    // untouched, preserving Chromium's native error surface.
+                    LetheCefChromeSetLoading(browser, false);
+                    LetheCefChromeUpdate(browser);
+                    main_loading_ = false;
+                    first_load_done_ = true;
+                    LetheCefAutomation::shared()->ClearPendingNavigation();
+                    std::cout << "[lethe-cef] explicit HTTP fallback failed; "
+                              << "preserving URL " << failed << std::endl;
+                    std::cout << "[e2e] nav-error " << errorCode << " "
+                              << errorText.ToString() << " " << failed
+                              << std::endl;
+                    std::cout.flush();
+                    return;
+                }
+            }
+            // HTTPS-first is enforced by the shared policy proxy. CEF can
+            // report the original http URL when the proxy's https attempt
+            // fails, so use that authoritative failed navigation as the
+            // candidate for the explicit, one-shot fallback action.
+            if (ctx_ && ctx_->httpsFirst && failed.rfind("http://", 0) == 0) {
+                fallback = failed;
+                http_fallback_allowed_[id] = fallback;
+            }
+        }
+        LetheCefChromeSetLoading(browser, false);
         LetheCefChromeUpdate(browser);
         main_loading_ = false;
         LetheCefAutomation::shared()->ClearPendingNavigation();
@@ -541,8 +1181,11 @@ void CefBrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
         // contract intact by turning that transport-only failure into the
         // same script-free block page used for locally classified private
         // destinations. Other network/TLS errors remain native CEF errors.
-        if (errorCode == ERR_TUNNEL_CONNECTION_FAILED &&
-            ctx_ && ctx_->cfg.isolatePrivateNetworks) {
+        if (ctx_ && !fallback.empty()) {
+            frame->LoadURL(errorPageUrl(failedUrl.ToString(),
+                                         errorText.ToString(), fallback));
+        } else if (errorCode == ERR_TUNNEL_CONNECTION_FAILED &&
+                   ctx_ && ctx_->cfg.isolatePrivateNetworks) {
             const std::string url = failedUrl.ToString();
             const std::string reason =
                 "secure DNS or policy-proxy resolution failed; Lethe "
@@ -614,9 +1257,21 @@ void CefBrowserClient::OnDownloadUpdated(
     }
     if (download_item->IsComplete() || download_item->IsCanceled() ||
         download_item->IsInterrupted()) {
-        std::cout << "[lethe-cef] download finished path="
-                  << download_item->GetFullPath().ToString()
+        const std::string path = download_item->GetFullPath().ToString();
+        std::cout << "[lethe-cef] download finished path=" << path
                   << " bytes=" << received << std::endl;
+        if (download_item->IsComplete() && !path.empty()) {
+            const std::string source = download_item->GetURL().ToString();
+            NSString* file = [NSString stringWithUTF8String:path.c_str()];
+            NSString* origin = [NSString stringWithUTF8String:source.c_str()];
+            LetheScanResult* verdict =
+                [LetheGuard handleFinishedDownloadAtPath:file source:origin window:nil];
+            if (verdict && verdict.level > LetheThreatLevelNotice) {
+                std::cout << "[lethe-cef] download scan: "
+                          << verdict.headline.UTF8String << " score="
+                          << verdict.score << std::endl;
+            }
+        }
     }
 }
 

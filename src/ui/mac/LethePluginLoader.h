@@ -29,6 +29,7 @@ extern NSString* const LethePluginsFolderChangedNotification;
 @property (nonatomic, copy) NSString* pluginDescription;
 @property (nonatomic, copy) NSString* matchHost;  // suffix match; @"*" = all
 @property (nonatomic) BOOL enabled;               // not in the disabled set
+@property (nonatomic, strong, nullable) NSData* sourceData; // securely read source, cached per file version
 @end
 
 @interface LethePluginLoader : NSObject

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 — 2026-09-03
+
+- Current Lethe release version normalized to the v0.1.x line. Runtime,
+  packaging, and platform metadata report `0.1.1` consistently.
+
 ## 1.3.3 — 2026-09-03
 
 - WebKit media upscaling: explicitly release enhancement WebGL contexts when

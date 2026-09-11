@@ -6,6 +6,7 @@
 
 #import "ui/mac/LetheShell.h"
 #import "ui/mac/LetheDownloads.h"
+#import "ui/mac/LetheGuard.h"
 #import "ui/mac/LetheBookmarks.h"
 #import "ui/mac/LetheHistory.h"
 #import "ui/mac/LethePermissions.h"
@@ -22,6 +23,33 @@
 
 #include "browser/url_input.h"
 #include "renderer/page_templates.h"
+
+@interface LetheAddressPillView : NSView
+@property(nonatomic) BOOL editing;
+@end
+
+@implementation LetheAddressPillView
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.wantsLayer = YES;
+        self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawOnSetNeedsDisplay;
+    }
+    return self;
+}
+
+- (void)updateLayer {
+    [super updateLayer];
+    if (!self.layer) return;
+    self.layer.cornerRadius = kLethePillRadius;
+    self.layer.borderWidth = kLetheHairline;
+    self.layer.backgroundColor = [NSColor controlBackgroundColor].CGColor;
+    self.layer.borderColor = (self.editing ? [NSColor controlAccentColor]
+                                           : [NSColor separatorColor]).CGColor;
+}
+
+@end
 
 static void* const kObserverContext = (void*)&kObserverContext;
 static NSString* const kTabbingIdentifier = @"org.aletheia.lethe.browser";
@@ -64,12 +92,6 @@ static NSString* const kQuietPageStyle =
     WKWebView* webView_;
     NSTextField* addressField_;
     NSImageView* lockIcon_;
-    NSButton* backButton_;
-    NSButton* forwardButton_;
-    NSButton* reloadButton_;
-    NSButton* readerButton_;
-    NSButton* bookmarkButton_;
-    NSButton* settingsButton_;
     NSView* addressPill_;
     NSToolbarItem* addressItem_;
     NSToolbarItem* backItem_;
@@ -88,6 +110,9 @@ static NSString* const kQuietPageStyle =
     NSMutableArray<WKDownload*>* downloads_;
     BOOL observing_;
     BOOL addressEditing_;
+    BOOL chromeStateUpdatePending_;
+    BOOL progressUpdatePending_;
+    double pendingProgress_;
     BOOL readerActive_;
     BOOL readerLoadPending_;
     BOOL readerFetching_;
@@ -179,6 +204,15 @@ static const void* kLetheDownloadItemKey = (const void*)"letheDownloadItem";
         window.titleVisibility = NSWindowTitleHidden;
         window.titlebarAppearsTransparent = YES;
         window.toolbarStyle = NSWindowToolbarStyleUnifiedCompact;
+        // A browser window created while another Space is active must follow
+        // the active Space. Without this AppKit can leave the window on the
+        // Space where the previous Lethe instance was launched: the process
+        // remains alive and the window remains in CGWindowList, but the user
+        // cannot interact with it from the current desktop. This is especially
+        // easy to trigger when two Lethe engine variants are benchmarked back
+        // to back. Move newly created tabs/windows to the current Space while
+        // preserving normal full-screen/tab behavior.
+        window.collectionBehavior |= NSWindowCollectionBehaviorMoveToActiveSpace;
         LetheWindowActionProxy* actionProxy = [[LetheWindowActionProxy alloc] init];
         actionProxy.owner = self;
         actionProxy.nextResponder = window.nextResponder;
@@ -267,13 +301,10 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     if ([identifier isEqualToString:kLetheToolbarAddress]) {
         item.view = [self makeAddressPill];
         addressItem_ = item;
-        // NSToolbar sizes custom views from the item, not from Auto Layout
-        // constraints inside the view. Give the item a real toolbar extent;
-        // otherwise AppKit can collapse the custom view to zero and leave a
-        // toolbar that exists in the hierarchy but is neither visible nor
-        // hit-testable.
-        item.minSize = NSMakeSize(220.0, kLetheGhostSize);
-        item.maxSize = NSMakeSize(2000.0, kLetheGhostSize);
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityHigh;
+        // The custom view owns its size through Auto Layout. Do not use the
+        // deprecated NSToolbarItem minSize/maxSize escape hatch; AppKit can
+        // now measure the item from the view's constraints.
     } else if ([identifier isEqualToString:kLetheToolbarBack]) {
         // Use NSToolbarItem's native action path for chrome controls. Custom
         // NSButton views inside an NSToolbar can become visually present but
@@ -285,6 +316,7 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
         item.toolTip = @"Back";
         item.target = self;
         item.action = @selector(goBack:);
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityStandard;
         backItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarForward]) {
         item.image = [NSImage imageWithSystemSymbolName:@"chevron.right"
@@ -293,6 +325,7 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
         item.toolTip = @"Forward";
         item.target = self;
         item.action = @selector(goForward:);
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityStandard;
         forwardItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarReload]) {
         item.image = [NSImage imageWithSystemSymbolName:@"arrow.clockwise"
@@ -301,6 +334,7 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
         item.toolTip = @"Reload";
         item.target = self;
         item.action = @selector(reloadOrStop:);
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityStandard;
         reloadItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarReader]) {
         item.image = [NSImage imageWithSystemSymbolName:@"doc.plaintext"
@@ -309,6 +343,7 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
         item.toolTip = @"Reader View";
         item.target = self;
         item.action = @selector(toggleReader:);
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityLow;
         readerItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarBookmark]) {
         item.image = [NSImage imageWithSystemSymbolName:@"bookmark"
@@ -317,6 +352,7 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
         item.toolTip = @"Bookmark";
         item.target = self;
         item.action = @selector(toggleBookmark:);
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityLow;
         bookmarkItem_ = item;
     } else if ([identifier isEqualToString:kLetheToolbarSettings]) {
         item.image = [NSImage imageWithSystemSymbolName:@"gearshape"
@@ -325,6 +361,7 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
         item.toolTip = @"Settings";
         item.target = self;
         item.action = @selector(showSettings:);
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityHigh;
         settingsItem_ = item;
     } else {
         return nil;
@@ -343,18 +380,25 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:
     (NSToolbar *)toolbar {
     (void)toolbar;
-    return [self toolbarAllowedItemIdentifiers:toolbar];
+    // Keep the address field visually centered between the navigation and
+    // action clusters. A single flexible spacer biases the field toward the
+    // right as the window grows, which makes the chrome feel unlike a normal
+    // browser at wide resolutions.
+    return @[ kLetheToolbarBack, kLetheToolbarForward, kLetheToolbarReload,
+              NSToolbarFlexibleSpaceItemIdentifier, kLetheToolbarAddress,
+              NSToolbarFlexibleSpaceItemIdentifier, kLetheToolbarReader,
+              kLetheToolbarBookmark, kLetheToolbarSettings ];
 }
 
 // The address pill: hairline-bordered rounded field on the paper
 // background. The lock glyph and the field are its only contents.
 - (NSView*)makeAddressPill {
-    NSView* pill = [[NSView alloc] initWithFrame:NSZeroRect];
-    pill.wantsLayer = YES;
-    pill.layer.cornerRadius = kLethePillRadius;
-    pill.layer.borderWidth = kLetheHairline;
+    LetheAddressPillView* pill = [[LetheAddressPillView alloc] initWithFrame:NSZeroRect];
     [pill.heightAnchor constraintEqualToConstant:kLetheGhostSize].active = YES;
-    [pill.widthAnchor constraintGreaterThanOrEqualToConstant:220].active = YES;
+    // The browser window itself bottoms out at 480pt. Keep the omnibox
+    // compressible enough that the native toolbar never forces AppKit to
+    // clip/overflow its navigation controls at that minimum size.
+    [pill.widthAnchor constraintGreaterThanOrEqualToConstant:180].active = YES;
     // The pill tracks the toolbar width: cheap, deterministic resize layout
     // (no autolayout dance inside NSToolbar, which does not expand custom
     // views on its own).
@@ -398,35 +442,30 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     [self layoutAddressPill];
 }
 
+- (void)updateAddressPillAppearance {
+    if (!addressPill_) return;
+    LetheAddressPillView* pill = (LetheAddressPillView*)addressPill_;
+    pill.editing = addressEditing_;
+    [pill setNeedsDisplay:YES];
+}
+
 // Keep the pill wide: window width minus the fixed edges (traffic lights,
 // nav buttons, reader, settings, spacing). The toolbar centers the flexible
 // space around it.
 - (void)layoutAddressPill {
     if (!addressPillWidth_ || !self.window) return;
     const CGFloat w = self.window.contentView.bounds.size.width;
-    // Traffic lights + navigation + reader/settings + gaps.
-    CGFloat pill = w - 316.0;
-    if (pill < 220) pill = 220;
+    // Chrome-like proportions: the omnibox should be prominent without
+    // swallowing the entire toolbar on a wide display. Keep a useful
+    // minimum for compact windows and a bounded maximum for ultrawide ones.
+    CGFloat pill = w * 0.50;
+    if (pill < 180) pill = 180;
+    if (pill > 760) pill = 760;
     addressPillWidth_.constant = pill;
 }
 
 - (void)buildChrome {
     NSView* content = self.window.contentView;
-
-    // Ghost buttons first: the toolbar delegate asks for their views the
-    // moment the toolbar is attached to the window.
-    backButton_ = [self chromeButtonWithSymbol:@"chevron.left" label:@"Back"
-                                        action:@selector(goBack:)];
-    forwardButton_ = [self chromeButtonWithSymbol:@"chevron.right" label:@"Forward"
-                                           action:@selector(goForward:)];
-    reloadButton_ = [self chromeButtonWithSymbol:@"arrow.clockwise" label:@"Reload"
-                                          action:@selector(reloadOrStop:)];
-    readerButton_ = [self chromeButtonWithSymbol:@"doc.plaintext" label:@"Reader View"
-                                          action:@selector(toggleReader:)];
-    bookmarkButton_ = [self chromeButtonWithSymbol:@"bookmark" label:@"Bookmark"
-                                              action:@selector(toggleBookmark:)];
-    settingsButton_ = [self chromeButtonWithSymbol:@"gearshape" label:@"Settings"
-                                            action:@selector(showSettings:)];
 
     // --- Toolbar (Lethe Quiet: one flat row, ghost buttons, one pill) ----
     NSToolbar* toolbar = [[NSToolbar alloc]
@@ -435,6 +474,7 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     toolbar.displayMode = NSToolbarDisplayModeIconOnly;
     toolbar.allowsUserCustomization = NO;
     toolbar.autosavesConfiguration = NO;
+    toolbar.showsBaselineSeparator = NO;
     self.window.toolbar = toolbar;
 
     // --- Find bar (collapsed until ⌘F) -----------------------------------
@@ -547,23 +587,54 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
         return;
     }
-    if ([keyPath isEqualToString:@"title"] || [keyPath isEqualToString:@"URL"]) {
-        [self updateTitle];
-        [self updateAddress];
-    } else if ([keyPath isEqualToString:@"estimatedProgress"]) {
-        progress_.doubleValue = webView_.estimatedProgress;
-    } else if ([keyPath isEqualToString:@"loading"]) {
-        progress_.hidden = !webView_.loading;
-        if (!webView_.loading) progress_.doubleValue = 0;
-        [self updateReloadButton];
-    } else if ([keyPath isEqualToString:@"hasOnlySecureContent"]) {
-        [self updateLockIcon];
-    } else {
-        [self updateNavigationButtons];
+    if ([keyPath isEqualToString:@"estimatedProgress"]) {
+        pendingProgress_ = webView_.estimatedProgress;
+        // WebKit can emit a dense stream of estimatedProgress KVO updates
+        // during large navigations. Limit native progress-bar transactions
+        // to roughly one display interval; the final loading=false update
+        // below still clears the bar immediately. This keeps navigation
+        // feedback responsive without turning every network progress sample
+        // into an AppKit layout/display transaction.
+        if (!progressUpdatePending_) {
+            progressUpdatePending_ = YES;
+            __weak BrowserWindowController* weakSelf = self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                          (int64_t)(NSEC_PER_SEC / 60)),
+                           dispatch_get_main_queue(), ^{
+                BrowserWindowController* strongSelf = weakSelf;
+                if (!strongSelf) return;
+                strongSelf->progressUpdatePending_ = NO;
+                strongSelf->progress_.doubleValue = strongSelf->pendingProgress_;
+            });
+        }
+        return;
     }
+    if ([keyPath isEqualToString:@"loading"]) {
+        progress_.hidden = !webView_.loading;
+        if (!webView_.loading) {
+            pendingProgress_ = 0;
+            progress_.doubleValue = 0;
+        }
+    }
+    [self scheduleChromeStateUpdate];
 }
 
 #pragma mark - Chrome state
+
+- (void)scheduleChromeStateUpdate {
+    if (chromeStateUpdatePending_) return;
+    chromeStateUpdatePending_ = YES;
+    __weak BrowserWindowController* weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        BrowserWindowController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf->chromeStateUpdatePending_ = NO;
+        [strongSelf updateTitle];
+        [strongSelf updateAddress];
+        [strongSelf updateNavigationButtons];
+        [strongSelf updateReloadButton];
+    });
+}
 
 - (void)updateTitle {
     NSString* title = webView_.title;
@@ -612,8 +683,6 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
 }
 
 - (void)updateNavigationButtons {
-    backButton_.enabled = webView_.canGoBack;
-    forwardButton_.enabled = webView_.canGoForward;
     backItem_.enabled = webView_.canGoBack;
     forwardItem_.enabled = webView_.canGoForward;
 }
@@ -622,9 +691,6 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     const BOOL loading = webView_.loading;
     NSString* symbol = loading ? @"xmark" : @"arrow.clockwise";
     NSString* label = loading ? @"Stop" : @"Reload";
-    reloadButton_.image = [NSImage imageWithSystemSymbolName:symbol
-                                     accessibilityDescription:label];
-    reloadButton_.toolTip = label;
     reloadItem_.image = [NSImage imageWithSystemSymbolName:symbol
                                      accessibilityDescription:label];
     reloadItem_.toolTip = label;
@@ -976,8 +1042,6 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     [self refreshBookmarkIcon];
     NSString* symbol = added ? @"bookmark.fill" : @"bookmark";
     NSString* label = added ? @"Bookmarked" : @"Bookmark";
-    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:symbol
-                                      accessibilityDescription:label];
     bookmarkItem_.image = [NSImage imageWithSystemSymbolName:symbol
                                       accessibilityDescription:label];
 }
@@ -987,8 +1051,6 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     BOOL has = url.length && [[LetheBookmarks shared] containsURL:url];
     NSString* symbol = has ? @"bookmark.fill" : @"bookmark";
     NSString* label = has ? @"Bookmarked" : @"Bookmark";
-    bookmarkButton_.image = [NSImage imageWithSystemSymbolName:symbol
-                                      accessibilityDescription:label];
     bookmarkItem_.image = [NSImage imageWithSystemSymbolName:symbol
                                       accessibilityDescription:label];
 }
@@ -1116,12 +1178,16 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
 #pragma mark - NSTextFieldDelegate (address + find)
 
 - (void)controlTextDidBeginEditing:(NSNotification*)note {
-    if (note.object == addressField_) addressEditing_ = YES;
+    if (note.object == addressField_) {
+        addressEditing_ = YES;
+        [self updateAddressPillAppearance];
+    }
 }
 
 - (void)controlTextDidEndEditing:(NSNotification*)note {
     if (note.object == addressField_) {
         addressEditing_ = NO;
+        [self updateAddressPillAppearance];
         [self updateAddress];
     }
 }
@@ -1132,6 +1198,7 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     if (command == @selector(cancelOperation:)) {
         if (control == addressField_) {
             addressEditing_ = NO;
+            [self updateAddressPillAppearance];
             [self updateAddress];
             [self.window makeFirstResponder:webView_];
             return YES;
@@ -1169,6 +1236,22 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     if ([scheme isEqualToString:@"about"] || [scheme isEqualToString:@"blob"]) {
         handler(WKNavigationActionPolicyAllow);
         return;
+    }
+    // Built-in site guard: a local, structural assessment of the target.
+    // Only top-level navigations, and only for network schemes, so a
+    // subresource cannot raise a modal in the middle of a page load.
+    if (isMainFrame && [[LethePreferences shared] siteGuard] &&
+        ([scheme isEqualToString:@"https"] || [scheme isEqualToString:@"http"])) {
+        LetheScanResult* verdict = [LetheGuard assessURL:url.absoluteString];
+        if (verdict.blocked && ![LetheGuard isHostAllowed:url.host ?: @""]) {
+            handler(WKNavigationActionPolicyCancel);
+            if ([LetheGuard presentNavigationWarning:verdict
+                                              forURL:url.absoluteString
+                                              window:self.window]) {
+                [self loadURL:url];
+            }
+            return;
+        }
     }
     if ([scheme isEqualToString:@"data"]) {
         // Top-level data: navigations are a phishing vector (Chrome blocks them too).
@@ -1261,25 +1344,24 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
         if (webView_.URL && ![webView_.URL.scheme isEqualToString:@"about"]) internalPageUrl_ = nil;
     }
     progress_.hidden = NO;
-    [self updateAddress];
+    [self scheduleChromeStateUpdate];
 }
 
 - (void)webView:(WKWebView*)webView
     didReceiveServerRedirectForProvisionalNavigation:(WKNavigation*)nav {
     (void)webView; (void)nav;
-    [self updateAddress];
+    [self scheduleChromeStateUpdate];
 }
 
 - (void)webView:(WKWebView*)webView didCommitNavigation:(WKNavigation*)nav {
     (void)webView; (void)nav;
-    [self updateAddress];
+    [self scheduleChromeStateUpdate];
 }
 
 - (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)nav {
     (void)webView; (void)nav;
     httpsUpgradedFrom_ = nil;
-    [self updateTitle];
-    [self updateAddress];
+    [self scheduleChromeStateUpdate];
     NSString* url = webView_.URL.absoluteString;
     if (url.length && [url hasPrefix:@"http"]) [[LetheHistory shared] recordVisit:url title:webView_.title ?: url];
 }
@@ -1434,6 +1516,21 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
     if (item) { item.state = LetheDownloadStateFinished; item.bytesReceived = item.bytesExpected > 0 ? item.bytesExpected : item.bytesReceived; [[LetheDownloadsController shared] updateItem:item]; }
     NSLog(@"[lethe] download finished: %@", download.originalRequest.URL.absoluteString);
     [NSApp requestUserAttention:NSInformationalRequest];
+    // Scan before the user can reach the file. The scan is local and reads
+    // at most the first few megabytes, so it adds no visible delay to the
+    // download itself.
+    NSString* path = item.destination.path;
+    NSString* source = download.originalRequest.URL.absoluteString;
+    if (path.length) {
+        LetheScanResult* verdict =
+            [LetheGuard handleFinishedDownloadAtPath:path source:source window:self.window];
+        if (verdict && item) {
+            item.threatSummary = verdict.level > LetheThreatLevelNotice
+                                     ? verdict.headline
+                                     : nil;
+            [[LetheDownloadsController shared] updateItem:item];
+        }
+    }
 }
 
 - (void)download:(WKDownload*)download

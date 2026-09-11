@@ -23,10 +23,13 @@
 
 // --- Metrics -------------------------------------------------------------
 
-// Chrome strip height. One row, nothing stacked.
-static const CGFloat kLetheChromeHeight = 44.0;
-// Square ghost-button edge. 28 = comfortable 44pt-row hit target.
-static const CGFloat kLetheGhostSize = 28.0;
+// Chrome strip height. One row, nothing stacked. Keep a little more vertical
+// breathing room than the minimum AppKit toolbar row so the glyphs do not
+// crowd the address field at retina scale.
+static const CGFloat kLetheChromeHeight = 48.0;
+// Square ghost-button edge. The 30pt control sits comfortably inside the
+// 48pt row while retaining a compact browser silhouette.
+static const CGFloat kLetheGhostSize = 30.0;
 // Pill radius for the address field and find field.
 static const CGFloat kLethePillRadius = 6.0;
 // Hairline thickness in points (drawn at 1 physical pixel via layer).
@@ -89,6 +92,18 @@ static inline NSButton *LetheGhostButton(NSString *symbol,
     b.contentTintColor = [NSColor secondaryLabelColor];
     b.imageScaling = NSImageScaleProportionallyDown;
     b.toolTip = label;
+    b.showsBorderOnlyWhileMouseInside = YES;
+    b.accessibilityRole = NSAccessibilityButtonRole;
+    b.accessibilityLabel = label;
+    b.accessibilityHelp = label;
+    [b setContentHuggingPriority:NSLayoutPriorityRequired
+                    forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [b setContentHuggingPriority:NSLayoutPriorityRequired
+                    forOrientation:NSLayoutConstraintOrientationVertical];
+    [b setContentCompressionResistancePriority:NSLayoutPriorityRequired
+                                 forOrientation:NSLayoutConstraintOrientationHorizontal];
+    [b setContentCompressionResistancePriority:NSLayoutPriorityRequired
+                                 forOrientation:NSLayoutConstraintOrientationVertical];
     [b.widthAnchor constraintEqualToConstant:kLetheGhostSize].active = YES;
     [b.heightAnchor constraintEqualToConstant:kLetheGhostSize].active = YES;
     return b;

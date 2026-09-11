@@ -202,9 +202,17 @@ NSString* LetheMediaUpscalerScript(void) {
         fastGl.drawArrays(fastGl.TRIANGLE_STRIP,0,4);
       } catch(_) { remove(e); return; }
       e.frames=(e.frames||0)+1;
-      e.lastFrame={sourceWidth:el.videoWidth,sourceHeight:el.videoHeight,
-        outputWidth:e.w,outputHeight:e.h,scaleX:e.w/el.videoWidth,
-        scaleY:e.h/el.videoHeight,time:el.currentTime};
+      // Reuse the diagnostics object allocated by the full setup path.
+      // requestVideoFrameCallback can run at 60/120 Hz; allocating a fresh
+      // object for every decoded frame adds avoidable GC pressure to the
+      // page's main JS world without changing the exposed diagnostics.
+      var lf=e.lastFrame;
+      if(lf){
+        lf.sourceWidth=el.videoWidth; lf.sourceHeight=el.videoHeight;
+        lf.outputWidth=e.w; lf.outputHeight=e.h;
+        lf.scaleX=e.w/el.videoWidth; lf.scaleY=e.h/el.videoHeight;
+        lf.time=el.currentTime;
+      }
       scheduleVideo(e);
       return;
     }
@@ -525,7 +533,10 @@ NSString* LetheMediaUpscalerScript(void) {
                                    ([NSDate timeIntervalSinceReferenceDate] - t0) * 1000.0]);
             } else {
                 std::cerr << "[lethe] tracker protection: rule compile failed: "
-                          << (err.localizedDescription.UTF8String ?: "unknown") << std::endl;
+                          << (err.localizedDescription.UTF8String ?: "unknown")
+                          << " userInfo="
+                          << (err.userInfo.description.UTF8String ?: "{}")
+                          << std::endl;
             }
             done();
         }];
@@ -564,7 +575,10 @@ NSString* LetheMediaUpscalerScript(void) {
     NSString* initial = saved.count ? saved.firstObject[@"url"]
         : (ctx_->cfg.initialUrl.empty() ? nil : @(ctx_->cfg.initialUrl.c_str()));
     BrowserWindowController* c = [self openWindowWithURL:initial];
-    // Chrome-style: the tab strip is always there, even with one tab.
+    // Keep the native tab surface visible from the first tab. A browser should
+    // communicate its tab model continuously rather than changing its chrome
+    // geometry when the second tab appears; AppKit owns the interaction and
+    // retains native drag/reorder behavior.
     if (c.window.tabGroup && !c.window.tabGroup.tabBarVisible) {
         [c.window toggleTabBar:nil];
     }
@@ -735,6 +749,18 @@ NSString* LetheMediaUpscalerScript(void) {
     [c showWindow:nil];
     [c.window makeKeyAndOrderFront:nil];
     c.window.tabbingMode = NSWindowTabbingModePreferred;
+    // A lone native tab consumes a full second titlebar row on macOS and
+    // renders as a wide, stretched tab. Keep the single-tab state visually
+    // compact; AppKit will reveal the native strip automatically once another
+    // tab is attached.
+    // AppKit may finish installing the tab group one run-loop turn after the
+    // window is ordered front. Collapse it after that deferred setup rather
+    // than racing the native titlebar layout.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindowTabGroup* group = c.window.tabGroup;
+        if (group && group.windows.count == 1 && group.tabBarVisible)
+            [c.window toggleTabBar:nil];
+    });
     if (url.length) [c loadAddress:url]; else [c showNewTabPage];
     return c;
 }
@@ -754,6 +780,11 @@ NSString* LetheMediaUpscalerScript(void) {
     [c showWindow:nil];
     [c.window makeKeyAndOrderFront:nil];
     c.window.tabbingMode = NSWindowTabbingModePreferred;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindowTabGroup* group = c.window.tabGroup;
+        if (group && group.windows.count == 1 && group.tabBarVisible)
+            [c.window toggleTabBar:nil];
+    });
     if (url.length) [c loadAddress:url]; else [c showNewTabPage];
     std::cout << "[lethe] oblivion window opened (isolated in-memory store, https-only, "
                  "tracker protection forced, stealth UA)" << std::endl;
@@ -788,6 +819,15 @@ NSString* LetheMediaUpscalerScript(void) {
 
 - (void)controllerDidClose:(BrowserWindowController*)controller {
     [controllers_ removeObject:controller];
+    // When the last tab in a group is closed, AppKit can leave the tab strip
+    // visible on the surviving window. Collapse that stale single-tab strip
+    // so the chrome keeps the same compact geometry as a fresh window.
+    for (BrowserWindowController* c in controllers_) {
+        NSWindowTabGroup* group = c.window.tabGroup;
+        if (group && group.windows.count == 1 && group.tabBarVisible) {
+            [c.window toggleTabBar:nil];
+        }
+    }
 }
 
 // File > New Tab with no browser window open (responder chain ends here).
@@ -1076,7 +1116,8 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
         else if (prefs.upscaler == LetheUpscalerFSR1) webUpscalerMode = 2;
         else if (prefs.upscaler == LetheUpscalerDLSSLike) webUpscalerMode = 3;
     }
-    if (ctx_ && ctx_->engine) {
+    if (ctx_ && ctx_->engine &&
+        static_cast<NSInteger>(ctx_->engine->renderer()->mediaUpscalerMode()) != webUpscalerMode) {
         lethe::MediaUpscalerMode mode = lethe::MediaUpscalerMode::None;
         const char* env = getenv("LETHE_UPSCALER");
         if (env && *env) {
@@ -1124,14 +1165,22 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     //    stealth-ua, vpn flags) and (re)install the enabled script plugins.
     reg.applyTo(*ctx_);
     [[LethePluginLoader shared] installInto:[self userContentController]];
-    // Tracker blocking: remove the currently-installed list (if any) and
-    // optionally install a fresh one.
+    // Tracker blocking is already prepared before the first window is
+    // created. Avoid immediately doing the same WebKit store lookup/add a
+    // second time from applyPreferences(); that duplicate async round-trip
+    // sits directly on the cold-start path. Runtime preference changes still
+    // take the update path when the desired state differs from the installed
+    // state.
     WKUserContentController* uc = [self userContentController];
-    if (trackerRuleList_) {
+    const BOOL trackerInstalled = trackerRuleList_ != nil;
+    if (prefs.trackerBlocking == trackerInstalled) {
+        // prepareTrackerProtection: already installed the exact immutable
+        // rules for the current blocklist when this is the initial apply.
+    } else if (trackerInstalled) {
         [uc removeContentRuleList:trackerRuleList_];
         trackerRuleList_ = nil;
-    }
-    if (prefs.trackerBlocking) {
+        trackerRuleCount_ = 0;
+    } else if (prefs.trackerBlocking) {
         const lethe::TrackerBlocklist& list = lethe::builtinTrackerBlocklist();
         NSString* ident = @(lethe::trackerRulesIdentifier(list).c_str());
         WKContentRuleListStore* store = [WKContentRuleListStore defaultStore];

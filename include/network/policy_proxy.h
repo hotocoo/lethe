@@ -66,11 +66,27 @@ public:
         // could ride Lethe's VPN tunnel and policy identity. Empty = off
         // (tests / engines that cannot send proxy credentials).
         std::string authToken;
-        // Worker threads in the connection-handling pool. 0 = auto (16-32
-        // workers based on host concurrency). CONNECT tunnels occupy a
-        // worker for their lifetime, so the higher ceiling prevents
-        // media-heavy pages from starving unrelated navigations.
+        // Worker threads in the connection-handling pool. 0 = auto (roughly
+        // 3x reported hardware concurrency, bounded to 16-32 workers).
+        // CONNECT tunnels are handed to a separate bounded tunnel set, so oversizing this pool only adds
+        // scheduler/cache contention under high fan-out.
         size_t workerThreads = 0;
+        // Event-driven HTTP/1.x forwarding. Workers perform authentication
+        // and policy-gated upstream establishment, then hand the live
+        // sockets to one shared kqueue reactor. CONNECT remains on the
+        // existing tunnel path. Default stays off until benchmark
+        // verification proves parity and a material fan-out win.
+        bool enableHttpReactor = false;
+        // Optional secure frontend for Chromium: TLS-protected HTTPS proxy
+        // with HTTP/2 multiplexing. The existing authenticated HTTP proxy
+        // remains the policy backend; this frontend is opt-in until it has
+        // passed the full CEF security/performance benchmark.
+        bool enableHttpsProxy = false;
+        // Number of kqueue reactor shards. Each shard owns its event loop
+        // and socket set; the proxy load-balances connections across them.
+        // A small shard count avoids turning one reactor CPU into the new
+        // fan-out ceiling.
+        size_t httpReactorShards = 4;
     };
 
     // 32 random bytes as hex (OpenSSL RAND_bytes); "" if the CSPRNG fails.
@@ -78,7 +94,7 @@ public:
     // The exact Proxy-Authorization header value the engine must send.
     static std::string basicCredentialFor(const std::string& token);
 
-    PolicyProxyServer() = default;
+    PolicyProxyServer();
     ~PolicyProxyServer();
 
     PolicyProxyServer(const PolicyProxyServer&) = delete;
@@ -91,12 +107,23 @@ public:
     void stop();
 
     int port() const { return port_; }
+    int httpsProxyPort() const { return httpsProxyPort_.load(std::memory_order_relaxed); }
+    const std::string& httpsProxySpkiSha256() const { return httpsProxySpkiSha256_; }
     const std::string& lastError() const { return lastError_; }
 
 private:
+    class HttpForwardReactor;
+    class TunnelReactor;
+    struct ConnectTask {
+        int clientFd = -1;
+        std::string host;
+        int port = 0;
+    };
     void acceptLoop();
     void serveConnection(int clientFd);
     void workerLoop();
+    void connectWorkerLoop();
+    void serveConnect(int clientFd, std::string host, int port);
     HttpClient::PolicyDialConfig dialConfig() const;
 
     // One forwarding HttpClient per proxied request chain (cheap relative
@@ -106,6 +133,7 @@ private:
     Options opts_;
     int listenFd_ = -1;
     std::atomic<int> port_{0};
+    std::atomic<int> httpsProxyPort_{0};
     std::atomic<bool> running_{false};
     // Set on stop() so in-flight connection handlers (CONNECT splice loops,
     // long reads) can notice shutdown and bail instead of holding a worker
@@ -124,10 +152,19 @@ private:
     bool isStopping() const { return stopping_.load(std::memory_order_relaxed); }
 
     // Fixed-size worker pool: accept() pushes a fresh client fd, workers
-    // pop and serve. CONNECT tunnels are long-lived, so the auto size is
-    // deliberately 16-32 rather than the older 8-16 range; this keeps
-    // media-heavy pages from creating p99.9 queueing for new navigations.
+    // pop and serve. CONNECT tunnels use the separate bounded tunnel set;
+    // auto sizing is modestly over-subscribed for I/O-heavy browser fan-out.
     std::vector<std::thread> workers_;
+    // CONNECT admission is deliberately separate from the request pool.
+    // dialPolicyChecked() performs DoH/policy/TCP setup synchronously; doing
+    // that work on the ordinary request workers makes HTTPS fan-out serialize
+    // behind the small request pool before the tunnel reactor ever sees it.
+    // These workers are bounded and still execute the identical policy gate.
+    std::vector<std::thread> connectWorkers_;
+    std::deque<ConnectTask> connectQueue_;
+    std::mutex connectQueue_mtx_;
+    std::condition_variable connectQueue_cv_;
+    size_t connectWorkerCount_ = 0;
     // CONNECT tunnels are long-lived (video/audio/WebSocket/etc.). Keep them
     // out of the request worker pool so a media-heavy page cannot consume
     // every policy worker and create a p99.9 queueing tail for new requests.
@@ -139,12 +176,24 @@ private:
     std::mutex tunnelWorkers_mtx_;
     void reapTunnelWorkers();
     static constexpr size_t kMaxTunnelWorkers = 128;
+    std::vector<std::unique_ptr<HttpForwardReactor>> httpReactors_;
+    std::atomic<size_t> httpReactorRoundRobin_{0};
+    std::vector<std::unique_ptr<TunnelReactor>> tunnelReactors_;
+    std::atomic<size_t> tunnelReactorRoundRobin_{0};
     std::deque<int> queue_;
     std::mutex queue_mtx_;
     std::condition_variable queue_cv_;
     size_t workerCount_ = 0;
 
     std::string lastError_;
+    std::string httpsProxySpkiSha256_;
+    int httpsProxyPid_ = -1;
+    std::string httpsProxyKeyPath_;
+    std::string httpsProxyCertPath_;
+    std::string httpsProxyConfigPath_;
+    std::string httpsProxyMrubyPath_;
+    bool startHttpsProxyFrontend();
+    void stopHttpsProxyFrontend();
     // Precomputed once at start: proxy authentication is on the hot path
     // for every engine connection, so do not rebuild the Base64 credential
     // (and allocate) for every request.
