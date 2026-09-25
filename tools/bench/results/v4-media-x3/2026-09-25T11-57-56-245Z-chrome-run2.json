@@ -1,0 +1,347 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 153.0.8010.53",
+  "run": 2,
+  "startedAt": "2026-09-25T11:57:56.245Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "media"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 490.0857500000002,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": {
+    "hdrDisplay": false,
+    "hdrVideo": false,
+    "p3": false,
+    "video": {
+      "h264": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "hevc": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "ysp",
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "vp8": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ys",
+        "mcHdr": null,
+        "wcDec": "sw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "vp9": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "vp9_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "av1": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "av1_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "n",
+        "rec": true
+      }
+    },
+    "audio": {
+      "aac": {
+        "play": "probably",
+        "mse": true
+      },
+      "opus": {
+        "play": "probably",
+        "mse": true
+      },
+      "flac": {
+        "play": "probably",
+        "mse": false
+      },
+      "mp3": {
+        "play": "probably",
+        "mse": true
+      },
+      "vorbis": {
+        "play": "probably",
+        "mse": false
+      },
+      "alac": {
+        "play": "no",
+        "mse": false
+      }
+    },
+    "encode": {
+      "h264": {
+        "fps": 325.4,
+        "kbps": 7631
+      },
+      "hevc": {
+        "fps": 348.6,
+        "kbps": 7370
+      },
+      "vp8": {
+        "fps": 354.5,
+        "kbps": 8053
+      },
+      "vp9": {
+        "fps": 350,
+        "kbps": 5379
+      },
+      "av1": {
+        "fps": 189.1,
+        "kbps": 5489
+      }
+    },
+    "decode": {
+      "h264": {
+        "fps": 1067.6,
+        "frames": 120
+      },
+      "hevc": {
+        "fps": 2564.1,
+        "frames": 120
+      },
+      "vp8": {
+        "fps": 396.8,
+        "frames": 120
+      },
+      "vp9": {
+        "fps": 778.7,
+        "frames": 120
+      },
+      "av1": {
+        "fps": 2146.7,
+        "frames": 120
+      }
+    }
+  },
+  "enhancer": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 490.09400000000005,
+      "rssMb": 930.453125,
+      "processes": 8,
+      "cpuSec": 0.75,
+      "breakdown": [
+        {
+          "pid": 10980,
+          "rssMb": 212.4,
+          "cpuSec": 0.38,
+          "name": "Google"
+        },
+        {
+          "pid": 10984,
+          "rssMb": 113.5,
+          "cpuSec": 0.07,
+          "name": "Google"
+        },
+        {
+          "pid": 10985,
+          "rssMb": 91.2,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 10986,
+          "rssMb": 74.2,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 10988,
+          "rssMb": 156.6,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 10990,
+          "rssMb": 117.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 10991,
+          "rssMb": 82.4,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 10992,
+          "rssMb": 82.5,
+          "cpuSec": 0.03,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "media:mem",
+      "tMs": 3597.4564580000006,
+      "rssMb": 1731.9375,
+      "processes": 12,
+      "cpuSec": 8.84,
+      "breakdown": [
+        {
+          "pid": 10980,
+          "rssMb": 243.8,
+          "cpuSec": 1.14,
+          "name": "Google"
+        },
+        {
+          "pid": 10984,
+          "rssMb": 149,
+          "cpuSec": 0.76,
+          "name": "Google"
+        },
+        {
+          "pid": 10985,
+          "rssMb": 101.9,
+          "cpuSec": 0.11,
+          "name": "Google"
+        },
+        {
+          "pid": 10986,
+          "rssMb": 75.1,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 10988,
+          "rssMb": 181.8,
+          "cpuSec": 0.17,
+          "name": "Google"
+        },
+        {
+          "pid": 10990,
+          "rssMb": 118.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 10991,
+          "rssMb": 273.3,
+          "cpuSec": 6.31,
+          "name": "Google"
+        },
+        {
+          "pid": 10992,
+          "rssMb": 119.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 11007,
+          "rssMb": 115.1,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 11029,
+          "rssMb": 99.3,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 11030,
+          "rssMb": 131.2,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 11031,
+          "rssMb": 123.3,
+          "cpuSec": 0.06,
+          "name": "Google"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "\nDevTools listening on ws://127.0.0.1:58851/devtools/browser/fcf47c02-2144-47f6-9c96-76e5d69c7aba",
+    "Trying to load the allocator multiple times. This is *not* supported.",
+    "[OpenH264] this = 0x0x10c00d92220, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.",
+    "[OpenH264] this = 0x0x10c00e2d380, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.",
+    "[10980:1530185:0925/195759.217589:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[10980:1530185:0925/195759.237891:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[10980:1530185:0925/195759.305171:ERROR:google_apis/gcm/engine/mcs_client.cc:702]   Error code: 401  Error message: Authentication Failed: wrong_secret\n[10980:1530185:0925/195759.305182:ERROR:google_apis/gcm/engine/mcs_client.cc:704] Failed to log in to GCM, resetting connection.",
+    "[10980:1530185:0925/195759.581850:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR"
+  ]
+}

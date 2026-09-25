@@ -1,0 +1,347 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 153.0.8010.53",
+  "run": 3,
+  "startedAt": "2026-09-25T11:58:00.216Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "media"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 383.72462500000074,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": {
+    "hdrDisplay": false,
+    "hdrVideo": false,
+    "p3": false,
+    "video": {
+      "h264": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "hevc": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "ysp",
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "vp8": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ys",
+        "mcHdr": null,
+        "wcDec": "sw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "vp9": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "vp9_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "av1": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "av1_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "n",
+        "rec": true
+      }
+    },
+    "audio": {
+      "aac": {
+        "play": "probably",
+        "mse": true
+      },
+      "opus": {
+        "play": "probably",
+        "mse": true
+      },
+      "flac": {
+        "play": "probably",
+        "mse": false
+      },
+      "mp3": {
+        "play": "probably",
+        "mse": true
+      },
+      "vorbis": {
+        "play": "probably",
+        "mse": false
+      },
+      "alac": {
+        "play": "no",
+        "mse": false
+      }
+    },
+    "encode": {
+      "h264": {
+        "fps": 317.5,
+        "kbps": 7631
+      },
+      "hevc": {
+        "fps": 343.4,
+        "kbps": 7370
+      },
+      "vp8": {
+        "fps": 356.3,
+        "kbps": 8053
+      },
+      "vp9": {
+        "fps": 340.9,
+        "kbps": 5379
+      },
+      "av1": {
+        "fps": 191.2,
+        "kbps": 5489
+      }
+    },
+    "decode": {
+      "h264": {
+        "fps": 1083,
+        "frames": 120
+      },
+      "hevc": {
+        "fps": 2547.8,
+        "frames": 120
+      },
+      "vp8": {
+        "fps": 393.1,
+        "frames": 120
+      },
+      "vp9": {
+        "fps": 776.7,
+        "frames": 120
+      },
+      "av1": {
+        "fps": 2166.1,
+        "frames": 120
+      }
+    }
+  },
+  "enhancer": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 383.7287919999999,
+      "rssMb": 976.6875,
+      "processes": 8,
+      "cpuSec": 0.77,
+      "breakdown": [
+        {
+          "pid": 11090,
+          "rssMb": 214.7,
+          "cpuSec": 0.38,
+          "name": "Google"
+        },
+        {
+          "pid": 11094,
+          "rssMb": 105,
+          "cpuSec": 0.07,
+          "name": "Google"
+        },
+        {
+          "pid": 11095,
+          "rssMb": 91.2,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 11096,
+          "rssMb": 74.3,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 11098,
+          "rssMb": 156.8,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 11100,
+          "rssMb": 117.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 11101,
+          "rssMb": 98.6,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 11102,
+          "rssMb": 118.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "media:mem",
+      "tMs": 3491.516667,
+      "rssMb": 1735.84375,
+      "processes": 12,
+      "cpuSec": 8.77,
+      "breakdown": [
+        {
+          "pid": 11090,
+          "rssMb": 245.8,
+          "cpuSec": 1.1,
+          "name": "Google"
+        },
+        {
+          "pid": 11094,
+          "rssMb": 149.5,
+          "cpuSec": 0.76,
+          "name": "Google"
+        },
+        {
+          "pid": 11095,
+          "rssMb": 101.8,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 11096,
+          "rssMb": 75.2,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 11098,
+          "rssMb": 181.2,
+          "cpuSec": 0.16,
+          "name": "Google"
+        },
+        {
+          "pid": 11100,
+          "rssMb": 118.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 11101,
+          "rssMb": 273.7,
+          "cpuSec": 6.3,
+          "name": "Google"
+        },
+        {
+          "pid": 11102,
+          "rssMb": 119.3,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 11117,
+          "rssMb": 115.2,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 11139,
+          "rssMb": 101.1,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 11140,
+          "rssMb": 131.1,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 11141,
+          "rssMb": 123.3,
+          "cpuSec": 0.06,
+          "name": "Google"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "\nDevTools listening on ws://127.0.0.1:58912/devtools/browser/670d3275-92f9-4c4b-b63d-cbc1aacb10f8",
+    "Trying to load the allocator multiple times. This is *not* supported.",
+    "[OpenH264] this = 0x0x12c00d91ad0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.",
+    "[OpenH264] this = 0x0x12c00e2d680, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.",
+    "[11090:1530884:0925/195802.978897:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[11090:1530884:0925/195802.981875:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[11090:1530884:0925/195802.989027:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[11090:1530884:0925/195803.183812:ERROR:google_apis/gcm/engine/mcs_client.cc:702]   Error code: 401  Error message: Authentication Failed: wrong_secret\n[11090:1530884:0925/195803.183826:ERROR:google_apis/gcm/engine/mcs_client.cc:704] Failed to log in to GCM, resetting connection."
+  ]
+}

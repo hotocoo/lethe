@@ -640,16 +640,22 @@ WebKit shell is the full-codec engine.
 
 ## WebCodecs throughput (1080p, 120 frames, frames/s)
 
+Median of 3 runs (`tools/bench/results/v4-media-x3/`). A CEF source build
+was checking out in the background (load average 5-9), which affects all
+three browsers equally.
+
 | | Lethe (WebKit) enc / dec | Lethe (CEF) enc / dec | Chrome enc / dec |
 |---|---|---|---|
-| H.264 | **375** / 1,132 | 172 / 1,136 | 193 / 1,143 |
-| HEVC | **358** / 769 | n/a | 343 / **2,586** |
-| VP8 | 382 / 520 | 373 / 419 | 377 / 412 |
-| VP9 | 324 / 710 | **365** / 782 | 351 / 782 |
-| AV1 | **250** / 1,111 | 205 / **2,202** | 207 / 2,170 |
+| H.264 | 333 / 1,111 | 330 / 1,071 | 320 / 1,082 |
+| HEVC | 335 / 732 | n/a | 343 / **2,564** |
+| VP8 | 320 / **494** | 356 / 392 | 355 / 397 |
+| VP9 | 275 / 702 | 343 / 780 | 346 / 777 |
+| AV1 | **212** / 1,081 | 192 / **2,174** | 191 / 2,166 |
 
-The WebKit shell encodes H.264 about 2x faster than Blink (VideoToolbox
-real-time path). Blink decodes AV1 and HEVC about 2x faster in WebCodecs.
+Encode speed is at parity for H.264. A single earlier run showed Blink at
+half speed; that was a cold-start outlier, and the 3-run median corrects
+it. The WebKit shell leads VP8 decode and AV1 encode. Blink decodes AV1 and
+HEVC about 2x faster, and encodes VP8/VP9 about 1.1-1.25x faster.
 
 ## Media enhancer (FSR 1.0 + HDR enhance)
 
