@@ -156,3 +156,14 @@ LETHE_TEST_CASE(Ua_ModesResolveToDistinctStrings) {
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
 }
+
+LETHE_TEST_CASE(Env_UpscalerSharpModeKeepsMetalFX) {
+    for (const char* v : {"metalfx", "fsr", "metalfx-sharp", "fsr-sharp"}) {
+        EnvGuard g("LETHE_UPSCALER");
+        ::setenv("LETHE_UPSCALER", v, 1);
+        lethe::Config cfg;
+        cfg.media_upscaler = lethe::MediaUpscalerMode::None;
+        lethe::applyEnvironmentOverrides(cfg);
+        CHECK_TRUE(cfg.media_upscaler == lethe::MediaUpscalerMode::MetalFX);
+    }
+}

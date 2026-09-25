@@ -776,3 +776,50 @@ Stock CEF with no embedder code is as slow as Lethe CEF, in both runtime
 styles; Lethe is about 10% faster than the stock sample. This confirms the
 ~2x gap to Chrome is in CEF itself, not in anything Lethe adds. Closing it
 needs a change in CEF upstream.
+
+---
+
+# Safari comparison (v5, 2026-09-26)
+
+Safari still refuses WebDriver on this host, so `--browser safari-open`
+launches it with `open -a Safari`. The bench server appends a small script
+that waits for the step's own completion condition and POSTs the value
+back. Pages and workloads are byte-identical to every other browser.
+Startup and RSS are not measured this way. Raw data:
+`tools/bench/results/v5-safari/`. Safari 26.5 and Lethe use the same system
+WebKit.
+
+## Brutal suite, WebKit vs WebKit (median of 3)
+
+| Metric | Lethe (WebKit) | Safari 26.5 |
+|---|---|---|
+| DOM build, 404k nodes | **1,586 ms** | 3,797 ms |
+| DOM layout thrash | 6,520 ms | 6,701 ms |
+| DOM FPS | **58.4** | 21.6 |
+| Worker throughput (16 workers) | 5,162 Mops/s | 5,345 Mops/s |
+| IndexedDB write, 20k | **248 ms** | 295 ms |
+| IndexedDB cursor read, 20k | 787 ms | **322 ms** |
+| 4,000-layer paint FPS | **56.9** | 48.2 |
+| 1,000 mixed requests, rps | **3,676** | 3,106 |
+| 300 x 1 KB fetch (`netprobe`) | **3,750** | 2,970 |
+
+On the same engine, Lethe builds the big DOM 2.4x faster, renders it at
+2.7x the frame rate, and moves 18-26% more requests, with its policy proxy
+in the path. Worker throughput and layout thrash are engine-bound and tie.
+
+**Open gap: IndexedDB cursor read (2.4x slower than Safari).** Ruled out,
+each measured: the ephemeral store (`--persistent`: 801 ms), the policy
+proxy (791), tracker rules (789), the media enhancer (841), other open tabs
+(the page alone: 784-791), automation polling (500 ms interval), and App
+Nap/QoS (a latency-critical activity: 790-797). What remains is something
+Safari configures inside WebKit that WKWebView does not expose.
+
+## Media in Safari
+
+Safari plays all six playback clips and reports hardware WebCodecs for
+every codec. WebCodecs encode/decode (1 run, fps): H.264 286/992, HEVC
+304/930, VP8 241/486, VP9 267/706, AV1 206/1,062. Lethe WebKit is equal or
+ahead on encode (H.264 333, VP8 320) and within noise on decode. Safari has
+no built-in upscaler. With the same FSR1 script injected, it renders the
+640x360 to 1600x900 overlay (luma variance 11,046, close to Lethe WebKit's
+11,204) at 60 FPS with 0 dropped frames, and leaves the HDR10 clip alone.

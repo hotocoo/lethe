@@ -1,0 +1,71 @@
+{
+  "browser": "safari-open",
+  "label": "safari-load",
+  "env": {},
+  "browserArgs": [],
+  "version": "Safari 26.5",
+  "run": 3,
+  "startedAt": "2026-09-25T16:44:33.748Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "extreme",
+    "brutal"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": null,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": "dom=252509 build=75ms thrash=1743ms fps=…",
+    "js": "js matMul=6 crypto=0 rec=0 t=382ms",
+    "webgl": "init…",
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": "brutal-dom nodes=404011 build=3695ms thrash=6491ms fps=23.1",
+    "worker": "brutal-worker workers=16 cores=8 ops=30948200000 mops_s=5148.6 spawn_to_done=6011ms",
+    "storage": "brutal-storage n=20000 write=286ms read=322ms(20000) index=0ms localstorage=3ms wps=69930",
+    "paint": "brutal-paint layers=4000 fps=51.3",
+    "net": "brutal-net n=1000 cold=322ms rps=3106 warm=312ms rps=3205 mb=21.0 p50=155.0ms p95=174.0ms p99=178.0ms"
+  },
+  "media": null,
+  "enhancer": null,
+  "memory": [],
+  "log": [
+    "[safari-open] extreme:dom ok",
+    "[safari-open] extreme:js ok",
+    "[safari-open] extreme:webgl ok",
+    "[safari-open] extreme:net ok",
+    "[safari-open] brutal:dom ok",
+    "[safari-open] brutal:worker ok",
+    "[safari-open] brutal:storage ok",
+    "[safari-open] brutal:paint ok",
+    "[safari-open] brutal:net ok"
+  ]
+}

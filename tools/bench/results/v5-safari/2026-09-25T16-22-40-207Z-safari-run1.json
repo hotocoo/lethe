@@ -1,0 +1,225 @@
+{
+  "browser": "safari-open",
+  "label": "safari",
+  "env": {},
+  "browserArgs": [],
+  "version": "Safari 26.5",
+  "run": 1,
+  "startedAt": "2026-09-25T16:22:40.207Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "media",
+    "enhancer"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": null,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": {
+    "hdrDisplay": false,
+    "hdrVideo": false,
+    "p3": false,
+    "video": {
+      "h264": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "hevc": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "vp8": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "n",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "vp9": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "vp9_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "av1": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "n",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "av1_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "n",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      }
+    },
+    "audio": {
+      "aac": {
+        "play": "probably",
+        "mse": true
+      },
+      "opus": {
+        "play": "probably",
+        "mse": true
+      },
+      "flac": {
+        "play": "maybe",
+        "mse": false
+      },
+      "mp3": {
+        "play": "maybe",
+        "mse": true
+      },
+      "vorbis": {
+        "play": "probably",
+        "mse": true
+      },
+      "alac": {
+        "play": "probably",
+        "mse": true
+      }
+    },
+    "encode": {
+      "h264": {
+        "fps": 285.7,
+        "kbps": 5181
+      },
+      "hevc": {
+        "fps": 303.8,
+        "kbps": 5297
+      },
+      "vp8": {
+        "fps": 241.4,
+        "kbps": 5962
+      },
+      "vp9": {
+        "fps": 267.3,
+        "kbps": 6120
+      },
+      "av1": {
+        "fps": 205.5,
+        "kbps": 5926
+      }
+    },
+    "decode": {
+      "h264": {
+        "fps": 991.7,
+        "frames": 120
+      },
+      "hevc": {
+        "fps": 930.2,
+        "frames": 120
+      },
+      "vp8": {
+        "fps": 485.8,
+        "frames": 120
+      },
+      "vp9": {
+        "fps": 705.9,
+        "frames": 120
+      },
+      "av1": {
+        "fps": 1061.9,
+        "frames": 120
+      }
+    },
+    "playback": {
+      "h264.mp4": "t 4.0 frames 1",
+      "hevc.mp4": "t 3.9 frames 1",
+      "vp9.webm": "t 4.0 frames 1",
+      "av1.mp4": "t 4.0 frames 1",
+      "aac.m4a": "t 3.6",
+      "opus.webm": "t 4.0"
+    }
+  },
+  "enhancer": {
+    "injected": false,
+    "fps": 60.1,
+    "pixels": null,
+    "hdrClipPlaying": true,
+    "hdrClipColor": {
+      "transfer": "bt709",
+      "primaries": "bt2020",
+      "matrix": "bt2020-ncl"
+    },
+    "videoFrames": 281,
+    "dropped": 0,
+    "playing": true,
+    "state": null
+  },
+  "memory": [],
+  "log": [
+    "[safari-open] media:report ok",
+    "[safari-open] enhancer:report ok"
+  ]
+}

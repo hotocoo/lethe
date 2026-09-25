@@ -19,7 +19,7 @@ std::string LowerEnv(const char* name) {
 
 NSInteger LetheMediaEnhancerMode(void) {
     const std::string v = LowerEnv("LETHE_UPSCALER");
-    if (!v.empty()) {
+    if (!v.empty() && !getenv("LETHE_UPSCALER_FROM_PREFS")) {
         if (v == "linear") return 1;
         if (v == "metalfx-sharp" || v == "fsr-sharp") return 3;
         if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr") return 2;

@@ -836,6 +836,14 @@ async function ensureExtremeServer() {
     writeFileSync(join(extremeDir, `bl${i}.bin`), Buffer.alloc(256 * 1024, 9));
   const server = http.createServer((req, res) => {
     const url = req.url.split('?')[0];
+    if (url === '/lethe-report') {
+      let body = ''; req.on('data', d => { body += d; });
+      req.on('end', () => {
+        const id = new URLSearchParams(req.url.split('?')[1] || '').get('id');
+        selfReports.get(id)?.(body); res.end('ok');
+      });
+      return;
+    }
     if (url === '/enhancer.js') {
       const qs = new URLSearchParams(req.url.split('?')[1] || '');
       const body = enhancerJs(Number(qs.get('m') || 2) | 0, qs.get('h') === '1' ? 1 : 0);
@@ -846,7 +854,17 @@ async function ensureExtremeServer() {
     if (!existsSync(file) || !file.startsWith(extremeDir)) {
       res.writeHead(404); res.end('nf'); return;
     }
-    const data = readFileSync(file);
+    let data = readFileSync(file);
+    const reportId = new URLSearchParams(req.url.split('?')[1] || '').get('lethe_report');
+    if (reportId && file.endsWith('.html') && reportProbes.has(reportId)) {
+      // Browsers without an automation channel (Safari without WebDriver):
+      // the page polls the step's own wait condition, then POSTs the value
+      // the step would have read.
+      const { wait, read } = reportProbes.get(reportId);
+      data = Buffer.concat([data, Buffer.from(`<script>(function(){var t=setInterval(function(){try{if(!(${wait}))return;}catch(e){return;}
+clearInterval(t);var v;try{v=String(${read});}catch(e){v='ERR '+e;}
+fetch('/lethe-report?id=${reportId}',{method:'POST',body:v});},250);})();</script>`)]);
+    }
     const isBin = file.endsWith('.bin');
     res.writeHead(200, {
       'Content-Type': file.endsWith('.webm') ? 'video/webm' : file.endsWith('.mp4') ? 'video/mp4' :
@@ -1064,6 +1082,8 @@ function buildSteps(extremeBase) {
     steps.push(readStats('brutal:worker'));
     steps.push({ op: 'mark', name: 'brutal:mem-worker' });
 
+    // LETHE_BRUTAL_ONLY=storage (etc.) runs one brutal page in isolation.
+    if (process.env.LETHE_BRUTAL_ONLY === 'storage') steps.length = 1;
     steps.push({ op: 'newtab', url: extremeBase + '/bstorage.html', timeout: 30000 });
     steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("wps=")>=0||document.getElementById("stats").textContent.indexOf("error=")>=0', timeout: 120000 });
     steps.push(readStats('brutal:storage'));
@@ -1395,6 +1415,34 @@ class WebDriver {
   quit() { return this.call('DELETE', `/session/${this.session}`); }
 }
 
+// safari-open: no WebDriver. Each (newtab, waitJs, eval) group whose page is
+// on the bench server is opened with `open -a Safari`, and the page reports
+// its own result (see /lethe-report). Covers the self-reporting suites
+// (extreme, brutal, media, enhancer); memory and startup are not measured.
+const selfReports = new Map();
+const reportProbes = new Map();
+async function runSafariOpen(steps) {
+  const events = { results: [], marks: [], startupMs: null, exitCode: 0, log: [] };
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if (s.op !== 'newtab' || !extremeServer || !s.url.startsWith(extremeServer.base)) continue;
+    const wait = steps[i + 1]?.op === 'waitJs' ? steps[i + 1].js : 'true';
+    const ev = steps.slice(i + 1).find(x => x.op === 'eval');
+    if (!ev) continue;
+    const id = String(i);
+    reportProbes.set(id, { wait, read: ev.js });
+    const got = new Promise(res => { selfReports.set(id, res); setTimeout(() => res(null), (steps[i + 1]?.timeout || 60000) + 15000); });
+    const url = s.url + (s.url.includes('?') ? '&' : '?') + 'lethe_report=' + id;
+    execFileSync('open', ['-a', 'Safari', url]);
+    const value = await got;
+    events.log.push(`[safari-open] ${ev.key} ${value === null ? 'TIMEOUT' : 'ok'}`);
+    if (value === null) events.timeouts = (events.timeouts || 0) + 1;
+    else events.results.push({ key: ev.key, value });
+    try { execFileSync('osascript', ['-e', 'tell application "Safari" to close (every tab of every window whose URL contains "lethe_report")']); } catch {}
+  }
+  return events;
+}
+
 async function runSafari(steps) {
   if (!existsSync(SAFARI_DRIVER)) throw new Error('safaridriver missing (macOS only)');
   const port = 4000 + Math.floor(Math.random() * 2000);
@@ -1483,7 +1531,7 @@ async function runSafari(steps) {
 // --------------------------------------------------------------- main
 function versionOf(browser) {
   try {
-    if (browser === 'safari') {
+    if (browser.startsWith('safari')) {
       return 'Safari ' + execFileSync('/usr/bin/defaults',
         ['read', '/Applications/Safari.app/Contents/Info', 'CFBundleShortVersionString'],
         { encoding: 'utf8' }).trim();
@@ -1517,6 +1565,7 @@ async function main() {
     const started = new Date();
     console.log(`[bench] run ${run}/${RUNS} ...`);
     const ev = BROWSER === 'safari' ? await runSafari(steps)
+             : BROWSER === 'safari-open' ? await runSafariOpen(steps)
              : BROWSER === 'chrome' ? await runChrome(steps)
              : BROWSER === 'lethe-cef' ? await runLethe(steps, { noProxy: false, binOverride: LETHE_CEF_BIN })
              : await runLethe(steps, { noProxy: BROWSER === 'lethe-noproxy' });

@@ -44,13 +44,18 @@ int main(int argc, char** argv) {
                 setenv("LETHE_UPSCALER", "linear", 1);
                 break;
             case LetheUpscalerFSR1:
-            case LetheUpscalerDLSSLike:
                 setenv("LETHE_UPSCALER", "metalfx", 1);
+                break;
+            case LetheUpscalerDLSSLike:
+                setenv("LETHE_UPSCALER", "metalfx-sharp", 1);
                 break;
             default:
                 setenv("LETHE_UPSCALER", "none", 1);
                 break;
         }
+        // Mark the value as a launch snapshot of Settings, not a user
+        // override, so later Settings changes still apply live.
+        setenv("LETHE_UPSCALER_FROM_PREFS", "1", 1);
     }
     if (prefs.policyProxyWorkerThreads > 0) {
         // The bootstrap reads this env var; see shell_bootstrap.cc. We set

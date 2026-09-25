@@ -1,0 +1,738 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 2,
+  "startedAt": "2026-09-25T17:02:58.295Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "startup",
+    "pageload",
+    "memory",
+    "speedometer"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 260.0447920000006,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 2,
+  "pageload": [
+    {
+      "url": "https://example.com/",
+      "ttfb": 53,
+      "dcl": 61,
+      "load": 61,
+      "fcp": 62,
+      "resources": 0,
+      "opaqueResources": 0,
+      "bytes": 636,
+      "domNodes": 12,
+      "imageResources": 0,
+      "imageP50": null,
+      "imageP95": null,
+      "imageP99": null,
+      "imageP999": null,
+      "imageMax": null,
+      "imageElements": 0,
+      "decodedImages": 0,
+      "slowImages": []
+    },
+    {
+      "url": "https://www.iana.org/domains/reserved",
+      "ttfb": null,
+      "dcl": 123,
+      "load": 259,
+      "fcp": 153,
+      "resources": 8,
+      "opaqueResources": 0,
+      "bytes": 1292679,
+      "domNodes": 242,
+      "imageResources": 1,
+      "imageP50": null,
+      "imageP95": null,
+      "imageP99": null,
+      "imageP999": null,
+      "imageMax": 119,
+      "imageElements": 1,
+      "decodedImages": 1,
+      "slowImages": [
+        {
+          "url": "https://www.iana.org/static/img/iana-logo-header.426b3ac01d35.svg",
+          "duration": 119,
+          "transferSize": 9294
+        }
+      ]
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "ttfb": 113,
+      "dcl": 241,
+      "load": 3371,
+      "fcp": 266,
+      "resources": 39,
+      "opaqueResources": 9,
+      "bytes": 450379,
+      "domNodes": 4567,
+      "imageResources": 6,
+      "imageP50": 89.49999999999997,
+      "imageP95": 231.5,
+      "imageP99": 247.90000000000003,
+      "imageP999": 251.59,
+      "imageMax": 252,
+      "imageElements": 18,
+      "decodedImages": 5,
+      "slowImages": [
+        {
+          "url": "https://en.wikipedia.org/static/images/mobile/copyright/wikipedia-tagline-en-25.svg",
+          "duration": 252,
+          "transferSize": 5097
+        },
+        {
+          "url": "https://en.wikipedia.org/static/images/icons/enwiki-25.svg",
+          "duration": 170,
+          "transferSize": 44419
+        },
+        {
+          "url": "https://en.wikipedia.org/static/images/mobile/copyright/wikipedia-wordmark-en-25.svg",
+          "duration": 157.00000000000006,
+          "transferSize": 4329
+        },
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/donate/b/be/Trustly_logos_only.png",
+          "duration": 21.999999999999886,
+          "transferSize": 0
+        },
+        {
+          "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/ba/Safari_15.png/250px-Safari_15.png?utm_source=en.wikipedia.org&utm_campaign=parser&utm_content=thumbnail",
+          "duration": 0,
+          "transferSize": 0
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/",
+      "ttfb": 36.00000000000001,
+      "dcl": 603,
+      "load": 616,
+      "fcp": 343,
+      "resources": 152,
+      "opaqueResources": 151,
+      "bytes": 118542,
+      "domNodes": 1809,
+      "imageResources": 11,
+      "imageP50": 33,
+      "imageP95": 108.5,
+      "imageP99": 155.30000000000004,
+      "imageP999": 165.83000000000004,
+      "imageMax": 167,
+      "imageElements": 24,
+      "decodedImages": 0,
+      "slowImages": [
+        {
+          "url": "https://github.githubassets.com/assets/head_sss-b7e053d8d541a414.jpg",
+          "duration": 167,
+          "transferSize": 0
+        },
+        {
+          "url": "https://github.githubassets.com/assets/body_sss-ecb11ff73d84fd3b.jpg",
+          "duration": 50,
+          "transferSize": 0
+        },
+        {
+          "url": "https://github.githubassets.com/assets/shield_sss-b8d96cf3572b780d.jpg",
+          "duration": 42,
+          "transferSize": 0
+        },
+        {
+          "url": "https://github.githubassets.com/assets/eye_color-bb27e609004c77cc.jpg",
+          "duration": 38,
+          "transferSize": 0
+        },
+        {
+          "url": "https://github.githubassets.com/assets/shield_blur-bd197c0b02963d75.jpg",
+          "duration": 36,
+          "transferSize": 0
+        }
+      ]
+    },
+    {
+      "url": "https://www.bbc.com/news",
+      "ttfb": 23,
+      "dcl": 384,
+      "load": 871,
+      "fcp": 74,
+      "resources": 98,
+      "opaqueResources": 98,
+      "bytes": 65251,
+      "domNodes": 1419,
+      "imageResources": 12,
+      "imageP50": 118.5,
+      "imageP95": 234.95,
+      "imageP99": 239.79000000000002,
+      "imageP999": 240.87900000000002,
+      "imageMax": 241,
+      "imageElements": 39,
+      "decodedImages": 25,
+      "slowImages": [
+        {
+          "url": "https://comcluster.cxense.com/Repo/rep.gif?ver=3.4.8&typ=pgv&rnd=muh7m2j7va7q4614&sid=3606632254074155369&loc=https%3A%2F%2Fwww.bbc.com%2Fnews&new=1&arf=0&ltm=1790355792281&source=web&ref=&tzo=-480&wsz=1280x867&res=1280x867&dpr=1&col=24&bln=en-US&chs=UTF-8&cks=muh7m2qyrr5hkkes&ckp=muh7m2j74bhltjqk&glb=&cp_userState=anon",
+          "duration": 241,
+          "transferSize": 0
+        },
+        {
+          "url": "https://static.files.bbci.co.uk/bbcdotcom/web/20260922-091849-a8520cb5b4-web-3.22.0-3/grey-placeholder.png",
+          "duration": 230,
+          "transferSize": 0
+        },
+        {
+          "url": "https://ichef.bbci.co.uk/news/320/cpsprodpb/b7c4/live/d45fc990-b839-11f1-b1d1-571ed4d7ff2c.jpg.webp",
+          "duration": 208,
+          "transferSize": 0
+        },
+        {
+          "url": "https://ichef.bbci.co.uk/news/320/cpsprodpb/31a7/live/59b8b570-b8fd-11f1-83cd-2998f68d9572.jpg.webp",
+          "duration": 188,
+          "transferSize": 0
+        },
+        {
+          "url": "https://ichef.bbci.co.uk/news/320/cpsprodpb/9194/live/2ae40780-b8b3-11f1-b1d1-571ed4d7ff2c.jpg.webp",
+          "duration": 156,
+          "transferSize": 0
+        }
+      ]
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "ttfb": 39,
+      "dcl": 305,
+      "load": 603,
+      "fcp": 129,
+      "resources": 86,
+      "opaqueResources": 86,
+      "bytes": 148086,
+      "domNodes": 4997,
+      "imageResources": 19,
+      "imageP50": 206,
+      "imageP95": 274.20000000000005,
+      "imageP99": 282.84000000000003,
+      "imageP999": 284.784,
+      "imageMax": 285,
+      "imageElements": 109,
+      "decodedImages": 19,
+      "slowImages": [
+        {
+          "url": "https://i.guim.co.uk/img/uploads/2023/09/21/Fatma-Aydemir.png?width=90&dpr=1&s=none&crop=1%3A1",
+          "duration": 285,
+          "transferSize": 0
+        },
+        {
+          "url": "https://i.guim.co.uk/img/uploads/2022/03/15/Devi_Sridhar,_L.png?width=90&dpr=1&s=none&crop=1%3A1",
+          "duration": 273.00000000000006,
+          "transferSize": 0
+        },
+        {
+          "url": "https://i.guim.co.uk/img/uploads/2017/11/29/Brigid_Delaney,_L.png?width=90&dpr=1&s=none&crop=1%3A1",
+          "duration": 269,
+          "transferSize": 0
+        },
+        {
+          "url": "https://i.guim.co.uk/img/media/3fa7c1678f5a6282da9f66019bda1865327570a9/238_85_2507_2006/2507.jpg?width=620&dpr=1&s=none&crop=5%3A4",
+          "duration": 257,
+          "transferSize": 0
+        },
+        {
+          "url": "https://i.guim.co.uk/img/media/c3424b33ae0c5b1571860a8dc8dbbb93dc60efe6/1173_0_6827_5464/master/6827.jpg?width=220&dpr=1&s=none&crop=5%3A4",
+          "duration": 254,
+          "transferSize": 0
+        }
+      ]
+    },
+    {
+      "url": "https://edition.cnn.com/",
+      "ttfb": 26.000000000000004,
+      "dcl": 317,
+      "load": null,
+      "fcp": 226,
+      "resources": 177,
+      "opaqueResources": 140,
+      "bytes": 1526455,
+      "domNodes": 3953,
+      "imageResources": 31,
+      "imageP50": 223,
+      "imageP95": 302,
+      "imageP99": 316.7,
+      "imageP999": 322.37,
+      "imageMax": 323,
+      "imageElements": 76,
+      "decodedImages": 16,
+      "slowImages": [
+        {
+          "url": "https://comcluster.cxense.com/Repo/rep.gif?ver=3.4.8&typ=pgv&rnd=muh7m6vcusdqoy2p&sid=5860761989072075780&loc=https%3A%2F%2Fedition.cnn.com%2F&new=1&arf=0&ltm=1790355798382&source=web&ref=&tzo=-480&wsz=1280x867&res=1280x867&dpr=1&col=24&bln=en-US&chs=UTF-8&cks=muh7m7cv7n140lp3&ckp=muh7m6vc3viphf53&glb=&cp_userState=anon",
+          "duration": 323,
+          "transferSize": 0
+        },
+        {
+          "url": "https://media.cnn.com/api/v1/images/stellar/prod/fif-5-snow-li-tv-segment-00-00-41-21-still020.jpg?c=16x9&q=h_144,w_256,c_fill/f_webp",
+          "duration": 302,
+          "transferSize": 0
+        },
+        {
+          "url": "https://media.cnn.com/api/v1/images/stellar/prod/gettyimages-2296176059.jpg?c=16x9&q=h_144,w_256,c_fill/f_webp",
+          "duration": 302,
+          "transferSize": 0
+        },
+        {
+          "url": "https://events.bouncex.net/track.gif/visit?wklz=G4SwziAuBcCuYFMBOBDA5ggdpAvAWQHsAvEAG1JQFIAmAMQFYA6ABhuYAo8UBjEbAsAAtKAZgBCbAJLYEpNl25sA8gGU2ADTYBGZgH0t9XQHYAlGwCCAB0ukEAdQQAjANJQatAGzMmWxgbbszgASACp4ADI0AMJspCAA1ghsAOII3PEEJgBkoBAwSAgAZsgFSDg54FDQFJgAJnxolugIsEikOIKQkJZgNPQi5n10Q7QI9ZAgBJiM3JjT3AQAtiMVedAFYASksBNTAB44WtQAHMyrVRtbO5OYAJ44xx5G5zDc8JBLwChIICiOtmAcJQjBJqNQCJYJosQERZLddJYNlhIDRqKJBmDCihSIhUdFUbVCpZqLpaghIGkUWD0ajMARILoCiharc8dQYmCwJY0r9SLpvhNuLY8QNUVicUlqUYACIvaALAjxEAIIEggkgWoijHUDzHACc+uOIg89GO+o8JyM1BExzZHOooE11IGWiMeuYIno9Dd+pEzGo9D1+LBllqtBASDAkHCBGZWsgSFgkvttTQWuBoOo4AACgVQAR4FF3ktkFrxbj2ajwCpYI4wNwfo5S87zOXk1WwCEEHtIDW6w2QE2kGXsRX7SUCMOW2LJ44NWTMDTqMx6mBsaQCAB3MZsBawbBIVmV5d7g9H5gLMlscDyACadtR3B4ggQukgvRbrvdnu9Br11CMYFpWDahCmAKk0RdN0PS9H0QJQAgtVYY9qFISx0zBTpug-foMXoYYAzoMYoBuGY5hmJYRgfMEUA-SDzGQ+1gEsYAtS0EDgDo9FGNRNAGy1J4QOWFseLBKd6LZNEUO4cC2Ogn84JQiAnXogBadiUNIWTP3k2CDRAlSl2oQyUNY6c1RlICsngZBmmwaBHCQLdEDKaQKTkZcFGUNRl00ZcdH0Qxnhs1AMHs4BkAgKZyhCuyYBsFBIEKSdFhwRYeFUayXLi6AyVAbhyVubkcDJMB4g+SwsjeKMSyQaBBFohZMAipAKVqHAzgwAhoEsARIGxS8VQAFiMP0tCyLr5Sge5s3JbEGjYAApFBbhQCaEG6pqJkwZFBpwcwVHW7qCjQG5Dk6jb1gQU6pkwFBFhVFRZBQTA0EnI75QLM87oe-BsRWiA1sm08E1uPa8FvD6QcPQaRHwW9DsmigJkgWAyRwEQ-A+jdXqgNGVR0XwPCyRYCHRs5tzrKAEA1HArT1cbchI9qvxg39fX9QMsjykACtp3U-yNE0zT1C1jitG0siaDBQAQTdafGxAAEck0wPn2rOIVlWwKEECje7LEOXTf3-PURCquJkRQSwQBaqLMBwfq0HNp3dDts6wHS1rVKd1Tlx1Zh-yGlgzh5gqSqySBBAjWoEQFeEatC19Vz+Wx2oTJNI6IAgcFUobTgt7XUdgWmRDSPVCmYV1VKbIxajzowhqG1S9SG+huFUjwtDGFBCiGqujG4Wosk2Vpw8prI4pwEKgA",
+          "duration": 295.99999999999955,
+          "transferSize": 0
+        },
+        {
+          "url": "https://events.bouncex.net/track.gif/pageview?wklz=A4Qw5gpgbglhDuAuArgJwDYF4AWAXXwAzgKQDMAgsQEwBi1NEAJjLjAPYB2AdAMYfc82AW3oAyUJFgJEPZIVzCoIVDBAAjdBEKZiAdgBC1Km2CshMAF4R0ATwD6wVFogdcRspSpUAZiHSEIdyoAYSNGb2AqO0YIXAgeNy8PIw42XDsnEEYbINCvQmB41XQ7ZVYeTXcKI19-QKTdABFxcGg4JEE2AGs4QksITFIATgAWFsl2mRBUjhgePxx8ImTaenh13n5eYTEJNulOnog7BTY7dGVITFqA8f2Otm64E5tCzABGYEO4O6kHp+OfSsgyoAFYAGyiQRCYAyGGYAAMUOEsNwPG8iORMJQBQ+WNhYGAwEx0Nhclh8hUHDAHwAtPTREI2DFMfAIGo+nEYIxMLoqEN3qJYJzuR9dEMEaRQaDxQAOIakBFgoaiGKwHgQUXg+U60jg0Gy+XgqiyvmkWW-dqiwUBACOyBcGutUPQcFcZi0uBA8Pe4sl0vFQ35oJdbq9wBgUAgqD6nEwXrApFECbsUZj7A4mEIQjKtITtKoSvBCKDIy4CKRarmA0YyewMFQjAcZXs8jYqFa0RghHUmh5uFQDuTFjYmFpI1lSIqYeQyC13m8unB7wgIFpCPejEY45A71ltKD0vX4JGoKoe4Rp6VokIbDQGswbLUolarkwcmjQA",
+          "duration": 289,
+          "transferSize": 0
+        }
+      ]
+    },
+    {
+      "url": "https://www.nytimes.com/",
+      "ttfb": 192,
+      "dcl": 955.0000000000001,
+      "load": null,
+      "fcp": 426,
+      "resources": 121,
+      "opaqueResources": 38,
+      "bytes": 649743,
+      "domNodes": 6459,
+      "imageResources": 31,
+      "imageP50": 168,
+      "imageP95": 309.5,
+      "imageP99": 330.9,
+      "imageP999": 335.49,
+      "imageMax": 336,
+      "imageElements": 126,
+      "decodedImages": 47,
+      "slowImages": [
+        {
+          "url": "https://www.nytimes.com/vi-assets/static-assets/icon-athletic-pulse_144x144-393cbda91e2678278456723b62a9b21f.webp",
+          "duration": 336,
+          "transferSize": 3029
+        },
+        {
+          "url": "https://www.nytimes.com/vi-assets/static-assets/icon-clean-everything_144x144-97312e349d7284039a2153cb541b7fda.webp",
+          "duration": 319,
+          "transferSize": 2689
+        },
+        {
+          "url": "https://www.nytimes.com/vi-assets/static-assets/icon-the-recommendation_144x144-3e66bd6cc82013bd511c31a8f04d4ff7.webp",
+          "duration": 300,
+          "transferSize": 1367
+        },
+        {
+          "url": "https://www.nytimes.com/vi-assets/static-assets/icon-five-weeknight-dishes_144x144-97d51c5d4ba98233667b4057e3d852ab.webp",
+          "duration": 283,
+          "transferSize": 3631
+        },
+        {
+          "url": "https://www.nytimes.com/vi-assets/static-assets/icon-the-veggie_144x144-f99606e1ca100f88cdfd8d763bf442c5.webp",
+          "duration": 261,
+          "transferSize": 4155
+        }
+      ]
+    }
+  ],
+  "speedometer": "44.9",
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": null,
+  "enhancer": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 599.7185839999875,
+      "rssMb": 198.09375,
+      "processes": 4,
+      "cpuSec": 0.52,
+      "breakdown": [
+        {
+          "pid": 13934,
+          "rssMb": 118,
+          "cpuSec": 0.35,
+          "name": "lethe"
+        },
+        {
+          "pid": 13954,
+          "rssMb": 15.1,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 13968,
+          "rssMb": 31.5,
+          "cpuSec": 0.08,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 13981,
+          "rssMb": 33.5,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "memory:all-tabs",
+      "tMs": 117859.316417,
+      "rssMb": 2424.53125,
+      "processes": 11,
+      "cpuSec": 31.44,
+      "breakdown": [
+        {
+          "pid": 13934,
+          "rssMb": 219.9,
+          "cpuSec": 4.13,
+          "name": "lethe"
+        },
+        {
+          "pid": 13954,
+          "rssMb": 88.6,
+          "cpuSec": 1.85,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 13968,
+          "rssMb": 182.1,
+          "cpuSec": 5.9,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 13981,
+          "rssMb": 34.1,
+          "cpuSec": 0.09,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14028,
+          "rssMb": 55.4,
+          "cpuSec": 0.23,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14035,
+          "rssMb": 133.2,
+          "cpuSec": 0.63,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14059,
+          "rssMb": 221.5,
+          "cpuSec": 3.52,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14068,
+          "rssMb": 219.6,
+          "cpuSec": 1.11,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14196,
+          "rssMb": 169.3,
+          "cpuSec": 0.8,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14298,
+          "rssMb": 411.6,
+          "cpuSec": 8.48,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 15824,
+          "rssMb": 689.4,
+          "cpuSec": 4.7,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "speedometer:start",
+      "tMs": 122465.60475,
+      "rssMb": 2475.90625,
+      "processes": 12,
+      "cpuSec": 31.96,
+      "breakdown": [
+        {
+          "pid": 13934,
+          "rssMb": 231,
+          "cpuSec": 4.37,
+          "name": "lethe"
+        },
+        {
+          "pid": 13954,
+          "rssMb": 88.6,
+          "cpuSec": 1.87,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 13968,
+          "rssMb": 184.9,
+          "cpuSec": 5.95,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 13981,
+          "rssMb": 34.1,
+          "cpuSec": 0.09,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14028,
+          "rssMb": 55.4,
+          "cpuSec": 0.24,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14035,
+          "rssMb": 133.2,
+          "cpuSec": 0.63,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14059,
+          "rssMb": 221.5,
+          "cpuSec": 3.61,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14068,
+          "rssMb": 219.5,
+          "cpuSec": 1.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14196,
+          "rssMb": 169.3,
+          "cpuSec": 0.81,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14298,
+          "rssMb": 411.6,
+          "cpuSec": 8.49,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 15824,
+          "rssMb": 689.5,
+          "cpuSec": 4.72,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 16033,
+          "rssMb": 37.4,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "speedometer:end",
+      "tMs": 153116.647667,
+      "rssMb": 3007.15625,
+      "processes": 12,
+      "cpuSec": 58.27,
+      "breakdown": [
+        {
+          "pid": 13934,
+          "rssMb": 235.8,
+          "cpuSec": 6.32,
+          "name": "lethe"
+        },
+        {
+          "pid": 13954,
+          "rssMb": 90.2,
+          "cpuSec": 2.24,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 13968,
+          "rssMb": 231.5,
+          "cpuSec": 8.98,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 13981,
+          "rssMb": 34.1,
+          "cpuSec": 0.09,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14028,
+          "rssMb": 55.4,
+          "cpuSec": 0.25,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14035,
+          "rssMb": 133.2,
+          "cpuSec": 0.66,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14059,
+          "rssMb": 221.5,
+          "cpuSec": 4.17,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14068,
+          "rssMb": 219.6,
+          "cpuSec": 1.17,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14196,
+          "rssMb": 169.3,
+          "cpuSec": 0.83,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 14298,
+          "rssMb": 411.7,
+          "cpuSec": 8.67,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 15824,
+          "rssMb": 689.3,
+          "cpuSec": 4.88,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 16033,
+          "rssMb": 515.5,
+          "cpuSec": 20.01,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[lethe] policy proxy listening on 127.0.0.1:60632 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:60632 (subresource enforcement on)",
+    "[e2e] start: 45 lines",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > load https://example.com/",
+    "[e2e] > try-wait 45000",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var n = performance.getEntriesByType('navigation')[0] || {}; var rs = performance.getEntriesByType('resource'); var p = performance.getEntriesByType('paint'); var bytes = n.transferSize || 0, opaque = 0; for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; } var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; }); var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; }); var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){ return {url:e.name,duration:e.duration,transferSize:e.transferSize||0}; }); function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; } var imageEls = Array.prototype.slice.call(document.images); var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length; var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0]; return JSON.stringify({ url: location.href, ttfb: n.responseStart || null, dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null, fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque, bytes: bytes, domNodes: document.getElementsByTagName('*').length, imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95), imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null, imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages }); })()",
+    "[e2e] result {\"url\":\"https://example.com/\",\"ttfb\":53,\"dcl\":61,\"load\":61,\"fcp\":62,\"resources\":0,\"opaqueResources\":0,\"bytes\":636,\"domNodes\":12,\"imageResources\":0,\"imageP50\":null,\"imageP95\":null,\"imageP99\":null,\"imageP999\":null,\"imageMax\":null,\"imageElements\":0,\"decodedImages\":0,\"slowImages\":[]}",
+    "[e2e] > newtab https://www.iana.org/domains/reserved",
+    "[e2e] > try-wait 45000",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var n = performance.getEntriesByType('navigation')[0] || {}; var rs = performance.getEntriesByType('resource'); var p = performance.getEntriesByType('paint'); var bytes = n.transferSize || 0, opaque = 0; for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; } var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; }); var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; }); var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){ return {url:e.name,duration:e.duration,transferSize:e.transferSize||0}; }); function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; } var imageEls = Array.prototype.slice.call(document.images); var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length; var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0]; return JSON.stringify({ url: location.href, ttfb: n.responseStart || null, dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null, fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque, bytes: bytes, domNodes: document.getElementsByTagName('*').length, imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95), imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null, imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages }); })()",
+    "[e2e] result {\"url\":\"https://www.iana.org/domains/reserved\",\"ttfb\":null,\"dcl\":123,\"load\":259,\"fcp\":153,\"resources\":8,\"opaqueResources\":0,\"bytes\":1292679,\"domNodes\":242,\"imageResources\":1,\"imageP50\":null,\"imageP95\":null,\"imageP99\":null,\"imageP999\":null,\"imageMax\":119,\"imageElements\":1,\"decodedImages\":1,\"slowImages\":[{\"url\":\"https://www.iana.org/static/img/iana-logo-header.426b3ac01d35.svg\",\"duration\":119,\"transferSize\":9294}]}",
+    "[e2e] > newtab https://en.wikipedia.org/wiki/Web_browser",
+    "[e2e] > try-wait 45000",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var n = performance.getEntriesByType('navigation')[0] || {}; var rs = performance.getEntriesByType('resource'); var p = performance.getEntriesByType('paint'); var bytes = n.transferSize || 0, opaque = 0; for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; } var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; }); var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; }); var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){ return {url:e.name,duration:e.duration,transferSize:e.transferSize||0}; }); function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; } var imageEls = Array.prototype.slice.call(document.images); var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length; var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0]; return JSON.stringify({ url: location.href, ttfb: n.responseStart || null, dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null, fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque, bytes: bytes, domNodes: document.getElementsByTagName('*').length, imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95), imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null, imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages }); })()",
+    "[e2e] result {\"url\":\"https://en.wikipedia.org/wiki/Web_browser\",\"ttfb\":113,\"dcl\":241,\"load\":3371,\"fcp\":266,\"resources\":39,\"opaqueResources\":9,\"bytes\":450379,\"domNodes\":4567,\"imageResources\":6,\"imageP50\":89.49999999999997,\"imageP95\":231.5,\"imageP99\":247.90000000000003,\"imageP999\":251.59,\"imageMax\":252,\"imageElements\":18,\"decodedImages\":5,\"slowImages\":[{\"url\":\"https://en.wikipedia.org/static/images/mobile/copyright/wikipedia-tagline-en-25.svg\",\"duration\":252,\"transferSize\":5097},{\"url\":\"https://en.wikipedia.org/static/images/icons/enwiki-25.svg\",\"duration\":170,\"transferSize\":44419},{\"url\":\"https://en.wikipedia.org/static/images/mobile/copyright/wikipedia-wordmark-en-25.svg\",\"duration\":157.00000000000006,\"transferSize\":4329},{\"url\":\"https://upload.wikimedia.org/wikipedia/donate/b/be/Trustly_logos_only.png\",\"duration\":21.999999999999886,\"transferSize\":0},{\"url\":\"https://thumb.wikimedia.org/wikipedia/commons/thumb/b/ba/Safari_15.png/250px-Safari_15.png?utm_source=en.wikipedia.org&utm_campaign=parser&utm_content=thumbnail\",\"duration\":0,\"transferSize\":0}]}",
+    "[e2e] > newtab https://github.com/",
+    "[e2e] > try-wait 45000",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var n = performance.getEntriesByType('navigation')[0] || {}; var rs = performance.getEntriesByType('resource'); var p = performance.getEntriesByType('paint'); var bytes = n.transferSize || 0, opaque = 0; for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; } var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; }); var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; }); var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){ return {url:e.name,duration:e.duration,transferSize:e.transferSize||0}; }); function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; } var imageEls = Array.prototype.slice.call(document.images); var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length; var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0]; return JSON.stringify({ url: location.href, ttfb: n.responseStart || null, dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null, fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque, bytes: bytes, domNodes: document.getElementsByTagName('*').length, imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95), imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null, imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages }); })()",
+    "[e2e] result {\"url\":\"https://github.com/\",\"ttfb\":36.00000000000001,\"dcl\":603,\"load\":616,\"fcp\":343,\"resources\":152,\"opaqueResources\":151,\"bytes\":118542,\"domNodes\":1809,\"imageResources\":11,\"imageP50\":33,\"imageP95\":108.5,\"imageP99\":155.30000000000004,\"imageP999\":165.83000000000004,\"imageMax\":167,\"imageElements\":24,\"decodedImages\":0,\"slowImages\":[{\"url\":\"https://github.githubassets.com/assets/head_sss-b7e053d8d541a414.jpg\",\"duration\":167,\"transferSize\":0},{\"url\":\"https://github.githubassets.com/assets/body_sss-ecb11ff73d84fd3b.jpg\",\"duration\":50,\"transferSize\":0},{\"url\":\"https://github.githubassets.com/assets/shield_sss-b8d96cf3572b780d.jpg\",\"duration\":42,\"transferSize\":0},{\"url\":\"https://github.githubassets.com/assets/eye_color-bb27e609004c77cc.jpg\",\"duration\":38,\"transferSize\":0},{\"url\":\"https://github.githubassets.com/assets/shield_blur-bd197c0b02963d75.jpg\",\"duration\":36,\"transferSize\":0}]}",
+    "[e2e] > newtab https://www.bbc.com/news",
+    "[e2e] > try-wait 45000",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var n = performance.getEntriesByType('navigation')[0] || {}; var rs = performance.getEntriesByType('resource'); var p = performance.getEntriesByType('paint'); var bytes = n.transferSize || 0, opaque = 0; for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; } var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; }); var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; }); var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){ return {url:e.name,duration:e.duration,transferSize:e.transferSize||0}; }); function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; } var imageEls = Array.prototype.slice.call(document.images); var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length; var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0]; return JSON.stringify({ url: location.href, ttfb: n.responseStart || null, dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null, fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque, bytes: bytes, domNodes: document.getElementsByTagName('*').length, imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95), imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null, imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages }); })()",
+    "[e2e] result {\"url\":\"https://www.bbc.com/news\",\"ttfb\":23,\"dcl\":384,\"load\":871,\"fcp\":74,\"resources\":98,\"opaqueResources\":98,\"bytes\":65251,\"domNodes\":1419,\"imageResources\":12,\"imageP50\":118.5,\"imageP95\":234.95,\"imageP99\":239.79000000000002,\"imageP999\":240.87900000000002,\"imageMax\":241,\"imageElements\":39,\"decodedImages\":25,\"slowImages\":[{\"url\":\"https://comcluster.cxense.com/Repo/rep.gif?ver=3.4.8&typ=pgv&rnd=muh7m2j7va7q4614&sid=3606632254074155369&loc=https%3A%2F%2Fwww.bbc.com%2Fnews&new=1&arf=0&ltm=1790355792281&source=web&ref=&tzo=-480&wsz=1280x867&res=1280x867&dpr=1&col=24&bln=en-US&chs=UTF-8&cks=muh7m2qyrr5hkkes&ckp=muh7m2j74bhltjqk&glb=&cp_userState=anon\",\"duration\":241,\"transferSize\":0},{\"url\":\"https://static.files.bbci.co.uk/bbcdotcom/web/20260922-091849-a8520cb5b4-web-3.22.0-3/grey-placeholder.png\",\"duration\":230,\"transferSize\":0},{\"url\":\"https://ichef.bbci.co.uk/news/320/cpsprodpb/b7c4/live/d45fc990-b839-11f1-b1d1-571ed4d7ff2c.jpg.webp\",\"duration\":208,\"transferSize\":0},{\"url\":\"https://ichef.bbci.co.uk/news/320/cpsprodpb/31a7/live/59b8b570-b8fd-11f1-83cd-2998f68d9572.jpg.webp\",\"duration\":188,\"transferSize\":0},{\"url\":\"https://ichef.bbci.co.uk/news/320/cpsprodpb/9194/live/2ae40780-b8b3-11f1-b1d1-571ed4d7ff2c.jpg.webp\",\"duration\":156,\"transferSize\":0}]}",
+    "[e2e] > newtab https://www.theguardian.com/international",
+    "[e2e] > try-wait 45000",
+    "[lethe-http][doh] Blocked: secure DNS (DoH) lookup failed for phar.gu-web.net",
+    "[lethe-http][doh] Blocked: secure DNS (DoH) lookup failed for phar.gu-web.net",
+    "[lethe-http][doh] Blocked: secure DNS (DoH) lookup failed for phar.gu-web.net",
+    "[lethe-http][doh] Blocked: secure DNS (DoH) lookup failed for phar.gu-web.net",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var n = performance.getEntriesByType('navigation')[0] || {}; var rs = performance.getEntriesByType('resource'); var p = performance.getEntriesByType('paint'); var bytes = n.transferSize || 0, opaque = 0; for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; } var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; }); var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; }); var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){ return {url:e.name,duration:e.duration,transferSize:e.transferSize||0}; }); function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; } var imageEls = Array.prototype.slice.call(document.images); var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length; var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0]; return JSON.stringify({ url: location.href, ttfb: n.responseStart || null, dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null, fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque, bytes: bytes, domNodes: document.getElementsByTagName('*').length, imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95), imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null, imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages }); })()",
+    "[e2e] result {\"url\":\"https://www.theguardian.com/international\",\"ttfb\":39,\"dcl\":305,\"load\":603,\"fcp\":129,\"resources\":86,\"opaqueResources\":86,\"bytes\":148086,\"domNodes\":4997,\"imageResources\":19,\"imageP50\":206,\"imageP95\":274.20000000000005,\"imageP99\":282.84000000000003,\"imageP999\":284.784,\"imageMax\":285,\"imageElements\":109,\"decodedImages\":19,\"slowImages\":[{\"url\":\"https://i.guim.co.uk/img/uploads/2023/09/21/Fatma-Aydemir.png?width=90&dpr=1&s=none&crop=1%3A1\",\"duration\":285,\"transferSize\":0},{\"url\":\"https://i.guim.co.uk/img/uploads/2022/03/15/Devi_Sridhar,_L.png?width=90&dpr=1&s=none&crop=1%3A1\",\"duration\":273.00000000000006,\"transferSize\":0},{\"url\":\"https://i.guim.co.uk/img/uploads/2017/11/29/Brigid_Delaney,_L.png?width=90&dpr=1&s=none&crop=1%3A1\",\"duration\":269,\"transferSize\":0},{\"url\":\"https://i.guim.co.uk/img/media/3fa7c1678f5a6282da9f66019bda1865327570a9/238_85_2507_2006/2507.jpg?width=620&dpr=1&s=none&crop=5%3A4\",\"duration\":257,\"transferSize\":0},{\"url\":\"https://i.guim.co.uk/img/media/c3424b33ae0c5b1571860a8dc8dbbb93dc60efe6/1173_0_6827_5464/master/6827.jpg?width=220&dpr=1&s=none&crop=5%3A4\",\"duration\":254,\"transferSize\":0}]}",
+    "[e2e] > newtab https://edition.cnn.com/",
+    "[e2e] > try-wait 45000",
+    "[lethe-http] Connect failed to bbc.gscontxt.net:443",
+    "[lethe-http] Connect failed to ads.stickyadstv.com:443",
+    "[e2e] timeout try-wait: still loading after 45000 ms",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var n = performance.getEntriesByType('navigation')[0] || {}; var rs = performance.getEntriesByType('resource'); var p = performance.getEntriesByType('paint'); var bytes = n.transferSize || 0, opaque = 0; for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; } var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; }); var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; }); var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){ return {url:e.name,duration:e.duration,transferSize:e.transferSize||0}; }); function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; } var imageEls = Array.prototype.slice.call(document.images); var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length; var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0]; return JSON.stringify({ url: location.href, ttfb: n.responseStart || null, dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null, fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque, bytes: bytes, domNodes: document.getElementsByTagName('*').length, imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95), imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null, imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages }); })()",
+    "[e2e] result {\"url\":\"https://edition.cnn.com/\",\"ttfb\":26.000000000000004,\"dcl\":317,\"load\":null,\"fcp\":226,\"resources\":177,\"opaqueResources\":140,\"bytes\":1526455,\"domNodes\":3953,\"imageResources\":31,\"imageP50\":223,\"imageP95\":302,\"imageP99\":316.7,\"imageP999\":322.37,\"imageMax\":323,\"imageElements\":76,\"decodedImages\":16,\"slowImages\":[{\"url\":\"https://comcluster.cxense.com/Repo/rep.gif?ver=3.4.8&typ=pgv&rnd=muh7m6vcusdqoy2p&sid=5860761989072075780&loc=https%3A%2F%2Fedition.cnn.com%2F&new=1&arf=0&ltm=1790355798382&source=web&ref=&tzo=-480&wsz=1280x867&res=1280x867&dpr=1&col=24&bln=en-US&chs=UTF-8&cks=muh7m7cv7n140lp3&ckp=muh7m6vc3viphf53&glb=&cp_userState=anon\",\"duration\":323,\"transferSize\":0},{\"url\":\"https://media.cnn.com/api/v1/images/stellar/prod/fif-5-snow-li-tv-segment-00-00-41-21-still020.jpg?c=16x9&q=h_144,w_256,c_fill/f_webp\",\"duration\":302,\"transferSize\":0},{\"url\":\"https://media.cnn.com/api/v1/images/stellar/prod/gettyimages-2296176059.jpg?c=16x9&q=h_144,w_256,c_fill/f_webp\",\"duration\":302,\"transferSize\":0},{\"url\":\"https://events.bouncex.net/track.gif/visit?wklz=G4SwziAuBcCuYFMBOBDA5ggdpAvAWQHsAvEAG1JQFIAmAMQFYA6ABhuYAo8UBjEbAsAAtKAZgBCbAJLYEpNl25sA8gGU2ADTYBGZgH0t9XQHYAlGwCCAB0ukEAdQQAjANJQatAGzMmWxgbbszgASACp4ADI0AMJspCAA1ghsAOII3PEEJgBkoBAwSAgAZsgFSDg54FDQFJgAJnxolugIsEikOIKQkJZgNPQi5n10Q7QI9ZAgBJiM3JjT3AQAtiMVedAFYASksBNTAB44WtQAHMyrVRtbO5OYAJ44xx5G5zDc8JBLwChIICiOtmAcJQjBJqNQCJYJosQERZLddJYNlhIDRqKJBmDCihSIhUdFUbVCpZqLpaghIGkUWD0ajMARILoCiharc8dQYmCwJY0r9SLpvhNuLY8QNUVicUlqUYACIvaALAjxEAIIEggkgWoijHUDzHACc+uOIg89GO+o8JyM1BExzZHOooE11IGWiMeuYIno9Dd+pEzGo9D1+LBllqtBASDAkHCBGZWsgSFgkvttTQWuBoOo4AACgVQAR4FF3ktkFrxbj2ajwCpYI4wNwfo5S87zOXk1WwCEEHtIDW6w2QE2kGXsRX7SUCMOW2LJ44NWTMDTqMx6mBsaQCAB3MZsBawbBIVmV5d7g9H5gLMlscDyACadtR3B4ggQukgvRbrvdnu9Br11CMYFpWDahCmAKk0RdN0PS9H0QJQAgtVYY9qFISx0zBTpug-foMXoYYAzoMYoBuGY5hmJYRgfMEUA-SDzGQ+1gEsYAtS0EDgDo9FGNRNAGy1J4QOWFseLBKd6LZNEUO4cC2Ogn84JQiAnXogBadiUNIWTP3k2CDRAlSl2oQyUNY6c1RlICsngZBmmwaBHCQLdEDKaQKTkZcFGUNRl00ZcdH0Qxnhs1AMHs4BkAgKZyhCuyYBsFBIEKSdFhwRYeFUayXLi6AyVAbhyVubkcDJMB4g+SwsjeKMSyQaBBFohZMAipAKVqHAzgwAhoEsARIGxS8VQAFiMP0tCyLr5Sge5s3JbEGjYAApFBbhQCaEG6pqJkwZFBpwcwVHW7qCjQG5Dk6jb1gQU6pkwFBFhVFRZBQTA0EnI75QLM87oe-BsRWiA1sm08E1uPa8FvD6QcPQaRHwW9DsmigJkgWAyRwEQ-A+jdXqgNGVR0XwPCyRYCHRs5tzrKAEA1HArT1cbchI9qvxg39fX9QMsjykACtp3U-yNE0zT1C1jitG0siaDBQAQTdafGxAAEck0wPn2rOIVlWwKEECje7LEOXTf3-PURCquJkRQSwQBaqLMBwfq0HNp3dDts6wHS1rVKd1Tlx1Zh-yGlgzh5gqSqySBBAjWoEQFeEatC19Vz+Wx2oTJNI6IAgcFUobTgt7XUdgWmRDSPVCmYV1VKbIxajzowhqG1S9SG+huFUjwtDGFBCiGqujG4Wosk2Vpw8prI4pwEKgA\",\"duration\":295.99999999999955,\"transferSize\":0},{\"url\":\"https://events.bouncex.net/track.gif/pageview?wklz=A4Qw5gpgbglhDuAuArgJwDYF4AWAXXwAzgKQDMAgsQEwBi1NEAJjLjAPYB2AdAMYfc82AW3oAyUJFgJEPZIVzCoIVDBAAjdBEKZiAdgBC1Km2CshMAF4R0ATwD6wVFogdcRspSpUAZiHSEIdyoAYSNGb2AqO0YIXAgeNy8PIw42XDsnEEYbINCvQmB41XQ7ZVYeTXcKI19-QKTdABFxcGg4JEE2AGs4QksITFIATgAWFsl2mRBUjhgePxx8ImTaenh13n5eYTEJNulOnog7BTY7dGVITFqA8f2Otm64E5tCzABGYEO4O6kHp+OfSsgyoAFYAGyiQRCYAyGGYAAMUOEsNwPG8iORMJQBQ+WNhYGAwEx0Nhclh8hUHDAHwAtPTREI2DFMfAIGo+nEYIxMLoqEN3qJYJzuR9dEMEaRQaDxQAOIakBFgoaiGKwHgQUXg+U60jg0Gy+XgqiyvmkWW-dqiwUBACOyBcGutUPQcFcZi0uBA8Pe4sl0vFQ35oJdbq9wBgUAgqD6nEwXrApFECbsUZj7A4mEIQjKtITtKoSvBCKDIy4CKRarmA0YyewMFQjAcZXs8jYqFa0RghHUmh5uFQDuTFjYmFpI1lSIqYeQyC13m8unB7wgIFpCPejEY45A71ltKD0vX4JGoKoe4Rp6VokIbDQGswbLUolarkwcmjQA\",\"duration\":289,\"transferSize\":0}]}",
+    "[e2e] > newtab https://www.nytimes.com/",
+    "[e2e] > try-wait 45000",
+    "[lethe-http] Connect failed to bbc.gscontxt.net:443",
+    "[lethe-http] Connect failed to ads.stickyadstv.com:443",
+    "[lethe-http] Connect failed to bbc.gscontxt.net:443",
+    "[e2e] timeout try-wait: still loading after 45000 ms",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var n = performance.getEntriesByType('navigation')[0] || {}; var rs = performance.getEntriesByType('resource'); var p = performance.getEntriesByType('paint'); var bytes = n.transferSize || 0, opaque = 0; for (var i = 0; i < rs.length; i++) { bytes += rs[i].transferSize || 0; if (!rs[i].transferSize) opaque++; } var imgEntries = rs.filter(function(e){ return e.initiatorType === 'img' && isFinite(e.duration) && e.duration >= 0; }); var imgs = imgEntries.map(function(e){ return e.duration; }).sort(function(a,b){ return a-b; }); var slowImages = imgEntries.slice().sort(function(a,b){ return b.duration-a.duration; }).slice(0,5).map(function(e){ return {url:e.name,duration:e.duration,transferSize:e.transferSize||0}; }); function pct(a,p){ if (!a.length) return null; var x=(a.length-1)*p/100,i=Math.floor(x),f=x-i; return a[i]+(a[i+1]-a[i])*f; } var imageEls = Array.prototype.slice.call(document.images); var decodedImages = imageEls.filter(function(img){ return img.complete && img.naturalWidth > 0; }).length; var fcp = p.filter(function(e){ return e.name === 'first-contentful-paint'; })[0]; return JSON.stringify({ url: location.href, ttfb: n.responseStart || null, dcl: n.domContentLoadedEventEnd || null, load: n.loadEventEnd || null, fcp: fcp ? fcp.startTime : null, resources: rs.length, opaqueResources: opaque, bytes: bytes, domNodes: document.getElementsByTagName('*').length, imageResources: imgs.length, imageP50: pct(imgs,50), imageP95: pct(imgs,95), imageP99: pct(imgs,99), imageP999: pct(imgs,99.9), imageMax: imgs.length ? imgs[imgs.length-1] : null, imageElements: imageEls.length, decodedImages: decodedImages, slowImages: slowImages }); })()",
+    "[e2e] result {\"url\":\"https://www.nytimes.com/\",\"ttfb\":192,\"dcl\":955.0000000000001,\"load\":null,\"fcp\":426,\"resources\":121,\"opaqueResources\":38,\"bytes\":649743,\"domNodes\":6459,\"imageResources\":31,\"imageP50\":168,\"imageP95\":309.5,\"imageP99\":330.9,\"imageP999\":335.49,\"imageMax\":336,\"imageElements\":126,\"decodedImages\":47,\"slowImages\":[{\"url\":\"https://www.nytimes.com/vi-assets/static-assets/icon-athletic-pulse_144x144-393cbda91e2678278456723b62a9b21f.webp\",\"duration\":336,\"transferSize\":3029},{\"url\":\"https://www.nytimes.com/vi-assets/static-assets/icon-clean-everything_144x144-97312e349d7284039a2153cb541b7fda.webp\",\"duration\":319,\"transferSize\":2689},{\"url\":\"https://www.nytimes.com/vi-assets/static-assets/icon-the-recommendation_144x144-3e66bd6cc82013bd511c31a8f04d4ff7.webp\",\"duration\":300,\"transferSize\":1367},{\"url\":\"https://www.nytimes.com/vi-assets/static-assets/icon-five-weeknight-dishes_144x144-97d51c5d4ba98233667b4057e3d852ab.webp\",\"duration\":283,\"transferSize\":3631},{\"url\":\"https://www.nytimes.com/vi-assets/static-assets/icon-the-veggie_144x144-f99606e1ca100f88cdfd8d763bf442c5.webp\",\"duration\":261,\"transferSize\":4155}]}",
+    "[e2e] > sleep 5000",
+    "[e2e] > mark memory:all-tabs",
+    "[e2e] mark memory:all-tabs",
+    "[e2e] > sleep 2500",
+    "[e2e] > newtab https://browserbench.org/Speedometer3.1/?startAutomatically=true",
+    "[e2e] > try-wait 45000",
+    "[e2e] > mark speedometer:start",
+    "[e2e] mark speedometer:start",
+    "[e2e] > wait-js 720000 (function(){ var e = document.querySelector('#result-number'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[lethe-http] Connect failed to bbc.gscontxt.net:443",
+    "[e2e] ok   wait-js -> 44.9",
+    "[e2e] > mark speedometer:end",
+    "[e2e] mark speedometer:end",
+    "[e2e] > sleep 1500",
+    "[e2e] > print-js (function(){ var e = document.querySelector('#result-number'); return e && e.textContent.trim() ? e.textContent.trim() : ''; })()",
+    "[e2e] result 44.9",
+    "[e2e] > quit",
+    "[e2e] quit (PASSED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

@@ -702,34 +702,14 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     // must change immediately when the setting changes. Keep the WebKit
     // page-local scaler and native renderer on the same mode. Environment
     // overrides remain authoritative for deterministic benchmark runs.
-    NSInteger webUpscalerMode = 0;
-    const char* webEnv = getenv("LETHE_UPSCALER");
-    if (webEnv && *webEnv) {
-        std::string v = webEnv;
-        for (char& ch : v) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
-        if (v == "linear") webUpscalerMode = 1;
-        else if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr") webUpscalerMode = 2;
-        else if (v == "metalfx-sharp") webUpscalerMode = 3;
-    } else {
-        if (prefs.upscaler == LetheUpscalerLinear) webUpscalerMode = 1;
-        else if (prefs.upscaler == LetheUpscalerFSR1) webUpscalerMode = 2;
-        else if (prefs.upscaler == LetheUpscalerDLSSLike) webUpscalerMode = 3;
-    }
-    if (ctx_ && ctx_->engine &&
-        static_cast<NSInteger>(ctx_->engine->renderer()->mediaUpscalerMode()) != webUpscalerMode) {
-        lethe::MediaUpscalerMode mode = lethe::MediaUpscalerMode::None;
-        const char* env = getenv("LETHE_UPSCALER");
-        if (env && *env) {
-            std::string v = env;
-            for (char& ch : v) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
-            if (v == "linear") mode = lethe::MediaUpscalerMode::Linear;
-            else if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr")
-                mode = lethe::MediaUpscalerMode::MetalFX;
-        } else if (prefs.upscaler == LetheUpscalerLinear) mode = lethe::MediaUpscalerMode::Linear;
-        else if (prefs.upscaler == LetheUpscalerFSR1 || prefs.upscaler == LetheUpscalerDLSSLike)
-            mode = lethe::MediaUpscalerMode::MetalFX;
-        ctx_->engine->renderer()->setMediaUpscaler(mode);
-    }
+    // One resolver (env override, else Settings) for page and native paths.
+    const NSInteger webMode = LetheMediaEnhancerMode();
+    const lethe::MediaUpscalerMode nativeMode =
+        webMode == 0 ? lethe::MediaUpscalerMode::None
+      : webMode == 1 ? lethe::MediaUpscalerMode::Linear
+                     : lethe::MediaUpscalerMode::MetalFX;
+    if (ctx_ && ctx_->engine && ctx_->engine->renderer()->mediaUpscalerMode() != nativeMode)
+        ctx_->engine->renderer()->setMediaUpscaler(nativeMode);
     NSString* modeScript = LetheMediaEnhancerApplyJS();
     for (BrowserWindowController* controller in controllers_) {
         WKWebView* web = controller.webView;

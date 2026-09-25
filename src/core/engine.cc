@@ -71,7 +71,8 @@ void applyEnvironmentOverrides(Config& cfg) {
     }
     if (const char* upscaler = std::getenv("LETHE_UPSCALER")) {
         const std::string v = toLowerCopy(std::string(upscaler));
-        if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr")
+        if (v == "metalfx" || v == "metalfx-spatial" || v == "fsr" ||
+            v == "metalfx-sharp" || v == "fsr-sharp")
             cfg.media_upscaler = MediaUpscalerMode::MetalFX;
         else if (v == "linear")
             cfg.media_upscaler = MediaUpscalerMode::Linear;

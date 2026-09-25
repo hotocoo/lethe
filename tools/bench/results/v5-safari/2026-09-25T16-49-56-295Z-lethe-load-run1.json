@@ -1,0 +1,587 @@
+{
+  "browser": "lethe",
+  "label": "lethe-load",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-09-25T16:49:56.295Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "extreme",
+    "brutal"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 242.13583300000005,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": "dom=252509 build=73ms thrash=1714ms fps=58.5",
+    "js": "js matMul=106 crypto=1 rec=1 t=8138ms ok=true",
+    "webgl": "webgl quads=256 fps=59.9 frames=600",
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": "brutal-dom nodes=404009 build=1586ms thrash=6543ms fps=58.4",
+    "worker": "brutal-worker workers=16 cores=8 ops=31013040000 mops_s=5162.0 spawn_to_done=6008ms",
+    "storage": "brutal-storage n=20000 write=255ms read=787ms(20000) index=1ms localstorage=3ms wps=78431",
+    "paint": "brutal-paint layers=4000 fps=57.0",
+    "net": "brutal-net n=1000 cold=273ms rps=3663 warm=269ms rps=3717 mb=21.0 p50=181.0ms p95=245.0ms p99=253.0ms"
+  },
+  "media": null,
+  "enhancer": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 587.057667,
+      "rssMb": 249.1875,
+      "processes": 5,
+      "cpuSec": 0.62,
+      "breakdown": [
+        {
+          "pid": 1847,
+          "rssMb": 117.2,
+          "cpuSec": 0.29,
+          "name": "lethe"
+        },
+        {
+          "pid": 1848,
+          "rssMb": 14.1,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 1849,
+          "rssMb": 31.7,
+          "cpuSec": 0.07,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 1850,
+          "rssMb": 36.5,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1854,
+          "rssMb": 49.7,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "extreme:mem-dom",
+      "tMs": 25750.238458,
+      "rssMb": 1123.0625,
+      "processes": 6,
+      "cpuSec": 3.36,
+      "breakdown": [
+        {
+          "pid": 1847,
+          "rssMb": 124.5,
+          "cpuSec": 0.59,
+          "name": "lethe"
+        },
+        {
+          "pid": 1848,
+          "rssMb": 18.4,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 1849,
+          "rssMb": 41.7,
+          "cpuSec": 0.15,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 1850,
+          "rssMb": 36.6,
+          "cpuSec": 0.13,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1854,
+          "rssMb": 49.6,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1875,
+          "rssMb": 852.3,
+          "cpuSec": 2.34,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "extreme:mem-js",
+      "tMs": 38053.119792000005,
+      "rssMb": 1202.609375,
+      "processes": 7,
+      "cpuSec": 11.16,
+      "breakdown": [
+        {
+          "pid": 1847,
+          "rssMb": 128.6,
+          "cpuSec": 0.77,
+          "name": "lethe"
+        },
+        {
+          "pid": 1848,
+          "rssMb": 18.5,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 1849,
+          "rssMb": 42,
+          "cpuSec": 0.2,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 1850,
+          "rssMb": 36.6,
+          "cpuSec": 0.13,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1854,
+          "rssMb": 49.6,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1875,
+          "rssMb": 852.3,
+          "cpuSec": 2.36,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1971,
+          "rssMb": 75.1,
+          "cpuSec": 7.54,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "extreme:mem-webgl",
+      "tMs": 59815.331083000005,
+      "rssMb": 1246.6875,
+      "processes": 8,
+      "cpuSec": 12.42,
+      "breakdown": [
+        {
+          "pid": 1847,
+          "rssMb": 131.7,
+          "cpuSec": 1.22,
+          "name": "lethe"
+        },
+        {
+          "pid": 1848,
+          "rssMb": 18.5,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 1849,
+          "rssMb": 46.9,
+          "cpuSec": 0.67,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 1850,
+          "rssMb": 36.6,
+          "cpuSec": 0.13,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1854,
+          "rssMb": 49.6,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1875,
+          "rssMb": 852.2,
+          "cpuSec": 2.37,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1971,
+          "rssMb": 74.8,
+          "cpuSec": 7.56,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2156,
+          "rssMb": 36.5,
+          "cpuSec": 0.31,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-dom",
+      "tMs": 74032.131417,
+      "rssMb": 2436,
+      "processes": 10,
+      "cpuSec": 21.86,
+      "breakdown": [
+        {
+          "pid": 1847,
+          "rssMb": 132,
+          "cpuSec": 1.6,
+          "name": "lethe"
+        },
+        {
+          "pid": 1848,
+          "rssMb": 33.8,
+          "cpuSec": 0.18,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 1849,
+          "rssMb": 52.9,
+          "cpuSec": 0.9,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 1850,
+          "rssMb": 36.6,
+          "cpuSec": 0.14,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1854,
+          "rssMb": 49.6,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1875,
+          "rssMb": 852.2,
+          "cpuSec": 2.38,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1971,
+          "rssMb": 74.7,
+          "cpuSec": 7.57,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2156,
+          "rssMb": 36.4,
+          "cpuSec": 0.33,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2501,
+          "rssMb": 36.5,
+          "cpuSec": 0.1,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2792,
+          "rssMb": 1131.2,
+          "cpuSec": 8.54,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-worker",
+      "tMs": 80338.75941700001,
+      "rssMb": 2528.25,
+      "processes": 11,
+      "cpuSec": 115.76,
+      "breakdown": [
+        {
+          "pid": 1847,
+          "rssMb": 139.2,
+          "cpuSec": 1.73,
+          "name": "lethe"
+        },
+        {
+          "pid": 1848,
+          "rssMb": 34.1,
+          "cpuSec": 0.18,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 1849,
+          "rssMb": 53.2,
+          "cpuSec": 0.92,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 1850,
+          "rssMb": 36.6,
+          "cpuSec": 0.14,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1854,
+          "rssMb": 49.6,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1875,
+          "rssMb": 852.2,
+          "cpuSec": 2.38,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1971,
+          "rssMb": 74.7,
+          "cpuSec": 7.57,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2156,
+          "rssMb": 36.4,
+          "cpuSec": 0.33,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2501,
+          "rssMb": 36.4,
+          "cpuSec": 0.1,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2792,
+          "rssMb": 1131.3,
+          "cpuSec": 8.6,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2889,
+          "rssMb": 84.5,
+          "cpuSec": 93.69,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-paint",
+      "tMs": 87153.204875,
+      "rssMb": 2898.609375,
+      "processes": 13,
+      "cpuSec": 124.39,
+      "breakdown": [
+        {
+          "pid": 1847,
+          "rssMb": 167.8,
+          "cpuSec": 3.97,
+          "name": "lethe"
+        },
+        {
+          "pid": 1848,
+          "rssMb": 59.9,
+          "cpuSec": 0.85,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 1849,
+          "rssMb": 139.6,
+          "cpuSec": 1.14,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 1850,
+          "rssMb": 36.6,
+          "cpuSec": 0.14,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1854,
+          "rssMb": 49.6,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1875,
+          "rssMb": 852.2,
+          "cpuSec": 2.39,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 1971,
+          "rssMb": 74.7,
+          "cpuSec": 7.57,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2156,
+          "rssMb": 36.4,
+          "cpuSec": 0.33,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2501,
+          "rssMb": 36.4,
+          "cpuSec": 0.11,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2792,
+          "rssMb": 1131.2,
+          "cpuSec": 8.62,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 2889,
+          "rssMb": 84.5,
+          "cpuSec": 93.7,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 3010,
+          "rssMb": 115.9,
+          "cpuSec": 0.97,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 3160,
+          "rssMb": 113.8,
+          "cpuSec": 4.48,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-net",
+      "tMs": 87941.21529200001,
+      "rssMb": 49.5625,
+      "processes": 2,
+      "cpuSec": 0.12,
+      "breakdown": [
+        {
+          "pid": 1847,
+          "rssMb": 0,
+          "cpuSec": 0,
+          "name": "(lethe)"
+        },
+        {
+          "pid": 1854,
+          "rssMb": 49.6,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:56122 (subresource enforcement on)",
+    "[e2e] start: 49 lines",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > sleep 1500",
+    "[e2e] > newtab http://127.0.0.1:56111/xdom.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > sleep 20000",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result dom=252509 build=73ms thrash=1714ms fps=58.5",
+    "[e2e] > mark extreme:mem-dom",
+    "[e2e] mark extreme:mem-dom",
+    "[e2e] > newtab http://127.0.0.1:56111/xjs.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > sleep 11000",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result js matMul=106 crypto=1 rec=1 t=8138ms ok=true",
+    "[e2e] > mark extreme:mem-js",
+    "[e2e] mark extreme:mem-js",
+    "[e2e] > newtab http://127.0.0.1:56111/xgl.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > sleep 20000",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result webgl quads=256 fps=59.9 frames=600",
+    "[e2e] > mark extreme:mem-webgl",
+    "[e2e] mark extreme:mem-webgl",
+    "[e2e] > newtab http://127.0.0.1:56111/xnet.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 30000 document.getElementById(\"stats\").textContent.indexOf(\"rps=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > sleep 500",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[e2e] result net n=300 done=300 bytes=307200 t=80ms rps=3750 p50=56.0ms p95=74.0ms p99=76.0ms p99.9=76.0ms max=76.0ms",
+    "[e2e] > sleep 1500",
+    "[e2e] > newtab http://127.0.0.1:56111/bdom.html",
+    "[e2e] > try-wait 90000",
+    "[e2e] > wait-js 300000 document.getElementById(\"stats\").textContent.indexOf(\"fps=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-dom nodes=404009 build=1586ms thrash=6543ms fps=58.4",
+    "[e2e] > mark brutal:mem-dom",
+    "[e2e] mark brutal:mem-dom",
+    "[e2e] > newtab http://127.0.0.1:56111/bworker.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 60000 document.getElementById(\"stats\").textContent.indexOf(\"mops_s=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-worker workers=16 cores=8 ops=31013040000 mops_s=5162.0 spawn_to_done=6008ms",
+    "[e2e] > mark brutal:mem-worker",
+    "[e2e] mark brutal:mem-worker",
+    "[e2e] > newtab http://127.0.0.1:56111/bstorage.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 120000 document.getElementById(\"stats\").textContent.indexOf(\"wps=\")>=0||document.getElementById(\"stats\").textContent.indexOf(\"error=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-storage n=20000 write=255ms read=787ms(20000) index=1ms localstorage=3ms wps=78431",
+    "[e2e] > newtab http://127.0.0.1:56111/bpaint.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 120000 document.getElementById(\"stats\").textContent.indexOf(\"fps=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-paint layers=4000 fps=57.0",
+    "[e2e] > mark brutal:mem-paint",
+    "[e2e] mark brutal:mem-paint",
+    "[e2e] > newtab http://127.0.0.1:56111/bnet.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 180000 document.getElementById(\"stats\").textContent.indexOf(\"p99=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-net n=1000 cold=273ms rps=3663 warm=269ms rps=3717 mb=21.0 p50=181.0ms p95=245.0ms p99=253.0ms",
+    "[e2e] > mark brutal:mem-net",
+    "[e2e] mark brutal:mem-net",
+    "[e2e] > quit",
+    "[e2e] quit (PASSED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}
