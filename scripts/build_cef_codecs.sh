@@ -8,7 +8,7 @@
 # Chrome and the WebKit shell play them. The only fix is a source build with
 # the codec GN flags below. This script drives CEF's own automate-git.py.
 #
-# Cost: roughly 100-150 GB of disk and several hours on Apple Silicon.
+# Cost: roughly 100-150 GB of disk (shallow: no Chromium git history) and several hours on Apple Silicon.
 # Licensing: shipping H.264/HEVC/AAC decoders can require patent licenses
 # in some jurisdictions. Check before you distribute the resulting build.
 #
@@ -53,6 +53,7 @@ python3 "$WORK/automate-git.py" \
     --minimal-distrib \
     --client-distrib \
     --no-debug-build \
+    --no-chromium-history \
     --force-build \
     "$ARCH_FLAG"
 
