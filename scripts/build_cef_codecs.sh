@@ -37,6 +37,11 @@ if [ "${free_gb:-0}" -lt 150 ] && [ -z "${LETHE_CEF_FORCE:-}" ]; then
     exit 1
 fi
 
+# ANGLE compiles Metal shaders; Xcode 26 ships the Metal toolchain separately.
+if [ "$(uname -s)" = Darwin ] && ! xcrun -f metal >/dev/null 2>&1; then
+    xcodebuild -downloadComponent MetalToolchain
+fi
+
 mkdir -p "$WORK"
 if [ ! -f "$WORK/automate-git.py" ]; then
     curl -fsSL -o "$WORK/automate-git.py" \
@@ -55,7 +60,9 @@ open(p, 'w').write(s)
 PY
 fi
 
-export GN_DEFINES="is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome"
+# chrome_pgo_phase=0: PGO profiles are not fetched for CEF checkouts; without
+# it gn gen fails. Costs a few percent CPU versus an official Chrome build.
+export GN_DEFINES="is_official_build=true chrome_pgo_phase=0 proprietary_codecs=true ffmpeg_branding=Chrome"
 export CEF_ARCHIVE_FORMAT=tar.bz2
 
 python3 "$WORK/automate-git.py" \
