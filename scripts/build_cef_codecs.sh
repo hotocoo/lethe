@@ -22,6 +22,7 @@ cd "$(dirname "$0")/.."
 # Keep this in step with CEF_VERSION in scripts/fetch_cef.sh.
 CEF_BRANCH="${CEF_BRANCH:-7922}"
 CEF_COMMIT="${CEF_COMMIT:-2384915}"
+CEF_COMMIT_FULL="${CEF_COMMIT_FULL:-2384915b7b1f0fe5ad1107e48d80c34e86b698d7}"
 WORK="${1:-$HOME/cef-src}"
 
 case "$(uname -m)" in
@@ -43,10 +44,17 @@ if [ "$(uname -s)" = Darwin ] && ! xcrun -f metal >/dev/null 2>&1; then
 fi
 
 mkdir -p "$WORK"
-if [ ! -f "$WORK/automate-git.py" ]; then
-    curl -fsSL -o "$WORK/automate-git.py" \
-        "https://raw.githubusercontent.com/chromiumembedded/cef/master/tools/automate/automate-git.py"
+# automate-git.py runs with this user's privileges: fetch it from the pinned
+# CEF commit (not a branch) and refuse it unless the checksum matches.
+AUTOMATE_SHA256="${AUTOMATE_SHA256:-fe0c880fd2a91ac3ab4c82301f596295cecc1901e503507e36300a5b58578dcd}"
+AUTOMATE_URL="https://raw.githubusercontent.com/chromiumembedded/cef/${CEF_COMMIT_FULL}/tools/automate/automate-git.py"
+curl -fsSL -o "$WORK/automate-git.py.new" "$AUTOMATE_URL"
+if [ "$(shasum -a 256 "$WORK/automate-git.py.new" | cut -d' ' -f1)" != "$AUTOMATE_SHA256" ]; then
+    echo "[cef-codecs] automate-git.py checksum mismatch; refusing to run it." >&2
+    rm -f "$WORK/automate-git.py.new"
+    exit 1
 fi
+mv "$WORK/automate-git.py.new" "$WORK/automate-git.py"
 
 # CEF's runhooks.patch only edits the Windows toolchain scripts and does not
 # apply cleanly to every Chromium tag; it has no effect on macOS/Linux.

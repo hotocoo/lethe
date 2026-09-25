@@ -148,36 +148,6 @@ std::string stringify(CefRefPtr<CefV8Value> v, int depth = 0) {
     return "null";
 }
 
-class LetheEvalHandler : public CefV8Handler {
- public:
-    bool Execute(const CefString& name,
-                 CefRefPtr<CefV8Value> /*object*/,
-                 const CefV8ValueList& arguments,
-                 CefRefPtr<CefV8Value>& retval,
-                 CefString& exception) override {
-        if (name == "__letheEval" && arguments.size() >= 1) {
-            // Wrap as `(function(){ return <code>; })()` and evaluate.
-            CefRefPtr<CefV8Context> ctx = CefV8Context::GetCurrentContext();
-            if (!ctx) { exception = "no v8 context"; return true; }
-            CefString code = arguments[0]->GetStringValue();
-            CefRefPtr<CefV8Value> r;
-            CefRefPtr<CefV8Exception> ex;
-            bool ok = ctx->Eval(code, "<lethe-eval>", 0, r, ex);
-            if (!ok) {
-                exception = ex.get() ? ex->GetMessage().ToString()
-                                     : "eval failed";
-                retval = CefV8Value::CreateString("");
-                return true;
-            }
-            retval = CefV8Value::CreateString(stringify(r));
-            return true;
-        }
-        return false;
-    }
-    IMPLEMENT_REFCOUNTING(LetheEvalHandler);
-};
-
-CefRefPtr<LetheEvalHandler> g_handler;
 
 const char kMediaEnhancerJS[] =
 #include "renderer/media_enhancer.js.inc"
@@ -216,18 +186,9 @@ void LetheCefRenderHandler::OnContextCreated(CefRefPtr<CefBrowser> browser,
                                              CefRefPtr<CefV8Context> context) {
     (void)browser; (void)frame;
     if (!context) return;
-    // The embedder bridge is only needed by the top-level automation frame.
-    // Installing it in every iframe creates a V8 function and context-global
-    // property for every renderer context, increasing page startup work and
-    // unnecessarily exposing a privileged embedder surface to third-party
-    // frames. Keep the bridge and script-plugin injection main-frame-only.
+    // Automation evaluates through the "lethe:eval" process message below;
+    // no embedder function is exposed on the page's global object.
     if (!frame || !frame->IsMain()) return;
-    if (!g_handler) g_handler = new LetheEvalHandler();
-    context->Enter();
-    CefRefPtr<CefV8Value> global = context->GetGlobal();
-    CefRefPtr<CefV8Value> fn = CefV8Value::CreateFunction("__letheEval", g_handler);
-    global->SetValue("__letheEval", fn, V8_PROPERTY_ATTRIBUTE_READONLY);
-    context->Exit();
     InjectMediaEnhancer(frame, context);
     // Script plugins: run at context creation (document start), IIFE-wrapped
     // so plugins cannot see each other's vars.
