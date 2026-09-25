@@ -1,0 +1,318 @@
+{
+  "browser": "lethe",
+  "label": "lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-09-11T04:35:18.968Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "brutal"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 220.62337499999998,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": "brutal-dom nodes=404009 build=1753ms thrash=6016ms fps=69.6",
+    "worker": "brutal-worker workers=16 cores=8 ops=31125720000 mops_s=5182.4 spawn_to_done=6006ms",
+    "storage": "brutal-storage n=20000 write=273ms read=855ms(20000) index=1ms localstorage=3ms wps=73260",
+    "paint": "brutal-paint layers=4000 fps=64.7",
+    "net": "brutal-net n=1000 cold=269ms rps=3717 warm=258ms rps=3876 mb=21.0 p50=174.0ms p95=236.0ms p99=243.0ms"
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 546.569583,
+      "rssMb": 197.15625,
+      "processes": 4,
+      "cpuSec": 0.43,
+      "breakdown": [
+        {
+          "pid": 59341,
+          "rssMb": 118.1,
+          "cpuSec": 0.29,
+          "name": "lethe"
+        },
+        {
+          "pid": 59342,
+          "rssMb": 14.1,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 59343,
+          "rssMb": 32.1,
+          "cpuSec": 0.07,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 59344,
+          "rssMb": 32.8,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-dom",
+      "tMs": 12637.807958000001,
+      "rssMb": 1356.6875,
+      "processes": 5,
+      "cpuSec": 9.37,
+      "breakdown": [
+        {
+          "pid": 59341,
+          "rssMb": 125.1,
+          "cpuSec": 0.6,
+          "name": "lethe"
+        },
+        {
+          "pid": 59342,
+          "rssMb": 18.4,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 59343,
+          "rssMb": 42.7,
+          "cpuSec": 0.33,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 59344,
+          "rssMb": 32.9,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 59646,
+          "rssMb": 1137.5,
+          "cpuSec": 8.34,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-worker",
+      "tMs": 19142.555375,
+      "rssMb": 1447.53125,
+      "processes": 6,
+      "cpuSec": 102.34,
+      "breakdown": [
+        {
+          "pid": 59341,
+          "rssMb": 129.1,
+          "cpuSec": 0.73,
+          "name": "lethe"
+        },
+        {
+          "pid": 59342,
+          "rssMb": 18.9,
+          "cpuSec": 0.04,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 59343,
+          "rssMb": 43,
+          "cpuSec": 0.34,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 59344,
+          "rssMb": 33,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 59646,
+          "rssMb": 1137.6,
+          "cpuSec": 8.41,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 59927,
+          "rssMb": 85.9,
+          "cpuSec": 92.75999999999999,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-paint",
+      "tMs": 25427.132458,
+      "rssMb": 1823,
+      "processes": 8,
+      "cpuSec": 109.13,
+      "breakdown": [
+        {
+          "pid": 59341,
+          "rssMb": 162.7,
+          "cpuSec": 2.43,
+          "name": "lethe"
+        },
+        {
+          "pid": 59342,
+          "rssMb": 46.8,
+          "cpuSec": 0.77,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 59343,
+          "rssMb": 130.4,
+          "cpuSec": 0.6,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 59344,
+          "rssMb": 33,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 59646,
+          "rssMb": 1137.5,
+          "cpuSec": 8.41,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 59927,
+          "rssMb": 85.9,
+          "cpuSec": 92.77000000000001,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 60227,
+          "rssMb": 113.1,
+          "cpuSec": 1.02,
+          "name": "com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 60417,
+          "rssMb": 113.7,
+          "cpuSec": 3.07,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-net",
+      "tMs": 26168.841958,
+      "rssMb": 0,
+      "processes": 1,
+      "cpuSec": 0,
+      "breakdown": [
+        {
+          "pid": 59341,
+          "rssMb": 0,
+          "cpuSec": 0,
+          "name": "(lethe)"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "Lethe Browser v0.1.1 (system WebKit)",
+    "[lethe] Applying macOS sandbox (Seatbelt)...",
+    "[lethe] Seatbelt profile active (file writes limited to temp, ~/Downloads and Lethe's own Library subtrees)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN enabled (fail-closed loopback; set LETHE_VPN_ENDPOINT=host:port to tunnel)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] CONNECT reactor: kqueue shards=4",
+    "[lethe-proxy] worker pool: 32 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:55186 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:55186 (subresource enforcement on)",
+    "[e2e] start: 28 lines",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > sleep 1500",
+    "[e2e] > newtab http://127.0.0.1:55185/bdom.html",
+    "[e2e] > try-wait 90000",
+    "[e2e] > wait-js 300000 document.getElementById(\"stats\").textContent.indexOf(\"fps=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-dom nodes=404009 build=1753ms thrash=6016ms fps=69.6",
+    "[e2e] > mark brutal:mem-dom",
+    "[e2e] mark brutal:mem-dom",
+    "[e2e] > newtab http://127.0.0.1:55185/bworker.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 60000 document.getElementById(\"stats\").textContent.indexOf(\"mops_s=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-worker workers=16 cores=8 ops=31125720000 mops_s=5182.4 spawn_to_done=6006ms",
+    "[e2e] > mark brutal:mem-worker",
+    "[e2e] mark brutal:mem-worker",
+    "[e2e] > newtab http://127.0.0.1:55185/bstorage.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 120000 document.getElementById(\"stats\").textContent.indexOf(\"wps=\")>=0||document.getElementById(\"stats\").textContent.indexOf(\"error=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-storage n=20000 write=273ms read=855ms(20000) index=1ms localstorage=3ms wps=73260",
+    "[e2e] > newtab http://127.0.0.1:55185/bpaint.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 120000 document.getElementById(\"stats\").textContent.indexOf(\"fps=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-paint layers=4000 fps=64.7",
+    "[e2e] > mark brutal:mem-paint",
+    "[e2e] mark brutal:mem-paint",
+    "[e2e] > newtab http://127.0.0.1:55185/bnet.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 180000 document.getElementById(\"stats\").textContent.indexOf(\"p99=\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[e2e] result brutal-net n=1000 cold=269ms rps=3717 warm=258ms rps=3876 mb=21.0 p50=174.0ms p95=236.0ms p99=243.0ms",
+    "[e2e] > mark brutal:mem-net",
+    "[e2e] mark brutal:mem-net",
+    "[e2e] > quit",
+    "[e2e] quit (PASSED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

@@ -32,6 +32,17 @@
 #include "browser/url_input.h"
 
 namespace {
+// URLs in logs are for orientation, not archival: an internal data: document
+// is thousands of characters and makes every other line unreadable.
+std::string ShortUrlForLog(const std::string& url) {
+    if (url.rfind("data:", 0) == 0) return "data:<internal page>";
+    if (url.size() <= 120) return url;
+    return url.substr(0, 117) + "...";
+}
+}  // namespace
+
+
+namespace {
 LetheCefAutomation* g_automation = nullptr;
 
 // The AppKit window hosting a CEF browser view, used for native-chrome

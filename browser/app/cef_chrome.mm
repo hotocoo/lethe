@@ -8,6 +8,7 @@
 #import "ui/mac/LetheBookmarks.h"
 #import "ui/mac/LetheSettings.h"
 #import "ui/mac/LetheDesign.h"
+#import "ui/mac/LetheOmnibox.h"
 
 #include <iostream>
 #include <cmath>
@@ -150,7 +151,7 @@ NSString* LetheMediaUpscalerScript(void) { return @""; }
 
 - (void)mouseExited:(NSEvent*)event {
     (void)event;
-    self.contentTintColor = [NSColor secondaryLabelColor];
+    self.contentTintColor = [NSColor labelColor];
     self.layer.backgroundColor = [NSColor clearColor].CGColor;
 }
 @end
@@ -419,7 +420,9 @@ NSButton* Button(NSString* symbol, NSString* label, id target, SEL action) {
     b.refusesFirstResponder = NO;
     b.showsBorderOnlyWhileMouseInside = NO;
     b.focusRingType = NSFocusRingTypeNone;
-    b.contentTintColor = [NSColor secondaryLabelColor];
+    // secondaryLabelColor on the unified titlebar reads as disabled; these
+    // are primary navigation controls and should look clickable at rest.
+    b.contentTintColor = [NSColor labelColor];
     b.imageScaling = NSImageScaleProportionallyDown;
     b.toolTip = label;
     b.accessibilityRole = NSAccessibilityButtonRole;
@@ -480,9 +483,26 @@ void Layout(NSView* browserView, NSView* chrome) {
     browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     container.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 
+    // Use the window's content layout rect, not the full content view: with a
+    // transparent unified titlebar the content view extends *under* the
+    // toolbar, so a full-bounds CEF surface painted its own rounded top
+    // corners across the toolbar edge. The layout rect is exactly the area
+    // AppKit leaves below the toolbar.
+    NSWindow* window = container.window ?: chrome.window;
     NSRect bounds = container.superview ? container.superview.bounds : container.bounds;
+    if (window && window.contentView) {
+        const NSRect layout = [window.contentView convertRect:window.contentLayoutRect
+                                                     fromView:nil];
+        if (layout.size.height > 1.0 && layout.size.width > 1.0) bounds = layout;
+    }
     container.frame = bounds;
     browserView.frame = NSMakeRect(0, 0, bounds.size.width, bounds.size.height);
+    // Never let the renderer surface round or clip itself: the window already
+    // owns the corner treatment.
+    if (browserView.layer) {
+        browserView.layer.cornerRadius = 0.0;
+        browserView.layer.masksToBounds = NO;
+    }
     for (NSNumber* key in g_chrome) {
         LetheCefChromeController* controller = g_chrome[key];
         if (controller.chrome != chrome || !controller.progressLayer) continue;
@@ -812,7 +832,13 @@ void LetheCefChromeSetAddress(CefRefPtr<CefBrowser> browser, const std::string& 
     // chrome, not useful navigation state. Keep the omnibox consistent with
     // LetheCefChromeUpdate so CEF callbacks cannot briefly expose a giant
     // data: payload while a native block/new-tab page is committing.
-    c.address.stringValue = [value hasPrefix:@"data:text/html"] ? @"New Tab" : value;
+    NSString* shown = [value hasPrefix:@"data:text/html"] ? @"New Tab" : value;
+    NSAttributedString* styled = LetheOmniboxAttributedAddress(shown, c.address.font);
+    if (styled) {
+        c.address.attributedStringValue = styled;
+    } else {
+        c.address.stringValue = shown;
+    }
 }
 
 void LetheCefChromeSetLoading(CefRefPtr<CefBrowser> browser, bool loading) {

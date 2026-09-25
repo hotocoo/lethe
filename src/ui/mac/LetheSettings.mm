@@ -186,10 +186,14 @@ static void* kLetheMinYKey = &kLetheMinYKey;
             @"blockReferer": @"Strip the Referer header on cross-origin navigations.",
             @"blockWebRTC": @"Block WebRTC. WebRTC can leak local network addresses even over VPN.",
             @"persistentCookies": @"Keep cookies and site data between launches. Off = incognito.",
+            @"siteGuard": @"Assess every page you open for phishing and impersonation. Runs entirely on this Mac; no address is sent anywhere.",
+            @"downloadGuard": @"Scan finished downloads for known signatures, disguised executables and unsafe archives.",
+            @"quarantineThreats": @"Move a blocked download into Lethe's quarantine folder instead of leaving it in Downloads.",
         };
         NSArray* keys = @[@"trackerBlocking", @"httpsFirst", @"httpsOnly", @"stealthUA",
                           @"doNotTrack", @"blockFingerprinting", @"blockThirdPartyCookies",
-                          @"blockReferer", @"blockWebRTC", @"persistentCookies"];
+                          @"blockReferer", @"blockWebRTC", @"persistentCookies",
+                          @"siteGuard", @"downloadGuard", @"quarantineThreats"];
         NSArray* titles = @[@"Block third-party trackers",
                             @"HTTPS-first",
                             @"HTTPS-only (refuse plain http)",
@@ -199,7 +203,10 @@ static void* kLetheMinYKey = &kLetheMinYKey;
                             @"Block third-party cookies",
                             @"Strip Referer on cross-origin",
                             @"Block WebRTC",
-                            @"Persistent cookies (kept between launches)"];
+                            @"Persistent cookies (kept between launches)",
+                            @"Site threat scanner (local)",
+                            @"Download threat scanner (local)",
+                            @"Quarantine blocked downloads"];
         for (NSUInteger i = 0; i < keys.count; i++) {
             NSString* k = keys[i];
             BOOL on = NO;

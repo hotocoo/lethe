@@ -1,0 +1,472 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 152.0.7977.84",
+  "run": 2,
+  "startedAt": "2026-09-11T04:38:16.808Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "brutal"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 364.30416700000205,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": "brutal-dom nodes=404009 build=1198ms thrash=755ms fps=85.2",
+    "worker": "brutal-worker workers=16 cores=16 ops=83226020000 mops_s=13844.9 spawn_to_done=6011ms",
+    "storage": "brutal-storage n=20000 write=443ms read=72ms(20000) index=0ms localstorage=13ms wps=45147",
+    "paint": "brutal-paint layers=4000 fps=68.7",
+    "net": "brutal-net n=1000 cold=91ms rps=11050 warm=89ms rps=11211 mb=21.0 p50=36.6ms p95=70.2ms p99=75.1ms"
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 364.30925000000207,
+      "rssMb": 1007.359375,
+      "processes": 8,
+      "cpuSec": 0.74,
+      "breakdown": [
+        {
+          "pid": 67896,
+          "rssMb": 215.9,
+          "cpuSec": 0.36,
+          "name": "Google"
+        },
+        {
+          "pid": 67900,
+          "rssMb": 126.9,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 67901,
+          "rssMb": 95,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67902,
+          "rssMb": 78.4,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 67904,
+          "rssMb": 157.3,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 67906,
+          "rssMb": 117.4,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 67907,
+          "rssMb": 98.4,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 67908,
+          "rssMb": 118.1,
+          "cpuSec": 0.04,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-dom",
+      "tMs": 6037.076208000002,
+      "rssMb": 3890.671875,
+      "processes": 12,
+      "cpuSec": 7.21,
+      "breakdown": [
+        {
+          "pid": 67896,
+          "rssMb": 769.7,
+          "cpuSec": 1.72,
+          "name": "Google"
+        },
+        {
+          "pid": 67900,
+          "rssMb": 138.2,
+          "cpuSec": 0.37,
+          "name": "Google"
+        },
+        {
+          "pid": 67901,
+          "rssMb": 101.5,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 67902,
+          "rssMb": 79.2,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 67904,
+          "rssMb": 176.3,
+          "cpuSec": 0.13,
+          "name": "Google"
+        },
+        {
+          "pid": 67906,
+          "rssMb": 118.3,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67907,
+          "rssMb": 1918,
+          "cpuSec": 4.55,
+          "name": "Google"
+        },
+        {
+          "pid": 67908,
+          "rssMb": 119.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67922,
+          "rssMb": 115.4,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 68234,
+          "rssMb": 99.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 68235,
+          "rssMb": 131.5,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 68236,
+          "rssMb": 123.3,
+          "cpuSec": 0.06,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-worker",
+      "tMs": 12419.411333,
+      "rssMb": 4103.5,
+      "processes": 13,
+      "cpuSec": 101.11,
+      "breakdown": [
+        {
+          "pid": 67896,
+          "rssMb": 774.6,
+          "cpuSec": 1.8,
+          "name": "Google"
+        },
+        {
+          "pid": 67900,
+          "rssMb": 138.6,
+          "cpuSec": 0.41,
+          "name": "Google"
+        },
+        {
+          "pid": 67901,
+          "rssMb": 102.7,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 67902,
+          "rssMb": 79.3,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 67904,
+          "rssMb": 176.9,
+          "cpuSec": 0.13,
+          "name": "Google"
+        },
+        {
+          "pid": 67906,
+          "rssMb": 118.4,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67907,
+          "rssMb": 1918.3,
+          "cpuSec": 4.56,
+          "name": "Google"
+        },
+        {
+          "pid": 67908,
+          "rssMb": 119.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67922,
+          "rssMb": 115.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 68234,
+          "rssMb": 203.3,
+          "cpuSec": 93.75999999999999,
+          "name": "Google"
+        },
+        {
+          "pid": 68235,
+          "rssMb": 131.6,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 68236,
+          "rssMb": 123.4,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 68250,
+          "rssMb": 101.4,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-paint",
+      "tMs": 18094.729417,
+      "rssMb": 4508,
+      "processes": 13,
+      "cpuSec": 114.94,
+      "breakdown": [
+        {
+          "pid": 67896,
+          "rssMb": 831.5,
+          "cpuSec": 2.95,
+          "name": "Google"
+        },
+        {
+          "pid": 67900,
+          "rssMb": 210.1,
+          "cpuSec": 5.86,
+          "name": "Google"
+        },
+        {
+          "pid": 67901,
+          "rssMb": 104.8,
+          "cpuSec": 0.29,
+          "name": "Google"
+        },
+        {
+          "pid": 67902,
+          "rssMb": 85.2,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 67904,
+          "rssMb": 177.4,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 67906,
+          "rssMb": 118.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67907,
+          "rssMb": 1920.3,
+          "cpuSec": 4.62,
+          "name": "Google"
+        },
+        {
+          "pid": 67922,
+          "rssMb": 115.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 68234,
+          "rssMb": 206.4,
+          "cpuSec": 93.83,
+          "name": "Google"
+        },
+        {
+          "pid": 68236,
+          "rssMb": 123.6,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 68250,
+          "rssMb": 179.5,
+          "cpuSec": 0.47,
+          "name": "Google"
+        },
+        {
+          "pid": 68376,
+          "rssMb": 335.3,
+          "cpuSec": 6.47,
+          "name": "Google"
+        },
+        {
+          "pid": 68423,
+          "rssMb": 99.8,
+          "cpuSec": 0.06,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-net",
+      "tMs": 18708.695541999998,
+      "rssMb": 4754.1875,
+      "processes": 14,
+      "cpuSec": 115.83,
+      "breakdown": [
+        {
+          "pid": 67896,
+          "rssMb": 834.3,
+          "cpuSec": 3.19,
+          "name": "Google"
+        },
+        {
+          "pid": 67900,
+          "rssMb": 210.8,
+          "cpuSec": 5.92,
+          "name": "Google"
+        },
+        {
+          "pid": 67901,
+          "rssMb": 107,
+          "cpuSec": 0.48,
+          "name": "Google"
+        },
+        {
+          "pid": 67902,
+          "rssMb": 85.3,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 67904,
+          "rssMb": 177.5,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 67906,
+          "rssMb": 118.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67907,
+          "rssMb": 1920.3,
+          "cpuSec": 4.62,
+          "name": "Google"
+        },
+        {
+          "pid": 67922,
+          "rssMb": 115.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 68234,
+          "rssMb": 206.4,
+          "cpuSec": 93.83,
+          "name": "Google"
+        },
+        {
+          "pid": 68236,
+          "rssMb": 123.6,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 68250,
+          "rssMb": 179.5,
+          "cpuSec": 0.47,
+          "name": "Google"
+        },
+        {
+          "pid": 68376,
+          "rssMb": 339.3,
+          "cpuSec": 6.49,
+          "name": "Google"
+        },
+        {
+          "pid": 68423,
+          "rssMb": 236.6,
+          "cpuSec": 0.39,
+          "name": "Google"
+        },
+        {
+          "pid": 68449,
+          "rssMb": 99.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "\nDevTools listening on ws://127.0.0.1:56566/devtools/browser/a5cd2215-ba05-4888-8ba8-797e092d3d7b",
+    "Trying to load the allocator multiple times. This is *not* supported.",
+    "[67896:30817398:0911/123819.317221:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[67896:30817398:0911/123819.322956:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[67896:30817398:0911/123819.381400:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[67896:30817398:0911/123819.401485:ERROR:google_apis/gcm/engine/mcs_client.cc:702]   Error code: 401  Error message: Authentication Failed: wrong_secret\n[67896:30817398:0911/123819.401496:ERROR:google_apis/gcm/engine/mcs_client.cc:704] Failed to log in to GCM, resetting connection.",
+    "Created TensorFlow Lite XNNPACK delegate for CPU."
+  ]
+}

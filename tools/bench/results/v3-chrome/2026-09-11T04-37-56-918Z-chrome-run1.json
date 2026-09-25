@@ -1,0 +1,504 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 152.0.7977.84",
+  "run": 1,
+  "startedAt": "2026-09-11T04:37:56.918Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "brutal"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 382.679875,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": "brutal-dom nodes=404009 build=1164ms thrash=765ms fps=80.9",
+    "worker": "brutal-worker workers=16 cores=16 ops=82970100000 mops_s=13795.5 spawn_to_done=6014ms",
+    "storage": "brutal-storage n=20000 write=456ms read=80ms(20000) index=0ms localstorage=14ms wps=43860",
+    "paint": "brutal-paint layers=4000 fps=68.2",
+    "net": "brutal-net n=1000 cold=94ms rps=10627 warm=96ms rps=10395 mb=21.0 p50=40.6ms p95=76.7ms p99=81.8ms"
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 382.684333,
+      "rssMb": 908.234375,
+      "processes": 8,
+      "cpuSec": 0.72,
+      "breakdown": [
+        {
+          "pid": 67367,
+          "rssMb": 214.6,
+          "cpuSec": 0.37,
+          "name": "Google"
+        },
+        {
+          "pid": 67373,
+          "rssMb": 130.3,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 67374,
+          "rssMb": 91,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67375,
+          "rssMb": 78.4,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 67377,
+          "rssMb": 153.7,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 67379,
+          "rssMb": 117.5,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 67380,
+          "rssMb": 61.4,
+          "cpuSec": 0.02,
+          "name": "Google"
+        },
+        {
+          "pid": 67381,
+          "rssMb": 61.4,
+          "cpuSec": 0.02,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-dom",
+      "tMs": 6586.689166,
+      "rssMb": 3891.375,
+      "processes": 12,
+      "cpuSec": 7.49,
+      "breakdown": [
+        {
+          "pid": 67367,
+          "rssMb": 770.7,
+          "cpuSec": 1.87,
+          "name": "Google"
+        },
+        {
+          "pid": 67373,
+          "rssMb": 139.7,
+          "cpuSec": 0.38,
+          "name": "Google"
+        },
+        {
+          "pid": 67374,
+          "rssMb": 101.6,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 67375,
+          "rssMb": 79.2,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 67377,
+          "rssMb": 175.8,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 67379,
+          "rssMb": 118.3,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67380,
+          "rssMb": 1916.5,
+          "cpuSec": 4.66,
+          "name": "Google"
+        },
+        {
+          "pid": 67381,
+          "rssMb": 119.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67395,
+          "rssMb": 115.4,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67414,
+          "rssMb": 99.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67415,
+          "rssMb": 131.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67416,
+          "rssMb": 123.3,
+          "cpuSec": 0.06,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-worker",
+      "tMs": 13149.602416,
+      "rssMb": 4103.15625,
+      "processes": 13,
+      "cpuSec": 101.15,
+      "breakdown": [
+        {
+          "pid": 67367,
+          "rssMb": 775.9,
+          "cpuSec": 1.96,
+          "name": "Google"
+        },
+        {
+          "pid": 67373,
+          "rssMb": 140.2,
+          "cpuSec": 0.42,
+          "name": "Google"
+        },
+        {
+          "pid": 67374,
+          "rssMb": 102.8,
+          "cpuSec": 0.11,
+          "name": "Google"
+        },
+        {
+          "pid": 67375,
+          "rssMb": 79.3,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 67377,
+          "rssMb": 176.3,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 67379,
+          "rssMb": 118.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67380,
+          "rssMb": 1916.7,
+          "cpuSec": 4.66,
+          "name": "Google"
+        },
+        {
+          "pid": 67381,
+          "rssMb": 119.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67395,
+          "rssMb": 115.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67414,
+          "rssMb": 203.6,
+          "cpuSec": 93.52000000000001,
+          "name": "Google"
+        },
+        {
+          "pid": 67415,
+          "rssMb": 131.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67416,
+          "rssMb": 123.6,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 67628,
+          "rssMb": 99.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-paint",
+      "tMs": 18823.099749999998,
+      "rssMb": 4512.15625,
+      "processes": 13,
+      "cpuSec": 115.15,
+      "breakdown": [
+        {
+          "pid": 67367,
+          "rssMb": 829.1,
+          "cpuSec": 3.15,
+          "name": "Google"
+        },
+        {
+          "pid": 67373,
+          "rssMb": 210.1,
+          "cpuSec": 5.92,
+          "name": "Google"
+        },
+        {
+          "pid": 67374,
+          "rssMb": 104.6,
+          "cpuSec": 0.31,
+          "name": "Google"
+        },
+        {
+          "pid": 67375,
+          "rssMb": 85.2,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 67377,
+          "rssMb": 177,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 67379,
+          "rssMb": 118.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67380,
+          "rssMb": 1918.8,
+          "cpuSec": 4.73,
+          "name": "Google"
+        },
+        {
+          "pid": 67395,
+          "rssMb": 115.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67414,
+          "rssMb": 206.5,
+          "cpuSec": 93.59,
+          "name": "Google"
+        },
+        {
+          "pid": 67416,
+          "rssMb": 123.7,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 67628,
+          "rssMb": 177.5,
+          "cpuSec": 0.47,
+          "name": "Google"
+        },
+        {
+          "pid": 67648,
+          "rssMb": 345.8,
+          "cpuSec": 6.52,
+          "name": "Google"
+        },
+        {
+          "pid": 67649,
+          "rssMb": 99.6,
+          "cpuSec": 0.06,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-net",
+      "tMs": 19424.413625,
+      "rssMb": 4760.578125,
+      "processes": 14,
+      "cpuSec": 116.05,
+      "breakdown": [
+        {
+          "pid": 67367,
+          "rssMb": 832.2,
+          "cpuSec": 3.4,
+          "name": "Google"
+        },
+        {
+          "pid": 67373,
+          "rssMb": 210.7,
+          "cpuSec": 5.98,
+          "name": "Google"
+        },
+        {
+          "pid": 67374,
+          "rssMb": 108.5,
+          "cpuSec": 0.51,
+          "name": "Google"
+        },
+        {
+          "pid": 67375,
+          "rssMb": 85.3,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 67377,
+          "rssMb": 177.1,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 67379,
+          "rssMb": 118.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67380,
+          "rssMb": 1918.8,
+          "cpuSec": 4.73,
+          "name": "Google"
+        },
+        {
+          "pid": 67395,
+          "rssMb": 115.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 67414,
+          "rssMb": 206.5,
+          "cpuSec": 93.59,
+          "name": "Google"
+        },
+        {
+          "pid": 67416,
+          "rssMb": 123.7,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 67628,
+          "rssMb": 177.6,
+          "cpuSec": 0.47,
+          "name": "Google"
+        },
+        {
+          "pid": 67648,
+          "rssMb": 349.8,
+          "cpuSec": 6.53,
+          "name": "Google"
+        },
+        {
+          "pid": 67649,
+          "rssMb": 236.6,
+          "cpuSec": 0.39,
+          "name": "Google"
+        },
+        {
+          "pid": 67774,
+          "rssMb": 99.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "\nDevTools listening on ws://127.0.0.1:56372/devtools/browser/641f64bb-9323-4c47-bcb2-9e6da30b64fa",
+    "Trying to load the allocator multiple times. This is *not* supported.",
+    "[67367:30815310:0911/123759.563931:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[67367:30815310:0911/123759.578694:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[67367:30815310:0911/123759.578830:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[67367:30815310:0911/123759.625666:ERROR:google_apis/gcm/engine/mcs_client.cc:702]   Error code: 401  Error message: Authentication Failed: wrong_secret\n[67367:30815310:0911/123759.625678:ERROR:google_apis/gcm/engine/mcs_client.cc:704] Failed to log in to GCM, resetting connection.",
+    "Created TensorFlow Lite XNNPACK delegate for CPU.",
+    "[67832:30817181:0911/123816.104818:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake-all --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[67832:30817181:0911/123816.105240:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 776336, parent pid: 67367",
+    "[67832:30817181:0911/123816.106539:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 300557090816B (279.916GiB) / 994662584320B (926.352GiB)\n[67832:30817181:0911/123816.106550:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 300557090816B (279.916GiB) / 994662584320B (926.352GiB)",
+    "[67832:30817181:0911/123816.106608:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[67834:30817185:0911/123816.112414:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --crash-handler --database=/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/Crashpad --url=https://clients2.google.com/cr/report --annotation=prod=Update4 --annotation=ver=152.0.7933.0 --handshake-fd=6 --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[67834:30817185:0911/123816.112761:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 776336, parent pid: 1",
+    "[67834:30817185:0911/123816.113775:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 300557090816B (279.916GiB) / 994662584320B (926.352GiB)",
+    "[67834:30817185:0911/123816.113785:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 300557090816B (279.916GiB) / 994662584320B (926.352GiB)",
+    "[67834:30817185:0911/123816.113830:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[67832:30817181:0911/123816.114126:VERBOSE1:chrome/updater/crash_reporter.cc:124] Crash handler launched and ready.",
+    "[67832:30817181:0911/123816.114593:VERBOSE1:chrome/updater/crash_client.cc:108] Found 0 completed crash reports",
+    "[67832:30817181:0911/123816.114645:VERBOSE1:chrome/updater/crash_client.cc:132] Found 0 pending crash reports",
+    "[67832:30817181:0911/123816.114694:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/RLZ/Crashpad/settings.dat: No such file or directory (2)",
+    "[67832:30817181:0911/123816.114734:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/Chrome-headless/Crashpad/settings.dat: No such file or directory (2)",
+    "[67832:30817181:0911/123816.114746:VERBOSE1:chrome/updater/updater.cc:105] Crash reporting initialized.",
+    "[67832:30817193:0911/123816.114933:VERBOSE1:chrome/updater/app/app_wakeall.cc:58] Launching `/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake`",
+    "[67835:30817197:0911/123816.120071:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[67835:30817197:0911/123816.120403:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 776336, parent pid: 67832",
+    "[67835:30817197:0911/123816.121425:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 300557090816B (279.916GiB) / 994662584320B (926.352GiB)\n[67835:30817197:0911/123816.121435:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 300557090816B (279.916GiB) / 994662584320B (926.352GiB)",
+    "[67835:30817197:0911/123816.121482:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[67837:30817201:0911/123816.127256:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --crash-handler --database=/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/Crashpad --url=https://clients2.google.com/cr/report --annotation=prod=Update4 --annotation=ver=152.0.7933.0 --handshake-fd=6 --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[67837:30817201:0911/123816.127559:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 776336, parent pid: 1",
+    "[67837:30817201:0911/123816.128526:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 300557090816B (279.916GiB) / 994662584320B (926.352GiB)",
+    "[67837:30817201:0911/123816.128536:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 300557090816B (279.916GiB) / 994662584320B (926.352GiB)",
+    "[67837:30817201:0911/123816.128579:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[67835:30817197:0911/123816.128870:VERBOSE1:chrome/updater/crash_reporter.cc:124] Crash handler launched and ready.",
+    "[67835:30817197:0911/123816.129298:VERBOSE1:chrome/updater/crash_client.cc:108] Found 0 completed crash reports",
+    "[67835:30817197:0911/123816.129346:VERBOSE1:chrome/updater/crash_client.cc:132] Found 0 pending crash reports",
+    "[67835:30817197:0911/123816.129393:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/RLZ/Crashpad/settings.dat: No such file or directory (2)",
+    "[67835:30817197:0911/123816.129432:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/Chrome-headless/Crashpad/settings.dat: No such file or directory (2)",
+    "[67835:30817197:0911/123816.129443:VERBOSE1:chrome/updater/updater.cc:105] Crash reporting initialized.",
+    "[67835:30817197:0911/123816.129547:VERBOSE1:chrome/updater/ipc/update_service_internal_proxy_mojo.cc:61] Run"
+  ]
+}

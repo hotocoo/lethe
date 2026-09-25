@@ -32,6 +32,17 @@
 #include "renderer/page_templates.h"
 
 namespace {
+// URLs in logs are for orientation, not archival: an internal data: document
+// is thousands of characters and makes every other line unreadable.
+std::string ShortUrlForLog(const std::string& url) {
+    if (url.rfind("data:", 0) == 0) return "data:<internal page>";
+    if (url.size() <= 120) return url;
+    return url.substr(0, 117) + "...";
+}
+}  // namespace
+
+
+namespace {
 
 std::string blockPageUrl(const std::string& target, const std::string& reason) {
     // This page is intentionally tiny and script-free. It is only used for
@@ -728,7 +739,7 @@ bool CefBrowserClient::OnBeforePopup(
     // a page creates several user-initiated windows in quick succession.
     if (const char* debug = std::getenv("LETHE_DEBUG");
         debug && *debug && std::string(debug) != "0") {
-        std::cout << "[lethe-cef] popup " << target_url.ToString() << std::endl;
+        std::cout << "[lethe-cef] popup " << ShortUrlForLog(target_url.ToString()) << std::endl;
     }
     // Match modern browser popup blocking at the embedder boundary: a page
     // cannot create arbitrary native windows after an unrelated timer,
@@ -1064,7 +1075,7 @@ void CefBrowserClient::OnLoadStart(CefRefPtr<CefBrowser> browser,
         LetheCefChromeSetLoading(browser, true);
         LetheCefChromeUpdate(browser);
         main_loading_ = true;
-        std::cout << "[e2e] nav " << browser->GetMainFrame()->GetURL().ToString()
+        std::cout << "[e2e] nav " << ShortUrlForLog(browser->GetMainFrame()->GetURL().ToString())
                   << std::endl;
         std::cout.flush();
     }
@@ -1080,7 +1091,7 @@ void CefBrowserClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
         main_loading_ = false;
         first_load_done_ = true;
         LetheCefAutomation::shared()->ClearPendingNavigation();
-        std::cout << "[e2e] nav-end " << frame->GetURL().ToString()
+        std::cout << "[e2e] nav-end " << ShortUrlForLog(frame->GetURL().ToString())
                   << " status=" << httpStatusCode << std::endl;
         std::cout.flush();
         if (quit_when_loaded_) {
@@ -1204,7 +1215,7 @@ bool CefBrowserClient::CanDownload(CefRefPtr<CefBrowser> browser,
                                    const CefString& request_method) {
     (void)browser;
     (void)request_method;
-    std::cout << "[lethe-cef] download request " << url.ToString() << std::endl;
+    std::cout << "[lethe-cef] download request " << ShortUrlForLog(url.ToString()) << std::endl;
     return true;
 }
 

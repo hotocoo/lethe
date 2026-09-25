@@ -6,7 +6,7 @@
 // metrics JavaScript in both, and samples process RSS at the same points.
 // No browser-specific favours: fresh profile, cold launch, sequential.
 //
-//   node tools/bench/bench.mjs --browser lethe|lethe-noproxy|lethe-cef|chrome \
+//   node tools/bench/bench.mjs --browser lethe|lethe-noproxy|lethe-cef|chrome|safari \
 //        [--suite pageload,memory,speedometer,startup] [--runs 3] \
 //        [--sites tools/bench/sites.txt] [--out tools/bench/results]
 //
@@ -361,6 +361,231 @@ Promise.all(ps).then(function(){
 }
 const EXTREME_NET_DURATION_MS = 30000;
 
+
+// ------------------------------------------------------------- brutal v3
+// The "extreme" suite (v2) saturates one subsystem at a time with a load a
+// 2020 laptop could still survive. These are the v3 workloads: they are
+// sized so that a browser has to be good at the *system* - parallelism,
+// storage, compositing, connection reuse - and not merely at one hot loop.
+// Every page self-reports a single line into #stats, exactly like v2, so
+// the same harness plumbing reads them.
+
+// 1) brutal-dom: one million live nodes. Build is chunked so a browser that
+//    cannot keep up degrades instead of being killed by the watchdog.
+const BRUTAL_DOM_NODES = Number(process.env.LETHE_BRUTAL_DOM_NODES || 400000);
+function brutalDomHtml() {
+  return `<!doctype html><meta charset="utf-8"><title>Lethe brutal DOM</title>
+<style>body{margin:0;background:#0b0c0d;color:#e6e9ec;font:11px ui-monospace,monospace}
+#grid{contain:layout}#grid div{display:flex}#grid span{width:14px;height:13px;flex:0 0 auto}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.78);padding:6px 10px;border-radius:6px;z-index:9}</style>
+<div id="stats">building…</div><div id="grid"></div>
+<script>
+var TARGET=${BRUTAL_DOM_NODES}, COLS=100, ROWS=Math.ceil(TARGET/COLS);
+var st=document.getElementById('stats'), grid=document.getElementById('grid');
+var built=0, t0=performance.now();
+function chunk(){
+  var frag=document.createDocumentFragment(), made=0;
+  while(made<20000 && built<ROWS){
+    var row=document.createElement('div');
+    for(var c=0;c<COLS;c++){var s=document.createElement('span');s.textContent='.';row.appendChild(s);made++;}
+    frag.appendChild(row); built++;
+  }
+  grid.appendChild(frag);
+  if(built<ROWS){ setTimeout(chunk,0); return; }
+  var buildMs=performance.now()-t0;
+  var nodes=document.getElementsByTagName('*').length;
+  // Layout thrash: interleaved read/write on a live tree of this size is
+  // where engines diverge by an order of magnitude.
+  var t1=performance.now();
+  for(var p=0;p<10;p++){
+    grid.style.paddingLeft=(p%2)+'px';
+    void grid.offsetHeight;
+  }
+  var thrashMs=performance.now()-t1;
+  // Sustained animation with the whole tree present.
+  var frames=0, t2=performance.now();
+  function tick(){
+    frames++;
+    grid.style.transform='translateZ(0) translateY('+((frames%3)-1)+'px)';
+    if(frames<180){requestAnimationFrame(tick);return;}
+    var fps=frames*1000/(performance.now()-t2);
+    st.textContent='brutal-dom nodes='+nodes+' build='+buildMs.toFixed(0)+'ms thrash='
+      +thrashMs.toFixed(0)+'ms fps='+fps.toFixed(1);
+  }
+  requestAnimationFrame(tick);
+}
+chunk();
+</script>`;
+}
+
+// 2) brutal-worker: every core, not one. A browser whose worker startup or
+//    structured-clone path is slow loses here even with a fast JIT.
+const BRUTAL_WORKER_MS = Number(process.env.LETHE_BRUTAL_WORKER_MS || 6000);
+const BRUTAL_WORKER_COUNT = Number(process.env.LETHE_BRUTAL_WORKERS || 16);
+function brutalWorkerHtml() {
+  return `<!doctype html><meta charset="utf-8"><title>Lethe brutal workers</title>
+<style>body{margin:0;background:#0b0c0d;color:#e6e9ec;font:12px ui-monospace,monospace}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.78);padding:6px 10px;border-radius:6px}</style>
+<div id="stats">spawning…</div>
+<script>
+var st=document.getElementById('stats');
+// Fixed worker count on purpose: Safari/WebKit reports hardwareConcurrency
+// capped at 8 while Chrome reports the true core count, so sizing the pool
+// from that number would measure the cap, not throughput. Both engines get
+// the same 16 workers and the same total work.
+var N=${BRUTAL_WORKER_COUNT};
+var BUDGET=${BRUTAL_WORKER_MS};
+var src="onmessage=function(e){var end=performance.now()+e.data.ms,ops=0,h=2166136261;"+
+        "while(performance.now()<end){for(var i=0;i<20000;i++){h^=i;h=Math.imul(h,16777619)>>>0;}ops+=20000;}"+
+        "postMessage({ops:ops,h:h});};";
+var blob=new Blob([src],{type:'application/javascript'}), url=URL.createObjectURL(blob);
+var t0=performance.now(), done=0, total=0, workers=[];
+for(var i=0;i<N;i++){
+  var w=new Worker(url);
+  workers.push(w);
+  w.onmessage=function(e){
+    total+=e.data.ops; done++;
+    if(done===N){
+      var ms=performance.now()-t0;
+      st.textContent='brutal-worker workers='+N+' cores='+(navigator.hardwareConcurrency||0)+' ops='+total+' mops_s='+((total/1e6)/(ms/1000)).toFixed(1)
+        +' spawn_to_done='+ms.toFixed(0)+'ms';
+      for(var k=0;k<workers.length;k++) workers[k].terminate();
+    }
+  };
+  w.postMessage({ms:BUDGET});
+}
+</script>`;
+}
+
+// 3) brutal-storage: IndexedDB is the storage path real applications use,
+//    and it crosses process boundaries in both engines.
+const BRUTAL_STORAGE_RECORDS = Number(process.env.LETHE_BRUTAL_STORAGE || 20000);
+function brutalStorageHtml() {
+  return `<!doctype html><meta charset="utf-8"><title>Lethe brutal storage</title>
+<style>body{margin:0;background:#0b0c0d;color:#e6e9ec;font:12px ui-monospace,monospace}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.78);padding:6px 10px;border-radius:6px}</style>
+<div id="stats">opening…</div>
+<script>
+var st=document.getElementById('stats'), N=${BRUTAL_STORAGE_RECORDS};
+var payload=new Array(64).join('x');
+var req=indexedDB.open('lethe-brutal-'+Date.now(),1);
+req.onupgradeneeded=function(e){var db=e.target.result;var s=db.createObjectStore('kv',{keyPath:'k'});s.createIndex('byV','v');};
+req.onerror=function(){st.textContent='brutal-storage error=open';};
+req.onsuccess=function(e){
+  var db=e.target.result, t0=performance.now();
+  var tx=db.transaction('kv','readwrite'), store=tx.objectStore('kv');
+  for(var i=0;i<N;i++) store.put({k:i,v:(i%997),d:payload});
+  tx.oncomplete=function(){
+    var writeMs=performance.now()-t0, t1=performance.now(), read=0;
+    var rtx=db.transaction('kv','readonly'), rstore=rtx.objectStore('kv');
+    var cursor=rstore.openCursor();
+    cursor.onsuccess=function(ev){
+      var c=ev.target.result;
+      if(c){read++;c.continue();return;}
+      var readMs=performance.now()-t1, t2=performance.now();
+      var idx=db.transaction('kv','readonly').objectStore('kv').index('byV');
+      var q=idx.getAll(42);
+      q.onsuccess=function(){
+        var queryMs=performance.now()-t2, t3=performance.now();
+        for(var j=0;j<5000;j++) localStorage.setItem('lb'+j,payload);
+        for(var j2=0;j2<5000;j2++) localStorage.getItem('lb'+j2);
+        var lsMs=performance.now()-t3;
+        localStorage.clear();
+        st.textContent='brutal-storage n='+N+' write='+writeMs.toFixed(0)+'ms read='+readMs.toFixed(0)
+          +'ms(' +read+ ') index='+queryMs.toFixed(0)+'ms localstorage='+lsMs.toFixed(0)
+          +'ms wps='+((N*1000)/writeMs).toFixed(0);
+      };
+    };
+  };
+  tx.onerror=function(){st.textContent='brutal-storage error=write';};
+};
+</script>`;
+}
+
+// 4) brutal-paint: compositor stress with no WebGL. Thousands of layers that
+//    each move every frame is what a heavy web app actually does.
+const BRUTAL_PAINT_LAYERS = Number(process.env.LETHE_BRUTAL_LAYERS || 4000);
+function brutalPaintHtml() {
+  return `<!doctype html><meta charset="utf-8"><title>Lethe brutal paint</title>
+<style>body{margin:0;background:#07080a;overflow:hidden}
+.p{position:absolute;width:12px;height:12px;border-radius:3px;will-change:transform}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.78);color:#e6e9ec;
+font:12px ui-monospace,monospace;padding:6px 10px;border-radius:6px;z-index:9}</style>
+<div id="stats">building…</div>
+<script>
+var st=document.getElementById('stats'), N=${BRUTAL_PAINT_LAYERS}, els=[], ph=[];
+var frag=document.createDocumentFragment();
+for(var i=0;i<N;i++){
+  var d=document.createElement('div');
+  d.className='p';
+  d.style.background='hsl('+((i*7)%360)+',70%,55%)';
+  d.style.left=((i*37)%innerWidth)+'px';
+  d.style.top=((i*53)%innerHeight)+'px';
+  frag.appendChild(d); els.push(d); ph.push(Math.random()*6.28);
+}
+document.body.appendChild(frag);
+var frames=0,t0=performance.now();
+function tick(now){
+  frames++;
+  var t=now/1000;
+  for(var i=0;i<N;i++){
+    var x=Math.sin(t+ph[i])*40, y=Math.cos(t*1.3+ph[i])*40;
+    els[i].style.transform='translate3d('+x.toFixed(1)+'px,'+y.toFixed(1)+'px,0)';
+  }
+  if(frames<300){requestAnimationFrame(tick);return;}
+  var fps=frames*1000/(performance.now()-t0);
+  st.textContent='brutal-paint layers='+N+' fps='+fps.toFixed(1);
+}
+requestAnimationFrame(tick);
+</script>`;
+}
+
+// 5) brutal-net: 1000 requests across three size classes, run twice so the
+//    second round measures connection reuse rather than cold-connect cost.
+//    On Lethe every one of these rides the policy proxy.
+const BRUTAL_NET_SMALL = Number(process.env.LETHE_BRUTAL_NET_SMALL || 700);
+const BRUTAL_NET_MEDIUM = Number(process.env.LETHE_BRUTAL_NET_MEDIUM || 250);
+const BRUTAL_NET_LARGE = Number(process.env.LETHE_BRUTAL_NET_LARGE || 50);
+function brutalNetHtml() {
+  const total = BRUTAL_NET_SMALL + BRUTAL_NET_MEDIUM + BRUTAL_NET_LARGE;
+  return `<!doctype html><meta charset="utf-8"><title>Lethe brutal NET</title>
+<style>body{margin:0;background:#0b0c0d;color:#e6e9ec;font:12px ui-monospace,monospace}
+#stats{position:fixed;top:6px;right:6px;background:rgba(0,0,0,.78);padding:6px 10px;border-radius:6px}</style>
+<div id="stats">fetching ${total}…</div>
+<script>
+var st=document.getElementById('stats');
+var SMALL=${BRUTAL_NET_SMALL}, MED=${BRUTAL_NET_MEDIUM}, LARGE=${BRUTAL_NET_LARGE};
+function round(tag,next){
+  var urls=[],i;
+  for(i=0;i<SMALL;i++) urls.push('/bs'+(i%100)+'.bin');
+  for(i=0;i<MED;i++) urls.push('/bm'+(i%50)+'.bin');
+  for(i=0;i<LARGE;i++) urls.push('/bl'+(i%10)+'.bin');
+  var t0=performance.now(), bytes=0, d=[], ps=[];
+  urls.forEach(function(u){
+    var t=performance.now();
+    ps.push(fetch(u,{cache:'no-store'}).then(function(r){return r.arrayBuffer();})
+      .then(function(b){bytes+=b.byteLength;d.push(performance.now()-t);})
+      .catch(function(){d.push(performance.now()-t);}));
+  });
+  Promise.all(ps).then(function(){
+    var ms=performance.now()-t0;
+    d.sort(function(a,b){return a-b;});
+    function pct(p){var x=(d.length-1)*p/100,i=Math.floor(x),f=x-i;return d[i]+((d[i+1]||d[i])-d[i])*f;}
+    next({tag:tag,n:urls.length,ms:ms,mb:bytes/1048576,rps:(urls.length*1000)/ms,
+          p50:pct(50),p95:pct(95),p99:pct(99)});
+  });
+}
+round('cold',function(cold){
+  round('warm',function(warm){
+    st.textContent='brutal-net n='+cold.n+' cold='+cold.ms.toFixed(0)+'ms rps='+cold.rps.toFixed(0)
+      +' warm='+warm.ms.toFixed(0)+'ms rps='+warm.rps.toFixed(0)
+      +' mb='+cold.mb.toFixed(1)
+      +' p50='+warm.p50.toFixed(1)+'ms p95='+warm.p95.toFixed(1)+'ms p99='+warm.p99.toFixed(1)+'ms';
+  });
+});
+</script>`;
+}
+
 // A single local origin that serves every extreme page. Both browsers
 // navigate to http://127.0.0.1:<port>/<page>.html so the workload is
 // byte-identical; on Lethe every request additionally rides the policy
@@ -385,6 +610,19 @@ async function ensureExtremeServer() {
     writeFileSync(join(extremeDir, f), readFileSync(join(netDir, f)));
   }
   rmSync(netDir, { recursive: true, force: true });
+  // v3 "brutal" pages share the same origin and the same stats contract.
+  writeFileSync(join(extremeDir, 'bdom.html'), brutalDomHtml());
+  writeFileSync(join(extremeDir, 'bworker.html'), brutalWorkerHtml());
+  writeFileSync(join(extremeDir, 'bstorage.html'), brutalStorageHtml());
+  writeFileSync(join(extremeDir, 'bpaint.html'), brutalPaintHtml());
+  writeFileSync(join(extremeDir, 'bnet.html'), brutalNetHtml());
+  // Three payload size classes: 1 KB, 32 KB, 256 KB.
+  for (let i = 0; i < 100; i++)
+    writeFileSync(join(extremeDir, `bs${i}.bin`), Buffer.alloc(1024, 3));
+  for (let i = 0; i < 50; i++)
+    writeFileSync(join(extremeDir, `bm${i}.bin`), Buffer.alloc(32 * 1024, 5));
+  for (let i = 0; i < 10; i++)
+    writeFileSync(join(extremeDir, `bl${i}.bin`), Buffer.alloc(256 * 1024, 9));
   const server = http.createServer((req, res) => {
     const url = req.url.split('?')[0];
     const file = join(extremeDir, url === '/' ? 'xdom.html' : url);
@@ -576,6 +814,40 @@ function buildSteps(extremeBase) {
     steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("rps=")>=0', timeout: EXTREME_NET_DURATION_MS });
     steps.push({ op: 'sleep', ms: 500 });
     steps.push({ op: 'eval', js: 'document.getElementById("stats").textContent', key: 'extreme:net' });
+  }
+  if (SUITES.includes('brutal') && extremeBase) {
+    // v3: system-level load. Each page reports one stats line; the timings
+    // below are budgets, not measurements - a browser that finishes early
+    // still reports its own numbers.
+    const readStats = key => ({
+      op: 'eval',
+      js: '(function(){var e=document.getElementById("stats");return e?e.textContent:"LOST";})()',
+      key,
+    });
+    steps.push({ op: 'sleep', ms: 1500 });
+    steps.push({ op: 'newtab', url: extremeBase + '/bdom.html', timeout: 90000 });
+    steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("fps=")>=0', timeout: 300000 });
+    steps.push(readStats('brutal:dom'));
+    steps.push({ op: 'mark', name: 'brutal:mem-dom' });
+
+    steps.push({ op: 'newtab', url: extremeBase + '/bworker.html', timeout: 30000 });
+    steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("mops_s=")>=0', timeout: 60000 });
+    steps.push(readStats('brutal:worker'));
+    steps.push({ op: 'mark', name: 'brutal:mem-worker' });
+
+    steps.push({ op: 'newtab', url: extremeBase + '/bstorage.html', timeout: 30000 });
+    steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("wps=")>=0||document.getElementById("stats").textContent.indexOf("error=")>=0', timeout: 120000 });
+    steps.push(readStats('brutal:storage'));
+
+    steps.push({ op: 'newtab', url: extremeBase + '/bpaint.html', timeout: 30000 });
+    steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("fps=")>=0', timeout: 120000 });
+    steps.push(readStats('brutal:paint'));
+    steps.push({ op: 'mark', name: 'brutal:mem-paint' });
+
+    steps.push({ op: 'newtab', url: extremeBase + '/bnet.html', timeout: 30000 });
+    steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("p99=")>=0', timeout: 180000 });
+    steps.push(readStats('brutal:net'));
+    steps.push({ op: 'mark', name: 'brutal:mem-net' });
   }
   if (SUITES.includes('speedometer')) {
     steps.push({ op: 'newtab', url: SPEEDOMETER_URL, timeout: NAV_TIMEOUT });
@@ -833,9 +1105,146 @@ async function runChrome(steps) {
   return events;
 }
 
+
+// ---------------------------------------------------------------- safari
+// Lethe's macOS shell renders with WebKit, so Chrome is the wrong control
+// for engine-level questions: a WebKit-vs-WebKit comparison isolates what
+// Lethe's own layers cost. Safari is driven through safaridriver (the
+// WebDriver server Apple ships), which must be enabled once per machine:
+//
+//     sudo safaridriver --enable
+//
+// The protocol here is plain W3C WebDriver over HTTP, so there is no
+// dependency to install.
+const SAFARI_DRIVER = '/usr/bin/safaridriver';
+
+class WebDriver {
+  constructor(base) { this.base = base; this.session = null; }
+  async call(method, path, body) {
+    const res = await fetch(this.base + path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await res.text();
+    let json = {};
+    try { json = text ? JSON.parse(text) : {}; } catch { throw new Error(`safaridriver: ${text.slice(0, 200)}`); }
+    if (json.value && json.value.error) {
+      throw new Error(`${json.value.error}: ${json.value.message || ''}`);
+    }
+    return json.value;
+  }
+  async start(capabilities) {
+    const value = await this.call('POST', '/session', { capabilities });
+    this.session = value.sessionId;
+  }
+  navigate(url) { return this.call('POST', `/session/${this.session}/url`, { url }); }
+  execute(script) {
+    return this.call('POST', `/session/${this.session}/execute/sync`,
+                     { script: `return (${script});`, args: [] });
+  }
+  newWindow() { return this.call('POST', `/session/${this.session}/window/new`, { type: 'tab' }); }
+  switchWindow(handle) { return this.call('POST', `/session/${this.session}/window`, { handle }); }
+  windows() { return this.call('GET', `/session/${this.session}/window/handles`); }
+  setTimeouts(pageLoad) {
+    return this.call('POST', `/session/${this.session}/timeouts`, { pageLoad });
+  }
+  quit() { return this.call('DELETE', `/session/${this.session}`); }
+}
+
+async function runSafari(steps) {
+  if (!existsSync(SAFARI_DRIVER)) throw new Error('safaridriver missing (macOS only)');
+  const port = 4000 + Math.floor(Math.random() * 2000);
+  const clonesBefore = snapshotCodeSignClones();
+  const t0 = performance.now();
+  const child = spawn(SAFARI_DRIVER, ['-p', String(port)],
+                      { stdio: ['ignore', 'pipe', 'pipe'] });
+  const events = { results: [], marks: [], startupMs: null, exitCode: null, log: [] };
+  child.stderr.on('data', d => events.log.push(String(d).trimEnd()));
+  child.stdout.on('data', d => events.log.push(String(d).trimEnd()));
+
+  const driver = new WebDriver(`http://127.0.0.1:${port}`);
+  // safaridriver needs a moment to bind; a refused connection here almost
+  // always means the one-time `safaridriver --enable` was never run.
+  let started = false;
+  for (let i = 0; i < 100 && !started; i++) {
+    try {
+      await driver.start({ alwaysMatch: { browserName: 'safari' } });
+      started = true;
+    } catch (e) {
+      if (performance.now() - t0 > 20000) {
+        throw new Error(`safaridriver did not start: ${e.message}. ` +
+                        'Run `sudo safaridriver --enable` once, then retry.');
+      }
+      await sleep(200);
+    }
+  }
+  // Safari's own processes, not the driver's.
+  const isOurs = r => /Safari|com\.apple\.WebKit/.test(r.cmd);
+  const evaluate = async js => {
+    const v = await driver.execute(js);
+    return v === undefined || v === null ? '' : String(v);
+  };
+
+  try {
+    for (const s of steps) {
+      switch (s.op) {
+        case 'mark': {
+          if (s.name === 'ready') events.startupMs = performance.now() - t0;
+          events.marks.push({ name: s.name, tMs: performance.now() - t0, ...sampleRss(isOurs) });
+          break;
+        }
+        case 'navigate':
+        case 'newtab': {
+          if (s.op === 'newtab') {
+            const { handle } = await driver.newWindow();
+            await driver.switchWindow(handle);
+          }
+          await driver.setTimeouts(s.timeout || 30000).catch(() => {});
+          try { await driver.navigate(s.url); }
+          catch (e) {
+            events.timeouts = (events.timeouts || 0) + 1;
+            events.log.push(`[bench] timeout/nav error for ${s.url}: ${e.message}`);
+          }
+          break;
+        }
+        case 'sleep': await sleep(s.ms); break;
+        case 'eval': events.results.push({ key: s.key, value: await evaluate(s.js).catch(() => 'LOST') }); break;
+        case 'waitJs': {
+          const deadline = performance.now() + s.timeout;
+          for (;;) {
+            const v = await evaluate(s.js).catch(() => '');
+            if (v && v !== 'false' && v !== '0') break;
+            if (performance.now() > deadline) throw new Error(`waitJs timeout: ${s.js.slice(0, 60)}`);
+            await sleep(500);
+          }
+          break;
+        }
+        case 'quit': break;
+      }
+    }
+    events.exitCode = 0;
+  } catch (e) {
+    events.failure = String(e.message || e);
+    events.exitCode = 1;
+  } finally {
+    try { await driver.quit(); } catch {}
+    try { child.kill('SIGTERM'); } catch {}
+    await Promise.race([new Promise(r => child.on('exit', r)), sleep(5000)]);
+    try { child.kill('SIGKILL'); } catch {}
+    events.codeSignClonesSwept = sweepCodeSignClones(clonesBefore);
+  }
+  return events;
+}
+
 // --------------------------------------------------------------- main
 function versionOf(browser) {
   try {
+    if (browser === 'safari') {
+      return 'Safari ' + execFileSync('/usr/bin/defaults',
+        ['read', '/Applications/Safari.app/Contents/Info', 'CFBundleShortVersionString'],
+        { encoding: 'utf8' }).trim();
+    }
     if (browser === 'lethe-cef') return execFileSync(LETHE_CEF_BIN, ['--version'], { encoding: 'utf8' }).trim();
     if (browser.startsWith('lethe')) return execFileSync(LETHE_BIN, ['--version'], { encoding: 'utf8' }).trim();
     return execFileSync(CHROME_BIN, ['--version'], { encoding: 'utf8' }).trim();
@@ -852,7 +1261,8 @@ function hostInfo() {
 async function main() {
   mkdirSync(OUT, { recursive: true });
   let extremeBase = null;
-  if (SUITES.includes('extreme') || SUITES.includes('extreme-net')) {
+  if (SUITES.includes('extreme') || SUITES.includes('extreme-net') ||
+      SUITES.includes('brutal')) {
     extremeBase = await ensureExtremeServer();
     console.log(`[bench] extreme server on ${extremeBase} (${EXTREME_NET_COUNT} net payloads)`);
   }
@@ -863,7 +1273,8 @@ async function main() {
   for (let run = 1; run <= RUNS; run++) {
     const started = new Date();
     console.log(`[bench] run ${run}/${RUNS} ...`);
-    const ev = BROWSER === 'chrome' ? await runChrome(steps)
+    const ev = BROWSER === 'safari' ? await runSafari(steps)
+             : BROWSER === 'chrome' ? await runChrome(steps)
              : BROWSER === 'lethe-cef' ? await runLethe(steps, { noProxy: false, binOverride: LETHE_CEF_BIN })
              : await runLethe(steps, { noProxy: BROWSER === 'lethe-noproxy' });
     const netRounds = [0,1,2].map(i => ev.results.find(r => r.key === `extreme:net${i}`)?.value ?? null);
@@ -884,6 +1295,13 @@ async function main() {
         net:   aggregateExtremeNet(netRounds),
         netRounds,
       },
+      brutal: {
+        dom:     ev.results.find(r => r.key === 'brutal:dom')?.value ?? null,
+        worker:  ev.results.find(r => r.key === 'brutal:worker')?.value ?? null,
+        storage: ev.results.find(r => r.key === 'brutal:storage')?.value ?? null,
+        paint:   ev.results.find(r => r.key === 'brutal:paint')?.value ?? null,
+        net:     ev.results.find(r => r.key === 'brutal:net')?.value ?? null,
+      },
       memory: ev.marks,
     };
     // Keep a bounded execution trace in every artifact. A benchmark that
@@ -903,6 +1321,11 @@ async function main() {
       `  stress=${doc.stress ? doc.stress.replace(/\s+/g, ' ') : 'n/a'}` +
       `  extreme[dom]=${doc.extreme.dom ?? 'n/a'}  extreme[js]=${doc.extreme.js ?? 'n/a'}` +
       `  extreme[webgl]=${doc.extreme.webgl ?? 'n/a'}  extreme[net]=${doc.extreme.net ?? 'n/a'}` +
+      (SUITES.includes('brutal')
+        ? `\n[bench]   brutal dom=${doc.brutal.dom ?? 'n/a'}\n[bench]   brutal worker=${doc.brutal.worker ?? 'n/a'}` +
+          `\n[bench]   brutal storage=${doc.brutal.storage ?? 'n/a'}\n[bench]   brutal paint=${doc.brutal.paint ?? 'n/a'}` +
+          `\n[bench]   brutal net=${doc.brutal.net ?? 'n/a'}`
+        : '') +
       `  exit=${doc.exitCode}${doc.failure ? '  FAIL: ' + doc.failure : ''}`);
     if (doc.extreme.net === null && SUITES.includes('extreme-net')) {
       console.log('[bench]   extreme-net produced no metric; browser trace tail:');

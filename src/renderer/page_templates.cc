@@ -127,51 +127,97 @@ std::string renderReaderPage(const std::string& url,
 
 std::string renderNewTabPage(const std::vector<SpeedDialItem>& recent,
                              const std::vector<SpeedDialItem>& bookmarks) {
+    // Editorial rather than centred-splash: a masthead on the left edge, a
+    // status rail that states what is actually protecting this tab, then the
+    // user's own content. A new tab is read, not admired, so the type scale
+    // carries the hierarchy and nothing bounces or glows.
     const char kStyle[] =
-        "main{text-align:center;padding:clamp(40px,12vh,96px) 32px 32px}"
-        "main>section{max-width:720px;margin:0 auto}"
-        "h1{font-size:34px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px}"
-        ".sub{opacity:.55;margin:0 auto 28px;max-width:560px}"
-        "kbd{font:inherit;padding:1px 6px;border-radius:5px;"
-        "border:1px solid rgba(128,128,128,.4)}"
-        "h2{font-size:12px;font-weight:600;opacity:.55;text-transform:uppercase;"
-        "letter-spacing:.08em;margin:28px 0 10px;text-align:left}"
-        ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));"
-        "gap:4px 12px;text-align:left}"
-        ".tile{display:block;padding:8px 10px;border-radius:6px;text-decoration:none;color:inherit}"
-        ".tile:hover{background:rgba(127,127,127,.10)}"
-        ".tile .t{font-weight:500;font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
-        ".tile .u{font-size:11px;opacity:.5;display:block;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,Menlo,monospace}"
-        ".empty{opacity:.5;font-style:italic;text-align:left}"
-        ".privacy{max-width:720px;margin:0 auto;text-align:left;border-top:1px solid rgba(128,128,128,.22)}"
-        ".feature{display:grid;grid-template-columns:minmax(150px,180px) minmax(0,1fr);gap:24px;padding:14px 0;border-bottom:1px solid rgba(128,128,128,.22);align-items:baseline}"
-        ".feature strong{font-weight:600;font-size:14px}"
-        ".feature span{opacity:.68;font-size:13px;line-height:1.55}"
-        "@media(max-width:700px){main{padding-left:20px;padding-right:20px}.feature{grid-template-columns:1fr;gap:3px;padding:12px 0}.grid{grid-template-columns:1fr}}"
-        ".hint{margin:28px auto 0;opacity:.55;max-width:560px}";
-    std::string body = "<h1>Lethe</h1>";
-    body += "<p class=\"sub\">Private by default. Type a URL or search in the "
-            "address bar (<kbd>⌘L</kbd>).</p>";
-    body += "<section class=\"privacy\">"
-            "<div class=\"feature\"><strong>Network policy</strong><span>HTTPS-first, DNS-over-HTTPS, private-network isolation, and authenticated transport policy protect every navigation.</span></div>"
-            "<div class=\"feature\"><strong>Ephemeral site data</strong><span>Browsing history, bookmarks, and session restore remain under Lethe's local profile.</span></div>"
-            "<div class=\"feature\"><strong>Privacy controls</strong><span>Tracker blocking, WebRTC protection, fingerprint reduction, and Oblivion windows are available in Settings.</span></div>";
-    auto esc = [](const std::string& s) {
-        std::string out; out.reserve(s.size());
-        for (char c : s) switch (c) { case '<': out += "&lt;"; break; case '>': out += "&gt;"; break; case '&': out += "&amp;"; break; case '"': out += "&quot;"; break; default: out += c; }
-        return out;
-    };
-    auto tiles = [&](const std::vector<SpeedDialItem>& items, const char* heading) {
-        std::string out = "<h2>"; out += heading; out += "</h2>";
-        if (items.empty()) { out += "<p class=\"empty\">Nothing here yet.</p>"; return out; }
+        ":root{--accent:#1f6f7a;--line:rgba(22,24,26,.13);--quiet:#5f666c}"
+        "@media(prefers-color-scheme:dark){:root{--accent:#6fc3cf;"
+        "--line:rgba(230,233,236,.15);--quiet:#98a0a6}}"
+        "main{max-width:980px;padding:clamp(40px,9vh,88px) clamp(24px,5vw,56px) 64px}"
+        ".mast{display:grid;grid-template-columns:minmax(0,1fr) auto;"
+        "gap:16px;align-items:end;border-bottom:1px solid var(--line);padding-bottom:18px}"
+        "h1{font-size:clamp(38px,6vw,58px);line-height:.98;letter-spacing:-.035em;"
+        "font-weight:660;margin:0}"
+        ".sub{margin:10px 0 0;color:var(--quiet);font-size:14px;max-width:48ch}"
+        "kbd{font:inherit;font-size:12px;padding:2px 7px;border-radius:6px;"
+        "border:1px solid var(--line)}"
+        ".rail{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;"
+        "max-width:320px}"
+        ".tag{font-size:11px;letter-spacing:.04em;text-transform:uppercase;"
+        "color:var(--accent);border:1px solid var(--accent);border-radius:999px;"
+        "padding:3px 9px;opacity:.85;white-space:nowrap}"
+        ".cols{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);"
+        "gap:clamp(24px,4vw,56px);margin-top:36px}"
+        "h2{font-size:11px;font-weight:620;letter-spacing:.11em;"
+        "text-transform:uppercase;color:var(--quiet);margin:0 0 10px}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));"
+        "gap:2px}"
+        ".tile{display:block;padding:10px 12px;margin:0 -12px;border-radius:8px;"
+        "text-decoration:none;color:inherit;transition:background-color .12s ease}"
+        ".tile:hover{background:color-mix(in oklab,var(--accent) 10%,transparent)}"
+        ".tile .t{font-weight:540;font-size:14px;display:block;white-space:nowrap;"
+        "overflow:hidden;text-overflow:ellipsis}"
+        ".tile .u{font-size:11px;color:var(--quiet);display:block;margin-top:2px;"
+        "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+        "font-family:ui-monospace,'SF Mono',Menlo,monospace}"
+        ".empty{color:var(--quiet);font-size:13px;margin:0}"
+        ".notes{margin-top:4px;border-top:1px solid var(--line)}"
+        ".note{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;"
+        "padding:12px 0;border-bottom:1px solid var(--line)}"
+        ".note strong{font-size:13px;font-weight:600}"
+        ".note span{font-size:12.5px;color:var(--quiet);line-height:1.5}"
+        ".foot{margin:40px 0 0;color:var(--quiet);font-size:12px}"
+        "@media(max-width:760px){.cols{grid-template-columns:1fr;gap:28px}"
+        ".mast{grid-template-columns:1fr}.rail{justify-content:flex-start;max-width:none}}";
+
+    std::string body =
+        "<section class=\"mast\"><div><h1>Lethe</h1>"
+        "<p class=\"sub\">Private by default. Type an address or a search "
+        "(<kbd>⌘L</kbd>).</p></div>"
+        "<div class=\"rail\">"
+        "<span class=\"tag\">HTTPS-first</span>"
+        "<span class=\"tag\">DNS-over-HTTPS</span>"
+        "<span class=\"tag\">Tracker blocking</span>"
+        "<span class=\"tag\">Threat scanner</span>"
+        "<span class=\"tag\">Private-network guard</span>"
+        "</div></section>";
+
+    auto esc = [](const std::string& v) { return htmlEscape(v); };
+    auto tiles = [&esc](const std::vector<SpeedDialItem>& items,
+                        const std::string& heading) {
+        std::string out = "<h2>" + heading + "</h2>";
+        if (items.empty()) {
+            out += "<p class=\"empty\">Nothing here yet.</p>";
+            return out;
+        }
         out += "<div class=\"grid\">";
-        for (const auto& it : items) out += "<a class=\"tile\" href=\"" + esc(it.url) + "\"><span class=\"t\">" + esc(it.title) + "</span><span class=\"u\">" + esc(it.url) + "</span></a>";
+        for (const auto& it : items) {
+            out += "<a class=\"tile\" href=\"" + esc(it.url) + "\"><span class=\"t\">" +
+                   esc(it.title) + "</span><span class=\"u\">" + esc(it.url) +
+                   "</span></a>";
+        }
         out += "</div>";
         return out;
     };
+
+    body += "<div class=\"cols\"><div>";
     body += tiles(bookmarks, "Bookmarks");
+    body += "<div style=\"height:28px\"></div>";
     body += tiles(recent, "Recent");
-    body += "</section><p class=\"hint\">A controlled, private path to the web.</p>";
+    body += "</div><aside><h2>This tab</h2><div class=\"notes\">"
+            "<div class=\"note\"><strong>Network policy</strong><span>Every "
+            "navigation resolves over DNS-over-HTTPS, refuses private-network "
+            "destinations, and rides Lethe's policy proxy.</span></div>"
+            "<div class=\"note\"><strong>Threat scanning</strong><span>Sites and "
+            "downloads are checked locally, on this machine. Nothing is sent to "
+            "a reputation service.</span></div>"
+            "<div class=\"note\"><strong>Site data</strong><span>History, "
+            "bookmarks and cookies stay in Lethe's own profile, and Oblivion "
+            "windows keep none of it.</span></div>"
+            "</div></aside></div>";
+    body += "<p class=\"foot\">A controlled, private path to the web.</p>";
     return page("New Tab", kStyle, body);
 }
 

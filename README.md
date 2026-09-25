@@ -101,6 +101,17 @@ https://github.com/hotocoo/lethe/releases
   whole test suite
 - **Hardened build**: `-fstack-protector-strong`, `_FORTIFY_SOURCE=2`, LTO,
   PIE/ASLR from the platform toolchain
+- **Built-in threat scanner (local, no lookup service)**: every top-level
+  navigation is assessed structurally (brand impersonation by label, typo
+  and confusable distance; punycode; userinfo authorities; IP literals;
+  deep subdomains; credential-capture paths; opaque `data:`/`javascript:`
+  top-level navigation) and every completed download is scanned statically
+  (magic-byte identification, name-versus-content mismatch, double
+  extensions, bidi-override filenames, executable-over-http, an
+  Aho-Corasick signature pass, zip path traversal / encryption / expansion
+  ratio, entropy). Blocked downloads move to Lethe's quarantine folder with
+  the executable bit cleared. Nothing is sent off the machine; honest
+  coverage limits are in `docs/COMPARISON.md`
 - **Secure TLS configuration**: TLS 1.3+, modern cipher suites only,
   certificate verification on by default
 - **Certificate pinning**: per-host SPKI SHA-256 pins ("sha256-<base64>",
@@ -409,6 +420,15 @@ node tools/bench/bench.mjs --browser lethe --label lethe-noblock --env LETHE_TRA
 node tools/bench/bench.mjs --browser lethe --label lethe-nocache --env LETHE_DOH_SHARED_CACHE=0
 # JS / graphics suites (long)
 node tools/bench/bench.mjs --browser lethe --suite speedometer,jetstream,motionmark --runs 1
+# v3 "brutal" system load: 404k-node DOM, 16 workers, 20k IndexedDB records,
+# 4k composited layers, 1000 mixed-size requests (see docs/BENCHMARKS.md)
+node tools/bench/bench.mjs --browser lethe     --suite brutal --runs 3
+node tools/bench/bench.mjs --browser lethe-cef --suite brutal --runs 3
+node tools/bench/bench.mjs --browser chrome    --suite brutal --runs 3
+# Safari, for WebKit-vs-WebKit comparison. Requires a one-time grant:
+#   sudo safaridriver --enable
+#   Safari > Settings > Developer > Allow Remote Automation
+node tools/bench/bench.mjs --browser safari    --suite brutal --runs 3
 node tools/bench/report.mjs tools/bench/results        # Markdown tables
 ```
 

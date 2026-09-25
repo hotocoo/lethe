@@ -506,3 +506,101 @@ the pre-existing full suite remains 255/255 passed. The secure-proxy smoke
 test reaches the explicit client-certificate-authentication gate, proving the
 new mode cannot silently weaken the policy boundary while the CEF client-cert
 provisioning piece is still missing.
+
+
+---
+
+# Brutal benchmark (v3, 2026-09-11)
+
+*The v2 "extreme" suite saturates one subsystem at a time. v3 asks whether
+the whole browser is good at being a browser: parallelism across every core,
+storage throughput, compositor load, connection reuse, and a DOM large
+enough that layout cost dominates. Run it with
+`node tools/bench/bench.mjs --browser <lethe|lethe-cef|chrome|safari> --suite brutal --runs 3`.*
+
+## The five workloads
+
+| Page | Load | Reported metric |
+|---|---|---|
+| `brutal-dom` | 404,009 live nodes, 10 forced layout-thrash passes, 180 rAF frames | build ms, thrash ms, sustained FPS |
+| `brutal-worker` | 16 Web Workers (fixed, not `hardwareConcurrency`), 6 s of integer hashing each | aggregate Mops/s |
+| `brutal-storage` | 20,000 IndexedDB records written in one transaction, full cursor read, index query, 5,000 localStorage round-trips | ms per phase, writes/s |
+| `brutal-paint` | 4,000 composited layers, each transformed every frame for 300 frames | sustained FPS |
+| `brutal-net` | 1,000 requests across 1 KB / 32 KB / 256 KB classes, run twice (cold + warm) | requests/s, p50/p95/p99 |
+
+`brutal-worker` deliberately fixes the worker count. WebKit caps
+`navigator.hardwareConcurrency` at 8 while Blink reports the real core count
+(16 on this host), so sizing the pool from that number would measure Apple's
+cap rather than throughput.
+
+## Results
+
+Host: Apple M4 Max, 16 cores, 64 GB, macOS 26.5. Median of 3 cold runs per
+browser, fresh profile each time, same local origin for every browser.
+
+| Metric | Lethe (WebKit) | Lethe (Blink/CEF) | Chrome |
+|---|---|---|---|
+| Startup to first tab | **190 ms** | **214 ms** | 377 ms |
+| Peak RSS across the suite | **1,817 MB / 8 proc** | 4,150 MB / 11 proc | 4,760 MB / 14 proc |
+| DOM build (404k nodes) | 1,520 ms | 1,324 ms | **1,181 ms** |
+| DOM layout thrash | 5,829 ms | 910 ms | **765 ms** |
+| DOM FPS | 69.5 | 61.2 | **78.6** |
+| Worker throughput | 4,439 Mops/s | 13,762 Mops/s | **13,800 Mops/s** |
+| IndexedDB write (20k) | **269 ms** (74,490 w/s) | 436 ms | 450 ms |
+| IndexedDB full cursor read | 793 ms | **69 ms** | 77 ms |
+| Compositor FPS (4k layers) | 65.4 | 63.7 | **67.8** |
+| Net 1,000 requests | 3,774 rps (p95 235 ms) | 5,981 rps (p95 151 ms) | **11,014 rps** (p95 70 ms) |
+
+## What these numbers mean, honestly
+
+**Where Lethe wins, it wins on the shell, not the engine.** Startup is 1.8-2x
+faster than Chrome and peak memory is 2.6x smaller on the WebKit shell -
+that is Lethe's process model and bootstrap, and it holds under the heaviest
+load in the suite.
+
+**Where the WebKit shell loses, it loses to WebKit.** Layout thrash (7.6x),
+worker throughput (3.1x, with the concurrency cap contributing) and
+IndexedDB cursor reads (10x) are engine properties. Lethe does not implement
+layout, JavaScriptCore or WebKit's IndexedDB backend, and no shell-side
+change moves them.
+
+**The Blink shell reaches Chrome parity on compute.** Worker throughput is
+within 0.3%, layout thrash within 19%, storage and compositing within noise.
+That is the useful result of the CEF track: choosing the Blink engine in
+Lethe costs nothing measurable on CPU-bound work.
+
+**The network gap is real and is not the policy proxy.** This was measured
+rather than assumed. Four configurations were run against the same origin:
+
+| Configuration | 1,000-request throughput |
+|---|---|
+| Lethe WebKit, policy proxy on | 3,774 rps |
+| Lethe WebKit, `--no-proxy` | 3,846 rps |
+| Lethe Blink, policy proxy on | 5,981 rps |
+| Lethe Blink, `--no-proxy` | 6,165 rps |
+| Lethe Blink, no site isolation switches | 6,173 rps |
+| Lethe Blink, no DoH-only / QUIC switches | 6,075 rps |
+| Chrome | 11,014 rps |
+
+Removing the proxy changes throughput by 2-3%, which is inside run-to-run
+noise. Removing Lethe's site-isolation switches and its DNS/QUIC hardening
+changes nothing either. The remaining 1.8x difference between the Blink
+shell and Chrome is therefore in the embedding itself (CEF's Alloy runtime
+network path), not in Lethe's security layers. Chasing it means testing the
+Chrome runtime style, which currently conflicts with Lethe's native chrome -
+that is the next experiment, and it is not claimed as done.
+
+## Safari
+
+The harness now drives Safari over `safaridriver`, which makes
+WebKit-vs-WebKit comparison possible: Chrome is the wrong control for
+engine-level questions about the WebKit shell. Safari requires a one-time,
+user-granted permission before any tool can drive it:
+
+```bash
+sudo safaridriver --enable          # once per machine
+# then: Safari > Settings > Developer > Allow Remote Automation
+```
+
+Until that is granted on this machine the Safari column is absent rather
+than estimated.

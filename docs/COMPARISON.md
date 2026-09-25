@@ -154,3 +154,39 @@ milliseconds end-to-end in the e2e suite (see tests/).
   **Lethe** - accepting that its renderer hardening, audit depth and web
   compatibility are years behind the incumbents, and that full-web mode
   deliberately trades some minimalism back for compatibility.
+
+
+---
+
+## Built-in threat scanning (2026-09-11)
+
+Chrome and Safari answer "is this page or download dangerous?" with a remote
+service: Google Safe Browsing, Apple's equivalent. That is a real capability
+Lethe previously did not have at all, and it is also the one capability we
+cannot copy the same way - sending every host a user visits to a third party
+is the behaviour the rest of this browser exists to prevent.
+
+Lethe therefore ships a local scanner. No URL, hash or byte of a download
+leaves the machine.
+
+| | Chrome / Safari | Lethe |
+|---|---|---|
+| Malware and phishing lists | Remote service, frequently updated, huge coverage | None. We do not have a threat feed. |
+| URL assessment | Remote reputation lookup | Local structural analysis: brand impersonation (label, typo and confusable distance), punycode, userinfo authorities, IP literals, deep subdomains, high-risk TLDs, shorteners, credential-capture paths, opaque top-level schemes |
+| Download inspection | Reputation plus, on Chrome, optional upload for deep scan | Local static scan: magic-byte identification, name-versus-content mismatch, double extensions, bidi-override filenames, executable-over-http, Aho-Corasick signature pass, zip structure (path traversal, encryption, expansion ratio), entropy |
+| Privacy cost | Browsing history is disclosed to the vendor in some form | None |
+| Coverage honesty | Broad, and keeps up with campaigns | Narrow. It catches structure and presentation, not novel malware families. |
+
+**Where this is better:** it works offline, it discloses nothing, and it
+explains itself - every verdict carries the findings that produced it, so a
+user can disagree with a warning instead of learning to click through it.
+
+**Where this is worse, plainly:** a fresh malware binary with no signature
+and an honest filename, served over https from a domain that imitates
+nobody, passes. Safe Browsing would likely catch it. Lethe does not have,
+and does not claim, a malware feed.
+
+Both macOS shells run the same scanner on navigation and on completed
+downloads; blocked downloads move to `~/Library/Application Support/Lethe/
+Quarantine` with the executable bit removed. Three settings control it:
+site scanner, download scanner, quarantine.

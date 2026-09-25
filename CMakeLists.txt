@@ -310,6 +310,7 @@ if(BUILD_UI AND APPLE)
             src/ui/mac/LetheInternalPages.mm
             src/ui/mac/LetheHistory.mm
             src/ui/mac/LetheGuard.mm
+            src/ui/mac/LetheOmnibox.mm
             browser/app/shell_bootstrap.cc
         )
         set_source_files_properties(
@@ -327,6 +328,7 @@ if(BUILD_UI AND APPLE)
             src/ui/mac/LetheInternalPages.mm
             src/ui/mac/LetheHistory.mm
             src/ui/mac/LetheGuard.mm
+            src/ui/mac/LetheOmnibox.mm
             browser/app/cef_menu.mm
             PROPERTIES LANGUAGE OBJCXX)
         target_compile_options(lethe-cef PRIVATE -fobjc-arc -Wno-deprecated-declarations)

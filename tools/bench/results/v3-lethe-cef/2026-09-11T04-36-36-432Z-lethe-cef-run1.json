@@ -1,0 +1,437 @@
+{
+  "browser": "lethe-cef",
+  "label": "lethe-cef",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (CEF 151.3.24+g2384915+chromium-151.0.7922.174)",
+  "run": 1,
+  "startedAt": "2026-09-11T04:36:36.432Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "brutal"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 168.07025,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": "brutal-dom nodes=404009 build=1324ms thrash=908ms fps=64.1",
+    "worker": "brutal-worker workers=16 cores=16 ops=82849540000 mops_s=13776.1 spawn_to_done=6014ms",
+    "storage": "brutal-storage n=20000 write=436ms read=78ms(20000) index=0ms localstorage=14ms wps=45851",
+    "paint": "brutal-paint layers=4000 fps=62.4",
+    "net": "brutal-net n=1000 cold=179ms rps=5590 warm=183ms rps=5459 mb=21.0 p50=139.4ms p95=170.9ms p99=171.4ms"
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 796.1070000000001,
+      "rssMb": 594.171875,
+      "processes": 6,
+      "cpuSec": 0.64,
+      "breakdown": [
+        {
+          "pid": 63397,
+          "rssMb": 143.6,
+          "cpuSec": 0.37,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 63399,
+          "rssMb": 109.2,
+          "cpuSec": 0.09,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63401,
+          "rssMb": 75.9,
+          "cpuSec": 0.05,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63403,
+          "rssMb": 67.7,
+          "cpuSec": 0.03,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63405,
+          "rssMb": 83.1,
+          "cpuSec": 0.05,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63406,
+          "rssMb": 114.8,
+          "cpuSec": 0.05,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-dom",
+      "tMs": 7644.044333999999,
+      "rssMb": 3039.078125,
+      "processes": 7,
+      "cpuSec": 7.43,
+      "breakdown": [
+        {
+          "pid": 63397,
+          "rssMb": 682.3,
+          "cpuSec": 1.33,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 63399,
+          "rssMb": 112.8,
+          "cpuSec": 0.28,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63401,
+          "rssMb": 78.4,
+          "cpuSec": 0.06,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63403,
+          "rssMb": 68.1,
+          "cpuSec": 0.03,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63405,
+          "rssMb": 1896.6,
+          "cpuSec": 5.59,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63406,
+          "rssMb": 116.8,
+          "cpuSec": 0.06,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63533,
+          "rssMb": 84.1,
+          "cpuSec": 0.08,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-worker",
+      "tMs": 14006.4115,
+      "rssMb": 3220.09375,
+      "processes": 8,
+      "cpuSec": 100.9,
+      "breakdown": [
+        {
+          "pid": 63397,
+          "rssMb": 687.6,
+          "cpuSec": 1.42,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 63399,
+          "rssMb": 113.2,
+          "cpuSec": 0.31,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63401,
+          "rssMb": 79.4,
+          "cpuSec": 0.07,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63403,
+          "rssMb": 68.2,
+          "cpuSec": 0.03,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63405,
+          "rssMb": 1896.6,
+          "cpuSec": 5.59,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63406,
+          "rssMb": 116.8,
+          "cpuSec": 0.06,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63533,
+          "rssMb": 175.3,
+          "cpuSec": 93.38,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63813,
+          "rssMb": 83,
+          "cpuSec": 0.04,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-paint",
+      "tMs": 20096.516042,
+      "rssMb": 3859.5,
+      "processes": 10,
+      "cpuSec": 115.79,
+      "breakdown": [
+        {
+          "pid": 63397,
+          "rssMb": 733.1,
+          "cpuSec": 2.31,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 63399,
+          "rssMb": 185.6,
+          "cpuSec": 6.15,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63401,
+          "rssMb": 79.6,
+          "cpuSec": 0.08,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63403,
+          "rssMb": 73.2,
+          "cpuSec": 0.09,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63405,
+          "rssMb": 1897.4,
+          "cpuSec": 5.65,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63406,
+          "rssMb": 116.8,
+          "cpuSec": 0.06,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63533,
+          "rssMb": 176.8,
+          "cpuSec": 93.45,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63813,
+          "rssMb": 155.1,
+          "cpuSec": 0.5,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 64034,
+          "rssMb": 358.9,
+          "cpuSec": 7.46,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 64248,
+          "rssMb": 83,
+          "cpuSec": 0.04,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    },
+    {
+      "name": "brutal:mem-net",
+      "tMs": 20861.608125,
+      "rssMb": 4169.90625,
+      "processes": 11,
+      "cpuSec": 117.24,
+      "breakdown": [
+        {
+          "pid": 63397,
+          "rssMb": 759.1,
+          "cpuSec": 2.88,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 63399,
+          "rssMb": 186,
+          "cpuSec": 6.16,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63401,
+          "rssMb": 132.5,
+          "cpuSec": 0.44,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63403,
+          "rssMb": 73.3,
+          "cpuSec": 0.09,
+          "name": "Lethe"
+        },
+        {
+          "pid": 63405,
+          "rssMb": 1897.4,
+          "cpuSec": 5.65,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63406,
+          "rssMb": 116.8,
+          "cpuSec": 0.06,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63533,
+          "rssMb": 176.8,
+          "cpuSec": 93.45,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 63813,
+          "rssMb": 155.1,
+          "cpuSec": 0.5,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 64034,
+          "rssMb": 358.8,
+          "cpuSec": 7.46,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 64248,
+          "rssMb": 231.1,
+          "cpuSec": 0.51,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 64646,
+          "rssMb": 83,
+          "cpuSec": 0.04,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "[render] lethe:eval reqId=e17 ctx=yes",
+    "[render] lethe:eval reqId=e18 ctx=yes",
+    "[render] lethe:eval reqId=e19 ctx=yes",
+    "[render] lethe:eval reqId=e20 ctx=yes",
+    "[render] lethe:eval reqId=e21 ctx=yes",
+    "[render] lethe:eval reqId=e22 ctx=yes",
+    "[e2e] ok   wait-js -> true",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[render] lethe:eval reqId=e23 ctx=yes",
+    "[e2e] result brutal-worker workers=16 cores=16 ops=82849540000 mops_s=13776.1 spawn_to_done=6014ms",
+    "[e2e] > mark brutal:mem-worker",
+    "[e2e] mark brutal:mem-worker",
+    "[e2e] > newtab http://127.0.0.1:55746/bstorage.html",
+    "[lethe-cef] native tab bar visible=0 tabs=1",
+    "[lethe-cef] native tab group windows=4 tabbar=1",
+    "[lethe-cef] browser created (4) windows=4 runtime=2",
+    "[e2e] > try-wait 30000",
+    "[e2e] nav http://127.0.0.1:55746/bstorage.html",
+    "[e2e] nav-end http://127.0.0.1:55746/bstorage.html status=200",
+    "[e2e] > wait-js 120000 document.getElementById(\"stats\").textContent.indexOf(\"wps=\")>=0||document.getElementById(\"stats\").textContent.indexOf(\"error=\")>=0",
+    "[render] lethe:eval reqId=e24 ctx=yes",
+    "[render] lethe:eval reqId=e25 ctx=yes",
+    "[e2e] ok   wait-js -> true",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[render] lethe:eval reqId=e26 ctx=yes",
+    "[e2e] result brutal-storage n=20000 write=436ms read=78ms(20000) index=0ms localstorage=14ms wps=45851",
+    "[e2e] > newtab http://127.0.0.1:55746/bpaint.html",
+    "[lethe-cef] native tab bar visible=0 tabs=1",
+    "[lethe-cef] native tab group windows=5 tabbar=1",
+    "[lethe-cef] browser created (5) windows=5 runtime=2",
+    "[e2e] > try-wait 30000",
+    "[e2e] nav http://127.0.0.1:55746/bpaint.html",
+    "[e2e] nav-end http://127.0.0.1:55746/bpaint.html status=200",
+    "[e2e] > wait-js 120000 document.getElementById(\"stats\").textContent.indexOf(\"fps=\")>=0",
+    "[render] lethe:eval reqId=e27 ctx=yes",
+    "[render] lethe:eval reqId=e28 ctx=yes",
+    "[render] lethe:eval reqId=e29 ctx=yes",
+    "[render] lethe:eval reqId=e30 ctx=yes",
+    "[render] lethe:eval reqId=e31 ctx=yes",
+    "[render] lethe:eval reqId=e32 ctx=yes",
+    "[render] lethe:eval reqId=e33 ctx=yes",
+    "[render] lethe:eval reqId=e34 ctx=yes",
+    "[render] lethe:eval reqId=e35 ctx=yes",
+    "[render] lethe:eval reqId=e36 ctx=yes",
+    "[render] lethe:eval reqId=e37 ctx=yes",
+    "[e2e] ok   wait-js -> true",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[render] lethe:eval reqId=e38 ctx=yes",
+    "[e2e] result brutal-paint layers=4000 fps=62.4",
+    "[e2e] > mark brutal:mem-paint",
+    "[e2e] mark brutal:mem-paint",
+    "[e2e] > newtab http://127.0.0.1:55746/bnet.html",
+    "[lethe-cef] native tab bar visible=0 tabs=1",
+    "[lethe-cef] native tab group windows=6 tabbar=1",
+    "[lethe-cef] browser created (6) windows=6 runtime=2",
+    "[e2e] > try-wait 30000",
+    "[e2e] nav http://127.0.0.1:55746/bnet.html",
+    "[e2e] nav-end http://127.0.0.1:55746/bnet.html status=200",
+    "[e2e] > wait-js 180000 document.getElementById(\"stats\").textContent.indexOf(\"p99=\")>=0",
+    "[render] lethe:eval reqId=e39 ctx=yes",
+    "[render] lethe:eval reqId=e40 ctx=yes",
+    "[e2e] ok   wait-js -> true",
+    "[e2e] > print-js (function(){var e=document.getElementById(\"stats\");return e?e.textContent:\"LOST\";})()",
+    "[render] lethe:eval reqId=e41 ctx=yes",
+    "[e2e] result brutal-net n=1000 cold=179ms rps=5590 warm=183ms rps=5459 mb=21.0 p50=139.4ms p95=170.9ms p99=171.4ms",
+    "[e2e] > mark brutal:mem-net",
+    "[e2e] mark brutal:mem-net",
+    "[e2e] > quit",
+    "[e2e] quit",
+    "[lethe-cef] DoClose browser=1 ready=0",
+    "[lethe-cef] DoClose browser=2 ready=0",
+    "[lethe-cef] DoClose browser=3 ready=0",
+    "[lethe-cef] DoClose browser=4 ready=0",
+    "[lethe-cef] DoClose browser=5 ready=0",
+    "[lethe-cef] DoClose browser=6 ready=0",
+    "[lethe-cef] CefShutdown...",
+    "[lethe-cef] last browser closed; quitting message loop",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

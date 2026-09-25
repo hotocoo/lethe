@@ -140,3 +140,41 @@ not verified to survive the tunnel either).
   corresponding load events arrive.
 - `--single-process` loads pages (useful as a navigation sanity check)
   but is not a supported shipping mode.
+
+## Round 4 (2026-09-11): command surface, control audit, threat scanning
+
+- **Full native menu bar.** The shell shipped four menu items (Settings,
+  Focus Address Bar, Reload, New Tab), so Quit, Copy/Paste, Close Tab,
+  Back/Forward, zoom, find, history and bookmarks did not exist in the
+  Blink shell at all. `browser/app/cef_menu.mm` now installs the same
+  command surface as the WebKit shell, routed to the active `CefBrowser`,
+  with `validateMenuItem:` reflecting real browser state.
+- **Control audit.** `LetheUIAudit` resolves every toolbar item, menu item
+  and button exactly as AppKit would at click time and reports anything
+  unreachable. `tests/e2e/ui_controls_cef.lethe` runs it: 76 controls, all
+  reachable, and the primary chrome buttons are clicked for real.
+- **Fixed: menu validation read freed memory.** The chrome controller held
+  its `CefBrowser` as a raw pointer, so after a navigation closed a browser
+  the next validation pass dereferenced freed CEF memory
+  (`EXC_BAD_ACCESS`, `0xcdcdcdcd...`). It now holds a `CefRefPtr`.
+- **Threat scanning.** `OnBeforeBrowse` runs the local site scanner and
+  `OnDownloadUpdated` scans completed downloads, sharing `LetheGuard` with
+  the WebKit shell.
+- **Quieter logs.** Navigation logging truncated internal `data:` documents,
+  which previously emitted the entire new-tab page on every navigation.
+
+### Known issue: rounded renderer edge under the toolbar
+
+The Alloy surface paints its own rounded top corners, which are visible as a
+light arc immediately below the unified toolbar. Constraining the CEF view
+to `contentLayoutRect` and clearing the layer corner radius did not remove
+it, which points at Chromium's own compositor layer rather than the
+embedder's view geometry. Cosmetic only; tracked for the next round.
+
+### Network throughput
+
+`--suite brutal` measures 5,981 rps on 1,000 mixed-size requests against
+11,014 rps for Chrome. Disabling the policy proxy (6,165 rps), the site
+isolation switches (6,173 rps) and the DoH/QUIC hardening (6,075 rps) each
+change nothing outside noise, so the gap is in the Alloy embedding rather
+than in Lethe's security layers. See docs/BENCHMARKS.md.

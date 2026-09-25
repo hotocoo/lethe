@@ -7,6 +7,7 @@
 #import "ui/mac/LetheShell.h"
 #import "ui/mac/LetheDownloads.h"
 #import "ui/mac/LetheGuard.h"
+#import "ui/mac/LetheOmnibox.h"
 #import "ui/mac/LetheBookmarks.h"
 #import "ui/mac/LetheHistory.h"
 #import "ui/mac/LethePermissions.h"
@@ -655,7 +656,14 @@ static NSString* const kLetheToolbarBookmark = @"LetheToolbarBookmark";
 
 - (void)updateAddress {
     if (addressEditing_) return;
-    addressField_.stringValue = [self displayAddress];
+    NSString* shown = [self displayAddress];
+    NSAttributedString* styled =
+        LetheOmniboxAttributedAddress(shown, addressField_.font);
+    if (styled) {
+        addressField_.attributedStringValue = styled;
+    } else {
+        addressField_.stringValue = shown;
+    }
     [self updateLockIcon];
     [self refreshBookmarkIcon];
 }
