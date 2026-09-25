@@ -62,7 +62,9 @@ fi
 
 # chrome_pgo_phase=0: PGO profiles are not fetched for CEF checkouts; without
 # it gn gen fails. Costs a few percent CPU versus an official Chrome build.
-export GN_DEFINES="is_official_build=true chrome_pgo_phase=0 proprietary_codecs=true ffmpeg_branding=Chrome"
+# symbol_level=0: full symbols under ThinLTO need well over 150 GB; a codec
+# distribution does not need release debug symbols.
+export GN_DEFINES="is_official_build=true chrome_pgo_phase=0 symbol_level=0 blink_symbol_level=0 v8_symbol_level=0 proprietary_codecs=true ffmpeg_branding=Chrome"
 export CEF_ARCHIVE_FORMAT=tar.bz2
 
 python3 "$WORK/automate-git.py" \
