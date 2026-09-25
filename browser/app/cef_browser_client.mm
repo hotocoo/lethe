@@ -759,7 +759,7 @@ bool CefBrowserClient::OnBeforePopup(
     // Use a normal native window and the same client so popup browsers enter
     // the automation browser set and remain behind the same policy handlers.
     windowInfo.bounds = CefRect(0, 0, 1280, 860);
-    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+    windowInfo.runtime_style = LetheCefRuntimeStyle();
     client = this;
     settings = CefBrowserSettings();
     return false;
@@ -796,7 +796,7 @@ bool CefBrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
     if (!shift && event.windows_key_code == 'T') {
         CefWindowInfo windowInfo;
         windowInfo.bounds = CefRect(0, 0, 1280, 860);
-        windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+        windowInfo.runtime_style = LetheCefRuntimeStyle();
         CefBrowserSettings settings;
         settings.background_color = 0xFFFFFFFFu;
         if (!lethe::PluginRegistry::instance().enabled("javascript"))

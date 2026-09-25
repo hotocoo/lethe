@@ -709,3 +709,28 @@ version checked transfer only and enhanced (tone-mapped) the HDR clip. The
 enhancer now also skips BT.2020 primaries. If colour detection fails on an
 HDR display, the video is skipped (fail-closed). HDR *output* itself was not
 measurable: this host's display is SDR.
+
+## CEF network gap: every Lethe layer ruled out (2026-09-25)
+
+`--suite extreme-net` (300 concurrent same-origin fetches), median of the
+per-run 3-round medians. A Chromium checkout was downloading in the
+background during these runs; it was network-bound (load average about 4).
+
+| Configuration | rps |
+|---|---|
+| Lethe CEF, Alloy runtime style (default) | 5,566 |
+| Lethe CEF, Chrome runtime style (`LETHE_CEF_RUNTIME_STYLE=chrome`) | 5,650 |
+| + `--disable-renderer-backgrounding` and timer/occlusion throttling off | 5,536 |
+| + `--no-proxy` | 5,450 |
+| + `NetworkServiceInProcess` | 5,613 |
+| + `--no-tracker-block` (no resource-request handler work) | 5,592 |
+| Chrome 153 | 10,791 |
+
+Earlier rounds already ruled out the policy proxy, site isolation and the
+DoH/QUIC switches. This round adds: runtime style, renderer backgrounding,
+network-service placement and Lethe's resource handler. None of them moves
+the result by more than 2%. The remaining ~1.9x sits inside CEF's embedding
+layer, which wraps every URL loader whatever the client returns. It is not
+in Lethe's code. Closing it needs a patched CEF, not a shell change. (The
+Chrome style switch is set through `CefWindowInfo.runtime_style`; this run
+did not check it independently.)

@@ -388,7 +388,7 @@ void LetheCefAutomation::RunLine(const std::string& line) {
     } else if (cmd == "newtab") {
         CefWindowInfo wi;
         wi.bounds = CefRect(0, 0, 1280, 860);
-        wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+        wi.runtime_style = LetheCefRuntimeStyle();
         CefBrowserSettings bs;
         const std::string target = arg.empty() ? LetheCefNewTabDataUrl() : arg;
         if (!CefBrowserHost::CreateBrowser(
@@ -401,7 +401,7 @@ void LetheCefAutomation::RunLine(const std::string& line) {
         if (!delegate_ || !delegate_.client) { Fail("oblivion: no client"); return; }
         CefWindowInfo wi;
         wi.bounds = CefRect(0, 0, 1280, 860);
-        wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+        wi.runtime_style = LetheCefRuntimeStyle();
         CefBrowserSettings bs;
         // Empty cache_path gives this browser a private in-memory request
         // context. It cannot share cookies/localStorage/cache with the normal
@@ -478,7 +478,7 @@ void LetheCefAutomation::RunLine(const std::string& line) {
                 if (target == "_blank" && !href.empty()) {
                     CefWindowInfo wi;
                     wi.bounds = CefRect(0, 0, 1280, 860);
-                    wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+                    wi.runtime_style = LetheCefRuntimeStyle();
                     CefBrowserSettings bs;
                     if (!CefBrowserHost::CreateBrowser(
                             wi, delegate_.client, href, bs, nullptr, nullptr)) {

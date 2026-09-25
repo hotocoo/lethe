@@ -113,7 +113,7 @@ static void ConfigureLetheCefChildWindow(CefWindowInfo& windowInfo,
     // can collapse the host window horizontally on macOS.
     windowInfo.SetAsChild((CefWindowHandle)(__bridge void*)container,
                           CefRect(0, 0, 1280, 860));
-    windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+    windowInfo.runtime_style = LetheCefRuntimeStyle();
 }
 
 - (void)createInitialBrowser {

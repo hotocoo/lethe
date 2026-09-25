@@ -11,6 +11,7 @@
 #define LETHE_BROWSER_APP_CEF_BROWSER_CLIENT_H
 
 #include <atomic>
+#include <cstdlib>
 #include <string>
 #include <unordered_set>
 #include <unordered_map>
@@ -290,5 +291,15 @@ class CefBrowserClient : public CefClient,
 
     IMPLEMENT_REFCOUNTING(CefBrowserClient);
 };
+
+// Runtime style for every browser Lethe creates. Alloy is the default (it
+// is what the native chrome and OnBeforeBrowse policy hooks are validated
+// against); LETHE_CEF_RUNTIME_STYLE=chrome selects Chrome style for
+// network-path experiments.
+inline cef_runtime_style_t LetheCefRuntimeStyle() {
+    const char* v = getenv("LETHE_CEF_RUNTIME_STYLE");
+    return (v && std::string(v) == "chrome") ? CEF_RUNTIME_STYLE_CHROME
+                                             : CEF_RUNTIME_STYLE_ALLOY;
+}
 
 #endif  // LETHE_BROWSER_APP_CEF_BROWSER_CLIENT_H
