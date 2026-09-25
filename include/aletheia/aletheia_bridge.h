@@ -104,6 +104,11 @@ public:
     // The OS LLM calls this to search and read the top result.
     llm::PageContent llmSearchAndRead(const std::string& query);
 
+    // OS LLM calls this to read every result in the top-k / top-p nucleus
+    // (SearchConfig::ranking), at most maxPages, for multi-source answers.
+    std::vector<llm::PageContent> llmSearchAndReadNucleus(const std::string& query,
+                                                          size_t maxPages = 4);
+
     // Whether the LLM search is using the VPN.
     bool isLlmSearchUsingVpn() const;
 

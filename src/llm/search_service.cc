@@ -8,6 +8,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 
 namespace lethe {
 namespace llm {
@@ -194,6 +195,9 @@ std::vector<SearchResult> SearchService::webSearch(const std::string& query) {
     // pins engine + query + limit so config changes never serve stale mixes.
     const std::string cacheKey = config_.searchEngineUrl + "|q=" + query +
                                  "|n=" + std::to_string(config_.maxResults) +
+                                 "|k=" + std::to_string(config_.ranking.topK) +
+                                 "|p=" + std::to_string(config_.ranking.topP) +
+                                 "|t=" + std::to_string(config_.ranking.temperature) +
                                  "|" + config_.userAgent;
     if (searchCacheGet(cacheKey, results)) {
         std::cout << "[lethe-llm] Search (cached): " << query << " -> "
@@ -216,7 +220,7 @@ std::vector<SearchResult> SearchService::webSearch(const std::string& query) {
     }
 
     std::string html(resp.body.begin(), resp.body.end());
-    results = parseSearchResults(html);
+    results = rankResults(query, parseSearchResults(html), config_.ranking);
     if (!results.empty()) {
         searchCachePut(cacheKey, results);
     }
@@ -306,6 +310,102 @@ PageContent SearchService::searchAndRead(const std::string& query) {
     }
     // Read the top result.
     return readPage(results[0].url);
+}
+
+std::vector<PageContent> SearchService::searchAndReadNucleus(const std::string& query,
+                                                             size_t maxPages) {
+    std::vector<PageContent> pages;
+    for (const auto& r : webSearch(query)) {
+        if (pages.size() >= maxPages) break;
+        PageContent c = readPage(r.url);
+        if (c.success) pages.push_back(std::move(c));
+    }
+    return pages;
+}
+
+namespace {
+
+// Lowercase ASCII alphanumeric words of length >= 2, de-duplicated.
+std::vector<std::string> queryTerms(const std::string& text) {
+    std::vector<std::string> out;
+    std::string cur;
+    auto flush = [&] {
+        if (cur.size() >= 2 && std::find(out.begin(), out.end(), cur) == out.end())
+            out.push_back(cur);
+        cur.clear();
+    };
+    for (unsigned char ch : text) {
+        if (std::isalnum(ch)) cur.push_back(static_cast<char>(std::tolower(ch)));
+        else flush();
+    }
+    flush();
+    return out;
+}
+
+double coverage(const std::vector<std::string>& terms, const std::string& field) {
+    if (terms.empty()) return 0.0;
+    const std::vector<std::string> words = queryTerms(field);
+    size_t hit = 0;
+    for (const auto& t : terms)
+        if (std::find(words.begin(), words.end(), t) != words.end()) ++hit;
+    return static_cast<double>(hit) / static_cast<double>(terms.size());
+}
+
+}  // namespace
+
+std::vector<SearchResult> rankResults(const std::string& query,
+                                      std::vector<SearchResult> results,
+                                      const RankingParams& params) {
+    if (results.empty()) return results;
+    const std::vector<std::string> terms = queryTerms(query);
+    std::vector<double> score(results.size());
+    for (size_t i = 0; i < results.size(); ++i) {
+        const auto& r = results[i];
+        const double prior = 1.0 / std::sqrt(static_cast<double>(std::max(1, r.position)));
+        score[i] = 0.55 * coverage(terms, r.title) + 0.30 * coverage(terms, r.snippet) +
+                   0.15 * prior;
+    }
+    std::vector<size_t> order(results.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    // Stable: equal scores keep the engine's order.
+    std::stable_sort(order.begin(), order.end(),
+                     [&](size_t a, size_t b) { return score[a] > score[b]; });
+
+    std::vector<double> prob(order.size(), 0.0);
+    if (params.temperature <= 0.0) {
+        prob[0] = 1.0;  // greedy
+    } else {
+        const double top = score[order[0]];
+        double z = 0.0;
+        for (size_t i = 0; i < order.size(); ++i) {
+            prob[i] = std::exp((score[order[i]] - top) / params.temperature);
+            z += prob[i];
+        }
+        for (double& p : prob) p /= z;
+    }
+
+    size_t keep = order.size();
+    if (params.topK > 0) keep = std::min(keep, static_cast<size_t>(params.topK));
+    const double topP = std::clamp(params.topP, 1e-9, 1.0);
+    double mass = 0.0;
+    size_t nucleus = 0;
+    while (nucleus < keep) {
+        mass += prob[nucleus++];
+        if (mass >= topP - 1e-12 || prob[nucleus - 1] >= 1.0) break;
+    }
+    if (params.temperature <= 0.0) nucleus = 1;
+
+    std::vector<SearchResult> out;
+    out.reserve(nucleus);
+    double kept = 0.0;
+    for (size_t i = 0; i < nucleus; ++i) kept += prob[i];
+    for (size_t i = 0; i < nucleus; ++i) {
+        SearchResult r = std::move(results[order[i]]);
+        r.position = static_cast<int>(i + 1);
+        r.relevanceScore = kept > 0.0 ? prob[i] / kept : 0.0;
+        out.push_back(std::move(r));
+    }
+    return out;
 }
 
 std::string SearchService::extractTitleFromHtml(const std::string& html) const {

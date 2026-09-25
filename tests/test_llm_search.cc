@@ -92,3 +92,72 @@ LETHE_TEST_CASE(SearchService_ExtractTextFromHtml) {
     (void)service;
 }
 
+
+// --- Top-k / top-p (nucleus) result ranking ---------------------------------
+
+namespace {
+std::vector<SearchResult> sampleResults() {
+    return {
+        {1, "Weather forecast today", "https://a.example/weather", "Sunny with clouds", 0},
+        {2, "Rust borrow checker explained", "https://b.example/rust", "Ownership and lifetimes in Rust", 0},
+        {3, "Cooking pasta", "https://c.example/pasta", "Boil water, add salt", 0},
+        {4, "Rust lifetimes deep dive", "https://d.example/lifetimes", "The borrow checker and lifetimes", 0},
+        {5, "Travel tips", "https://e.example/travel", "Pack light", 0},
+    };
+}
+}  // namespace
+
+LETHE_TEST_CASE(SearchRanking_EmptyInputStaysEmpty) {
+    CHECK_TRUE(rankResults("rust", {}, RankingParams{}).empty());
+}
+
+LETHE_TEST_CASE(SearchRanking_QueryMatchOutranksEnginePosition) {
+    RankingParams p; p.topK = 5; p.topP = 1.0;
+    auto r = rankResults("rust borrow checker lifetimes", sampleResults(), p);
+    CHECK_EQ(r.size(), size_t{5});
+    // Both Rust pages beat the engine's #1 (weather), which matches nothing.
+    CHECK_TRUE(r[0].url.find("example/rust") != std::string::npos ||
+               r[0].url.find("example/lifetimes") != std::string::npos);
+    CHECK_TRUE(r[1].url.find("example/rust") != std::string::npos ||
+               r[1].url.find("example/lifetimes") != std::string::npos);
+}
+
+LETHE_TEST_CASE(SearchRanking_TopKCapsCount) {
+    RankingParams p; p.topK = 2; p.topP = 1.0;
+    CHECK_EQ(rankResults("rust", sampleResults(), p).size(), size_t{2});
+}
+
+LETHE_TEST_CASE(SearchRanking_NucleusNeverEmpty) {
+    RankingParams p; p.topK = 5; p.topP = 0.0001;
+    auto r = rankResults("rust lifetimes", sampleResults(), p);
+    CHECK_EQ(r.size(), size_t{1});
+    CHECK_EQ(r[0].position, 1);
+}
+
+LETHE_TEST_CASE(SearchRanking_ProbabilitiesNormalisedAndDescending) {
+    RankingParams p; p.topK = 10; p.topP = 1.0;
+    auto r = rankResults("rust", sampleResults(), p);
+    CHECK_EQ(r.size(), size_t{5});
+    double sum = 0;
+    for (size_t i = 0; i < r.size(); ++i) {
+        sum += r[i].relevanceScore;
+        CHECK_EQ(r[i].position, static_cast<int>(i + 1));
+        if (i) CHECK_TRUE(r[i - 1].relevanceScore >= r[i].relevanceScore);
+    }
+    CHECK_TRUE(sum > 0.999 && sum < 1.001);
+}
+
+LETHE_TEST_CASE(SearchRanking_NucleusCutsLowMassTail) {
+    // A peaked distribution (low temperature) concentrates mass on the two
+    // Rust pages; top-p 0.9 must drop the unrelated tail.
+    RankingParams p; p.topK = 5; p.topP = 0.9; p.temperature = 0.1;
+    auto r = rankResults("rust borrow checker lifetimes", sampleResults(), p);
+    CHECK_TRUE(r.size() >= 1 && r.size() <= 2);
+}
+
+LETHE_TEST_CASE(SearchRanking_ZeroTemperatureIsGreedy) {
+    RankingParams p; p.topK = 5; p.topP = 1.0; p.temperature = 0.0;
+    auto r = rankResults("pasta", sampleResults(), p);
+    CHECK_EQ(r.size(), size_t{1});
+    CHECK_TRUE(r[0].url.find("pasta") != std::string::npos);
+}

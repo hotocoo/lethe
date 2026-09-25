@@ -316,6 +316,12 @@ llm::PageContent AletheiaBridge::llmSearchAndRead(const std::string& query) {
     return searchService_->searchAndRead(query);
 }
 
+std::vector<llm::PageContent> AletheiaBridge::llmSearchAndReadNucleus(const std::string& query,
+                                                                      size_t maxPages) {
+    if (!searchService_ || !searchInitialized_) return {};
+    return searchService_->searchAndReadNucleus(query, maxPages);
+}
+
 bool AletheiaBridge::isLlmSearchUsingVpn() const {
     return searchService_ && searchService_->isUsingVpn();
 }

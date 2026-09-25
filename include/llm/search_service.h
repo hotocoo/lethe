@@ -44,6 +44,24 @@ struct PageContent {
     std::string error;       // Error message if success is false
 };
 
+// Top-k / top-p (nucleus) selection over search results, the same controls
+// an LLM sampler exposes. Each result is scored by query-term coverage of
+// its title and snippet plus a small engine-rank prior; scores become a
+// softmax distribution at `temperature`. The k most probable results are
+// kept, then the smallest prefix whose probability mass reaches `topP`.
+// temperature <= 0 is greedy (one result). The nucleus is never empty.
+struct RankingParams {
+    int topK = 8;             // <= 0 means no cap
+    double topP = 0.9;        // clamped to (0, 1]
+    double temperature = 0.35;
+};
+
+// Returns the selected results sorted by probability, positions renumbered
+// from 1, relevanceScore = probability renormalised over the selection.
+std::vector<SearchResult> rankResults(const std::string& query,
+                                      std::vector<SearchResult> results,
+                                      const RankingParams& params);
+
 // Configuration for the search service.
 struct SearchConfig {
     std::string searchEngineUrl = "https://search.aletheia.os"; // Built-in search
@@ -61,6 +79,7 @@ struct SearchConfig {
     bool cacheSearches = true;       // Memoize identical query results
     int maxCachedSearches = 16;      // LRU bound for the search cache
     int searchCacheTtlSec = 300;     // Freshness window for cached results
+    RankingParams ranking;           // top-k / top-p applied to every webSearch
 };
 
 // The search service used by the Aletheia OS LLM.
@@ -88,6 +107,11 @@ public:
 
     // Perform a search and read the top result (convenience for the LLM).
     PageContent searchAndRead(const std::string& query);
+
+    // AI search: read every result in the top-k / top-p nucleus (at most
+    // `maxPages`), so a model answers from several sources, not one.
+    std::vector<PageContent> searchAndReadNucleus(const std::string& query,
+                                                  size_t maxPages = 4);
 
     // Whether the search service is using the VPN.
     bool isUsingVpn() const;
