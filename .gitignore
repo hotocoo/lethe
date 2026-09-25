@@ -19,3 +19,5 @@ third_party/cef/
 
 # Local CEF backups (never commit: framework binaries exceed GitHub 100 MB cap)
 third_party/cef-*.bak/
+third_party/cef-codecs/
+build-cef-codecs/

@@ -543,6 +543,22 @@ async function throughput(name,codec){
       wcDec:await wc(V[k],false),wcEnc:await wc(V[k],true),rec:rec(CT[k])};
   }
   for(var a in A) out.audio[a]={play:aEl.canPlayType(A[a])||'no',mse:mse(A[a])};
+  // Real playback, not just a capability answer: each clip must decode
+  // frames (video) or advance currentTime (audio) within 4 s.
+  out.playback={};
+  for(var clip of ['h264.mp4','hevc.mp4','vp9.webm','av1.mp4','aac.m4a','opus.webm']){
+    out.playback[clip]=await new Promise(function(res){
+      var isA=clip.indexOf('aac')===0||clip.indexOf('opus')===0, el=document.createElement(isA?'audio':'video');
+      el.muted=true; el.src='play-'+clip; document.body.appendChild(el);
+      var fin=function(r){el.pause();el.remove();res(r);};
+      el.onerror=function(){fin('error '+(el.error&&el.error.code));};
+      el.play().catch(function(){});
+      setTimeout(function(){
+        var q=el.getVideoPlaybackQuality?el.getVideoPlaybackQuality():null;
+        fin(el.currentTime>0.5?('t '+el.currentTime.toFixed(1)+(q&&!isA?' frames '+q.totalVideoFrames:'')):'stalled t '+el.currentTime.toFixed(1));
+      },4000);
+    });
+  }
   st.textContent='probed; encoding…';
   for(var n of ['h264','hevc','vp8','vp9','av1']) await throughput(n,V[n]);
   st.textContent='media-done '+JSON.stringify(out);
@@ -781,6 +797,24 @@ async function ensureExtremeServer() {
   writeFileSync(join(extremeDir, 'bnet.html'), brutalNetHtml());
   writeFileSync(join(extremeDir, 'media.html'), mediaHtml());
   writeFileSync(join(extremeDir, 'enhancer.html'), enhancerHtml());
+  const clips = [
+    ['play-h264.mp4', ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']],
+    ['play-hevc.mp4', ['-c:v', 'hevc_videotoolbox', '-tag:v', 'hvc1', '-b:v', '2M', '-movflags', '+faststart']],
+    ['play-vp9.webm', ['-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8']],
+    ['play-av1.mp4', ['-c:v', 'libsvtav1', '-preset', '12', '-movflags', '+faststart']],
+  ];
+  for (const [name, codec] of clips) {
+    try {
+      execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i',
+        'testsrc2=size=640x360:rate=30:duration=6', ...codec, join(extremeDir, name)]);
+    } catch { console.log(`[bench] ffmpeg could not make ${name}`); }
+  }
+  for (const [name, codec] of [['play-aac.m4a', ['-c:a', 'aac']], ['play-opus.webm', ['-c:a', 'libopus']]]) {
+    try {
+      execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i',
+        'sine=frequency=440:duration=6', ...codec, join(extremeDir, name)]);
+    } catch { console.log(`[bench] ffmpeg could not make ${name}`); }
+  }
   try {
     execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i',
       'testsrc2=size=640x360:rate=30:duration=10', '-c:v', 'libvpx-vp9', '-b:v', '1M',
@@ -815,7 +849,8 @@ async function ensureExtremeServer() {
     const data = readFileSync(file);
     const isBin = file.endsWith('.bin');
     res.writeHead(200, {
-      'Content-Type': file.endsWith('.webm') ? 'video/webm' : isBin ? 'application/octet-stream' : 'text/html; charset=utf-8',
+      'Content-Type': file.endsWith('.webm') ? 'video/webm' : file.endsWith('.mp4') ? 'video/mp4' :
+        file.endsWith('.m4a') ? 'audio/mp4' : isBin ? 'application/octet-stream' : 'text/html; charset=utf-8',
       'Content-Length': data.length,
       'Cache-Control': 'no-store',
     });
@@ -1152,7 +1187,7 @@ async function runLethe(steps, { noProxy, binOverride }) {
   // Media suites intentionally start muted playback without a user gesture.
   // Keep that benchmark-only behavior deterministic instead of depending on
   // whatever autoplay policy the CEF embedder happens to inherit.
-  if (BROWSER === 'lethe-cef' && (SUITES.includes('youtube') || SUITES.includes('youtube4k')) &&
+  if (BROWSER === 'lethe-cef' && ['youtube', 'youtube4k', 'media', 'enhancer'].some(x => SUITES.includes(x)) &&
       !EXTRA_ARGS.some(a => a.startsWith('--autoplay-policy='))) {
     argv.push('--autoplay-policy=no-user-gesture-required');
   }

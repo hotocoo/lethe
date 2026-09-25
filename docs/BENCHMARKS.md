@@ -631,12 +631,34 @@ Each row is the engine's own answer to `canPlayType`/`MediaSource.isTypeSupporte
 | ALAC | play | no | no |
 | Opus / MP3 / FLAC / Vorbis | play | play | play |
 
-**Gap found:** the prebuilt CEF distribution is compiled with
-`proprietary_codecs=false`. The Blink shell therefore cannot play H.264, HEVC
-or AAC. That is most non-YouTube web video. The fix is a source build,
-scripted in `scripts/build_cef_codecs.sh` (about 150 GB, several hours,
-patent licensing to check before you redistribute it). Until then, the
-WebKit shell is the full-codec engine.
+**Gap found and closed.** The prebuilt CEF distribution is compiled with
+`proprietary_codecs=false`, so the Blink shell could not play H.264, HEVC or
+AAC. `scripts/build_cef_codecs.sh` now builds CEF 151.3.24 from source with
+`proprietary_codecs=true ffmpeg_branding=Chrome` (shallow checkout,
+`symbol_level=0`, about 70 GB peak, about 3 hours on M4 Max). Point cmake at
+it with `-DCEF_ROOT=third_party/cef-codecs`. Patent licensing for
+H.264/HEVC/AAC still applies if you distribute that build.
+
+**Real playback proof** (`--suite media`, `tools/bench/results/v5-playback/`).
+Six generated clips, each must advance `currentTime` past 0.5 s within 4 s.
+`error 4` is MEDIA_ERR_SRC_NOT_SUPPORTED.
+
+| Clip | Lethe WebKit | Lethe CEF prebuilt | **Lethe CEF + codecs** | Chrome 153 |
+|---|---|---|---|---|
+| H.264 (mp4) | plays | error 4 | **plays, 124 frames** | plays, 123 |
+| HEVC (mp4, hvc1) | plays | error 4 | **plays, 125 frames** | plays, 125 |
+| VP9 (webm) | plays | plays, 124 | plays, 125 | plays, 124 |
+| AV1 (mp4) | plays | plays, 125 | plays, 125 | plays, 124 |
+| AAC (m4a) | plays | error 4 | **plays** | plays |
+| Opus (webm) | plays | plays | plays | plays |
+
+WebKit's frame counter stays low for a video element outside the viewport:
+it decodes but does not paint it, and `currentTime` still advances. The
+codec build's capability matrix now matches Chrome row for row (H.264 and
+HEVC hardware decode/encode, AAC in MSE). WebCodecs medians (3 runs):
+H.264 312/1,073, HEVC 333/2,553 enc/dec fps, level with Chrome. Cost: the
+framework grows 316 to 325 MB, and cold startup is unchanged (146-153 ms vs
+144-153 ms prebuilt, 3 runs each).
 
 ## WebCodecs throughput (1080p, 120 frames, frames/s)
 

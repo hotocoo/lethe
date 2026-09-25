@@ -1,0 +1,374 @@
+{
+  "browser": "chrome",
+  "label": "chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 153.0.8010.53",
+  "run": 1,
+  "startedAt": "2026-09-25T16:07:02.969Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "media"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 406.7340419999998,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": {
+    "hdrDisplay": false,
+    "hdrVideo": false,
+    "p3": false,
+    "video": {
+      "h264": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "hevc": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "ysp",
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "vp8": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ys",
+        "mcHdr": null,
+        "wcDec": "sw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "vp9": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "vp9_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "av1": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "av1_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "n",
+        "rec": true
+      }
+    },
+    "audio": {
+      "aac": {
+        "play": "probably",
+        "mse": true
+      },
+      "opus": {
+        "play": "probably",
+        "mse": true
+      },
+      "flac": {
+        "play": "probably",
+        "mse": false
+      },
+      "mp3": {
+        "play": "probably",
+        "mse": true
+      },
+      "vorbis": {
+        "play": "probably",
+        "mse": false
+      },
+      "alac": {
+        "play": "no",
+        "mse": false
+      }
+    },
+    "encode": {
+      "h264": {
+        "fps": 319.6,
+        "kbps": 7631
+      },
+      "hevc": {
+        "fps": 336.9,
+        "kbps": 7370
+      },
+      "vp8": {
+        "fps": 354.2,
+        "kbps": 8053
+      },
+      "vp9": {
+        "fps": 344.8,
+        "kbps": 5379
+      },
+      "av1": {
+        "fps": 192.7,
+        "kbps": 5489
+      }
+    },
+    "decode": {
+      "h264": {
+        "fps": 1692.5,
+        "frames": 120
+      },
+      "hevc": {
+        "fps": 2625.8,
+        "frames": 120
+      },
+      "vp8": {
+        "fps": 399.3,
+        "frames": 120
+      },
+      "vp9": {
+        "fps": 787.9,
+        "frames": 120
+      },
+      "av1": {
+        "fps": 2214,
+        "frames": 120
+      }
+    },
+    "playback": {
+      "h264.mp4": "t 4.0 frames 123",
+      "hevc.mp4": "t 4.0 frames 125",
+      "vp9.webm": "t 4.0 frames 124",
+      "av1.mp4": "t 4.0 frames 124",
+      "aac.m4a": "t 3.9",
+      "opus.webm": "t 4.0"
+    }
+  },
+  "enhancer": null,
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 406.7389169999999,
+      "rssMb": 935.6875,
+      "processes": 8,
+      "cpuSec": 0.75,
+      "breakdown": [
+        {
+          "pid": 23014,
+          "rssMb": 212.5,
+          "cpuSec": 0.38,
+          "name": "Google"
+        },
+        {
+          "pid": 23020,
+          "rssMb": 113.5,
+          "cpuSec": 0.07,
+          "name": "Google"
+        },
+        {
+          "pid": 23021,
+          "rssMb": 91.4,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 23022,
+          "rssMb": 74.1,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 23024,
+          "rssMb": 157.5,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 23026,
+          "rssMb": 117.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 23027,
+          "rssMb": 83.5,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 23029,
+          "rssMb": 85.4,
+          "cpuSec": 0.03,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "media:mem",
+      "tMs": 27643.679167,
+      "rssMb": 1628.4375,
+      "processes": 11,
+      "cpuSec": 9.99,
+      "breakdown": [
+        {
+          "pid": 23014,
+          "rssMb": 260.1,
+          "cpuSec": 1.57,
+          "name": "Google"
+        },
+        {
+          "pid": 23020,
+          "rssMb": 158.7,
+          "cpuSec": 1.21,
+          "name": "Google"
+        },
+        {
+          "pid": 23021,
+          "rssMb": 104.1,
+          "cpuSec": 0.29,
+          "name": "Google"
+        },
+        {
+          "pid": 23022,
+          "rssMb": 75.1,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 23024,
+          "rssMb": 182.7,
+          "cpuSec": 0.17,
+          "name": "Google"
+        },
+        {
+          "pid": 23026,
+          "rssMb": 118.9,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 23027,
+          "rssMb": 313.5,
+          "cpuSec": 6.48,
+          "name": "Google"
+        },
+        {
+          "pid": 23044,
+          "rssMb": 115.3,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 23085,
+          "rssMb": 99.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 23090,
+          "rssMb": 123.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 23233,
+          "rssMb": 77.1,
+          "cpuSec": 0.03,
+          "name": "Google"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "\nDevTools listening on ws://127.0.0.1:57750/devtools/browser/20a79f90-fe1f-4656-8d9b-6c13fc352caa",
+    "Trying to load the allocator multiple times. This is *not* supported.",
+    "[OpenH264] this = 0x0x10400e23360, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.",
+    "[23014:2867839:0926/000705.604081:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[23014:2867839:0926/000705.604150:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR\n[23014:2867839:0926/000705.604207:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[23014:2867839:0926/000705.627192:ERROR:google_apis/gcm/engine/mcs_client.cc:702]   Error code: 401  Error message: Authentication Failed: wrong_secret\n[23014:2867839:0926/000705.627204:ERROR:google_apis/gcm/engine/mcs_client.cc:704] Failed to log in to GCM, resetting connection.",
+    "Created TensorFlow Lite XNNPACK delegate for CPU.",
+    "[23357:2869731:0926/000722.260339:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake-all --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[23357:2869731:0926/000722.260842:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 38660, parent pid: 23014\n[23357:2869731:0926/000722.266366:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 150980673536B (140.612GiB) / 994662584320B (926.352GiB)\n[23357:2869731:0926/000722.266382:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 150980673536B (140.612GiB) / 994662584320B (926.352GiB)\n[23357:2869731:0926/000722.266447:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[23359:2869789:0926/000722.280782:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --crash-handler --database=/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/Crashpad --url=https://clients2.google.com/cr/report --annotation=prod=Update4 --annotation=ver=152.0.7933.0 --handshake-fd=6 --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[23359:2869789:0926/000722.282010:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 38660, parent pid: 1\n[23359:2869789:0926/000722.284035:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 150979698688B (140.611GiB) / 994662584320B (926.352GiB)\n[23359:2869789:0926/000722.284048:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 150979698688B (140.611GiB) / 994662584320B (926.352GiB)\n[23359:2869789:0926/000722.284119:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[23357:2869731:0926/000722.284882:VERBOSE1:chrome/updater/crash_reporter.cc:124] Crash handler launched and ready.",
+    "[23357:2869731:0926/000722.286497:VERBOSE1:chrome/updater/crash_client.cc:108] Found 0 completed crash reports\n[23357:2869731:0926/000722.286627:VERBOSE1:chrome/updater/crash_client.cc:132] Found 0 pending crash reports",
+    "[23357:2869731:0926/000722.286704:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/RLZ/Crashpad/settings.dat: No such file or directory (2)",
+    "[23357:2869731:0926/000722.286788:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/ChromeForTesting/Crashpad/settings.dat: No such file or directory (2)\n[23357:2869731:0926/000722.286797:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/Chrome-headless/Crashpad/settings.dat: No such file or directory (2)\n[23357:2869731:0926/000722.286809:VERBOSE1:chrome/updater/updater.cc:105] Crash reporting initialized.",
+    "[23357:2869881:0926/000722.287283:VERBOSE1:chrome/updater/app/app_wakeall.cc:58] Launching `/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake`",
+    "[23360:2869887:0926/000722.295655:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --wake --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[23360:2869887:0926/000722.296121:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 38660, parent pid: 23357",
+    "[23360:2869887:0926/000722.297786:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 150979117056B (140.610GiB) / 994662584320B (926.352GiB)\n[23360:2869887:0926/000722.297801:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 150979117056B (140.610GiB) / 994662584320B (926.352GiB)",
+    "[23360:2869887:0926/000722.297919:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[23362:2869940:0926/000722.306826:VERBOSE1:chrome/updater/updater.cc:374] Version: 152.0.7933.0, opt, ARM_64, command line: /Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater --crash-handler --database=/Users/acotech/Library/Application Support/Google/GoogleUpdater/152.0.7933.0/Crashpad --url=https://clients2.google.com/cr/report --annotation=prod=Update4 --annotation=ver=152.0.7933.0 --handshake-fd=6 --enable-logging --vmodule=*/components/update_client/*=2,*/chrome/enterprise_companion/*=2,*/chrome/updater/*=2",
+    "[23362:2869940:0926/000722.307323:VERBOSE1:chrome/updater/updater.cc:377] OS version: 26.5.0, arch: arm64, System uptime (seconds): 38660, parent pid: 1",
+    "[23362:2869940:0926/000722.308935:VERBOSE1:chrome/updater/updater.cc:382] Available disk space in install directory (/Users/acotech/Library/Application Support/Google/GoogleUpdater): 150978699264B (140.610GiB) / 994662584320B (926.352GiB)\n[23362:2869940:0926/000722.308949:VERBOSE1:chrome/updater/updater.cc:386] Available disk space in temporary directory (/var/folders/kl/flgfc94j1pd6d6pm3w6r_mrm0000gn/T/): 150978699264B (140.610GiB) / 994662584320B (926.352GiB)",
+    "[23362:2869940:0926/000722.309032:VERBOSE2:chrome/updater/event_history.cc:265] Emitted a UPDATER_PROCESS START event to the history log",
+    "[23360:2869887:0926/000722.309430:VERBOSE1:chrome/updater/crash_reporter.cc:124] Crash handler launched and ready.",
+    "[23360:2869887:0926/000722.310006:VERBOSE1:chrome/updater/crash_client.cc:108] Found 0 completed crash reports",
+    "[23360:2869887:0926/000722.310077:VERBOSE1:chrome/updater/crash_client.cc:132] Found 0 pending crash reports",
+    "[23360:2869887:0926/000722.310156:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/RLZ/Crashpad/settings.dat: No such file or directory (2)",
+    "[23360:2869887:0926/000722.310209:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/ChromeForTesting/Crashpad/settings.dat: No such file or directory (2)",
+    "[23360:2869887:0926/000722.310218:ERROR:third_party/crashpad/crashpad/util/file/file_io_posix.cc:145] open /Users/acotech/Library/Application Support/Google/Chrome-headless/Crashpad/settings.dat: No such file or directory (2)\n[23360:2869887:0926/000722.310229:VERBOSE1:chrome/updater/updater.cc:105] Crash reporting initialized.",
+    "[23360:2869887:0926/000722.310364:VERBOSE1:chrome/updater/ipc/update_service_internal_proxy_mojo.cc:61] Run",
+    "[23014:2867839:0926/000726.137851:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT",
+    "[OpenH264] this = 0x0x1040842bee0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame."
+  ]
+}
