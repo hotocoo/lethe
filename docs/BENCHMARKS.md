@@ -811,8 +811,20 @@ in the path. Worker throughput and layout thrash are engine-bound and tie.
 each measured: the ephemeral store (`--persistent`: 801 ms), the policy
 proxy (791), tracker rules (789), the media enhancer (841), other open tabs
 (the page alone: 784-791), automation polling (500 ms interval), and App
-Nap/QoS (a latency-critical activity: 790-797). What remains is something
-Safari configures inside WebKit that WKWebView does not expose.
+Nap/QoS (a latency-critical activity: 790-797). A split test
+(`tools/bench/idbprobe.mjs`, 20k records, 2 runs each) narrows it down:
+
+| Operation | Lethe | Safari |
+|---|---|---|
+| Cursor iteration (`continue()` x 20k) | 799-807 ms | 325 ms |
+| Bulk `getAll()` | **8 ms** | 10 ms |
+| 2,000 sequential `get()` | **80 ms** | 96-97 ms |
+
+Round-trips and storage are faster in Lethe. Only cursor iteration is
+slower. None of WebKit's IndexedDB/storage feature flags
+(`WKPreferences._features`) differ, so the difference is in WebKit's
+cursor path for embedders, which Lethe cannot configure. Pages that read
+with `getAll()` or keyed `get()` run faster in Lethe than in Safari.
 
 ## Media in Safari
 
