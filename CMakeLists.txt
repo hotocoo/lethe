@@ -281,7 +281,13 @@ if(BUILD_UI AND APPLE)
         # (the binary distribution from cefbuilds.com). When this option
         # is on, the configured tree compiles main_cef.mm and links against
         # the CEF framework in place.
-        set(CEF_ROOT "${CMAKE_SOURCE_DIR}/third_party/cef" CACHE PATH
+        # Prefer the proprietary-codec build (scripts/build_cef_codecs.sh) when
+        # present: the prebuilt distribution cannot play H.264/HEVC/AAC.
+        set(_lethe_cef_default "${CMAKE_SOURCE_DIR}/third_party/cef")
+        if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/cef-codecs/include/cef_version.h")
+            set(_lethe_cef_default "${CMAKE_SOURCE_DIR}/third_party/cef-codecs")
+        endif()
+        set(CEF_ROOT "${_lethe_cef_default}" CACHE PATH
             "Path to the CEF binary distribution root (e.g. third_party/cef)")
         if(NOT EXISTS "${CEF_ROOT}/include/cef_version.h")
             message(FATAL_ERROR
