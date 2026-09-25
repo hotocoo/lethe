@@ -1,18 +1,20 @@
 {
   "browser": "lethe",
-  "label": "media-lethe",
-  "env": {},
+  "label": "v4-lethe-fsr-sharp",
+  "env": {
+    "LETHE_UPSCALER": "fsr-sharp"
+  },
   "browserArgs": [],
   "version": "Lethe Browser v0.1.1 (system WebKit)",
   "run": 1,
-  "startedAt": "2026-09-25T11:18:04.186Z",
+  "startedAt": "2026-09-25T11:38:30.710Z",
   "host": {
     "os": "macOS 26.5",
     "cpu": "Apple M4 Max",
     "memoryGb": 64
   },
   "suites": [
-    "media"
+    "enhancer"
   ],
   "sites": [
     "https://example.com/",
@@ -24,7 +26,7 @@
     "https://edition.cnn.com/",
     "https://www.nytimes.com/"
   ],
-  "startupMs": 342.185167,
+  "startupMs": 275.75316699999996,
   "exitCode": 0,
   "failure": null,
   "timeouts": 0,
@@ -53,49 +55,88 @@
     "paint": null,
     "net": null
   },
+  "media": null,
+  "enhancer": {
+    "injected": false,
+    "fps": 60,
+    "pixels": {
+      "mean": 127.1,
+      "variance": 11209.7
+    },
+    "hdrClipPlaying": true,
+    "hdrClipColor": {
+      "transfer": "bt709",
+      "primaries": "bt2020",
+      "matrix": "bt2020-ncl"
+    },
+    "videoFrames": 277,
+    "dropped": 0,
+    "playing": true,
+    "state": {
+      "mode": 3,
+      "hdr": 0,
+      "active": 1,
+      "entries": [
+        {
+          "frames": 286,
+          "lastFrame": {
+            "sourceWidth": 640,
+            "sourceHeight": 360,
+            "outputWidth": 1600,
+            "outputHeight": 900,
+            "scaleX": 2.5,
+            "scaleY": 2.5,
+            "time": 9.506804707998333
+          },
+          "canvasWidth": 1600,
+          "canvasHeight": 900
+        }
+      ]
+    }
+  },
   "memory": [
     {
       "name": "ready",
-      "tMs": 666.292375,
-      "rssMb": 179.890625,
+      "tMs": 612.8586670000001,
+      "rssMb": 196.953125,
       "processes": 4,
-      "cpuSec": 0.5,
+      "cpuSec": 0.51,
       "breakdown": [
         {
-          "pid": 9566,
-          "rssMb": 117.3,
-          "cpuSec": 0.32,
+          "pid": 82634,
+          "rssMb": 118.5,
+          "cpuSec": 0.36,
           "name": "lethe"
         },
         {
-          "pid": 9587,
-          "rssMb": 14.2,
+          "pid": 82650,
+          "rssMb": 14.1,
           "cpuSec": 0.03,
           "name": "com.apple.WebKit.Networking"
         },
         {
-          "pid": 9602,
-          "rssMb": 16,
-          "cpuSec": 0.03,
+          "pid": 82660,
+          "rssMb": 31.6,
+          "cpuSec": 0.07,
           "name": "com.apple.WebKit.GPU"
         },
         {
-          "pid": 9619,
-          "rssMb": 32.5,
-          "cpuSec": 0.12,
+          "pid": 82668,
+          "rssMb": 32.8,
+          "cpuSec": 0.05,
           "name": "com.apple.WebKit.WebContent"
         }
       ]
     },
     {
-      "name": "media:mem",
-      "tMs": 4031.9469580000004,
+      "name": "enhancer:mem",
+      "tMs": 10783.031125,
       "rssMb": 0,
       "processes": 1,
       "cpuSec": 0,
       "breakdown": [
         {
-          "pid": 9566,
+          "pid": 82634,
           "rssMb": 0,
           "cpuSec": 0,
           "name": "(lethe)"
@@ -121,22 +162,22 @@
     "[lethe] Engine v0.1.1 initialized",
     "[lethe-proxy] CONNECT reactor: kqueue shards=4",
     "[lethe-proxy] worker pool: 32 threads",
-    "[lethe] policy proxy listening on 127.0.0.1:59792 (per-launch auth token)",
+    "[lethe] policy proxy listening on 127.0.0.1:51436 (per-launch auth token)",
     "[lethe] tracker protection: 227 third-party rules (cached)",
     "[lethe] site data store: ephemeral (incognito)",
-    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:59792 (subresource enforcement on)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:51436 (subresource enforcement on)",
     "[e2e] start: 8 lines",
     "[e2e] keep-front: on",
     "[e2e] > mark ready",
     "[e2e] mark ready",
-    "[e2e] > newtab http://127.0.0.1:59791/media.html",
+    "[e2e] > newtab http://127.0.0.1:51435/enhancer.html",
     "[e2e] > try-wait 30000",
-    "[e2e] > wait-js 240000 document.getElementById(\"stats\").textContent.indexOf(\"media-done\")>=0",
+    "[e2e] > wait-js 38000 document.getElementById(\"stats\").textContent.indexOf(\"enhancer-done\")>=0",
     "[e2e] ok   wait-js -> 1",
     "[e2e] > print-js document.getElementById(\"stats\").textContent",
-    "[e2e] result media-done {\"hdrDisplay\":false,\"hdrVideo\":false,\"p3\":false,\"video\":{\"h264\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":null,\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"hevc\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"vp8\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"n\",\"mcHdr\":null,\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"vp9\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":null,\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"vp9_10bit\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"av1\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"n\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"av1_10bit\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"n\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true}},\"audio\":{\"aac\":{\"play\":\"probably\",\"mse\":true},\"opus\":{\"play\":\"probably\",\"mse\":true},\"flac\":{\"play\":\"maybe\",\"mse\":false},\"mp3\":{\"play\":\"maybe\",\"mse\":true},\"vorbis\":{\"play\":\"probably\",\"mse\":true},\"alac\":{\"play\":\"probably\",\"mse\":true}},\"encode\":{\"h264\":{\"fps\":344.8,\"kbps\":5250},\"hevc\":{\"fps\":359.3,\"kbps\":5297},\"vp8\":{\"fps\":382.2,\"kbps\":5962},\"vp9\":{\"fps\":320,\"kbps\":6120},\"av1\":{\"fps\":247.4,\"kbps\":5926}},\"decode\":{\"h264\":{\"fps\":1081.1,\"frames\":120},\"hevc\":{\"fps\":784.3,\"frames\":120},\"vp8\":{\"fps\":508.5,\"frames\":120},\"vp9\":{\"fps\":705.9,\"frames\":120},\"av1\":{\"fps\":1111.1,\"frames\":120}}}",
-    "[e2e] > mark media:mem",
-    "[e2e] mark media:mem",
+    "[e2e] result enhancer-done {\"injected\":false,\"fps\":60,\"pixels\":{\"mean\":127.1,\"variance\":11209.7},\"hdrClipPlaying\":true,\"hdrClipColor\":{\"transfer\":\"bt709\",\"primaries\":\"bt2020\",\"matrix\":\"bt2020-ncl\"},\"videoFrames\":277,\"dropped\":0,\"playing\":true,\"state\":{\"mode\":3,\"hdr\":0,\"active\":1,\"entries\":[{\"frames\":286,\"lastFrame\":{\"sourceWidth\":640,\"sourceHeight\":360,\"outputWidth\":1600,\"outputHeight\":900,\"scaleX\":2.5,\"scaleY\":2.5,\"time\":9.506804707998333},\"canvasWidth\":1600,\"canvasHeight\":900}]}}",
+    "[e2e] > mark enhancer:mem",
+    "[e2e] mark enhancer:mem",
     "[e2e] > quit",
     "[e2e] quit (PASSED)",
     "[lethe] Shutting down components...",

@@ -1,13 +1,13 @@
 {
   "browser": "lethe",
-  "label": "enh-lethe-none",
+  "label": "v4-lethe-fsr",
   "env": {
-    "LETHE_UPSCALER": "none"
+    "LETHE_UPSCALER": "fsr"
   },
   "browserArgs": [],
   "version": "Lethe Browser v0.1.1 (system WebKit)",
   "run": 1,
-  "startedAt": "2026-09-25T11:26:26.230Z",
+  "startedAt": "2026-09-25T11:38:19.158Z",
   "host": {
     "os": "macOS 26.5",
     "cpu": "Apple M4 Max",
@@ -26,7 +26,7 @@
     "https://edition.cnn.com/",
     "https://www.nytimes.com/"
   ],
-  "startupMs": 221.78083399999997,
+  "startupMs": 223.78154199999994,
   "exitCode": 0,
   "failure": null,
   "timeouts": 0,
@@ -59,62 +59,87 @@
   "enhancer": {
     "injected": false,
     "fps": 60.1,
-    "videoFrames": 273,
+    "pixels": {
+      "mean": 127,
+      "variance": 11216.3
+    },
+    "hdrClipPlaying": true,
+    "hdrClipColor": {
+      "transfer": "bt709",
+      "primaries": "bt2020",
+      "matrix": "bt2020-ncl"
+    },
+    "videoFrames": 262,
     "dropped": 0,
     "playing": true,
     "state": {
-      "mode": 0,
+      "mode": 2,
       "hdr": 0,
-      "active": 0,
-      "entries": []
+      "active": 1,
+      "entries": [
+        {
+          "frames": 285,
+          "lastFrame": {
+            "sourceWidth": 640,
+            "sourceHeight": 360,
+            "outputWidth": 1600,
+            "outputHeight": 900,
+            "scaleX": 2.5,
+            "scaleY": 2.5,
+            "time": 9.485246416332275
+          },
+          "canvasWidth": 1600,
+          "canvasHeight": 900
+        }
+      ]
     }
   },
   "memory": [
     {
       "name": "ready",
-      "tMs": 568.41975,
-      "rssMb": 196.0625,
+      "tMs": 563.2722920000001,
+      "rssMb": 195.875,
       "processes": 4,
-      "cpuSec": 0.46,
+      "cpuSec": 0.42,
       "breakdown": [
         {
-          "pid": 52961,
-          "rssMb": 117.6,
-          "cpuSec": 0.31,
+          "pid": 82019,
+          "rssMb": 117.4,
+          "cpuSec": 0.29,
           "name": "lethe"
         },
         {
-          "pid": 52962,
-          "rssMb": 14,
+          "pid": 82037,
+          "rssMb": 14.1,
           "cpuSec": 0.02,
           "name": "com.apple.WebKit.Networking"
         },
         {
-          "pid": 52963,
-          "rssMb": 31.5,
-          "cpuSec": 0.07,
+          "pid": 82045,
+          "rssMb": 31.4,
+          "cpuSec": 0.06,
           "name": "com.apple.WebKit.GPU"
         },
         {
-          "pid": 52964,
+          "pid": 82052,
           "rssMb": 32.9,
-          "cpuSec": 0.06,
+          "cpuSec": 0.05,
           "name": "com.apple.WebKit.WebContent"
         }
       ]
     },
     {
       "name": "enhancer:mem",
-      "tMs": 10714.480625,
+      "tMs": 10707.658792,
       "rssMb": 0,
       "processes": 1,
       "cpuSec": 0,
       "breakdown": [
         {
-          "pid": 52961,
+          "pid": 82019,
           "rssMb": 0,
           "cpuSec": 0,
-          "name": "(lethe)"
+          "name": "<defunct>"
         }
       ]
     }
@@ -137,20 +162,20 @@
     "[lethe] Engine v0.1.1 initialized",
     "[lethe-proxy] CONNECT reactor: kqueue shards=4",
     "[lethe-proxy] worker pool: 32 threads",
-    "[lethe] policy proxy listening on 127.0.0.1:62598 (per-launch auth token)",
+    "[lethe] policy proxy listening on 127.0.0.1:51366 (per-launch auth token)",
     "[lethe] tracker protection: 227 third-party rules (cached)",
     "[lethe] site data store: ephemeral (incognito)",
-    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:62598 (subresource enforcement on)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:51366 (subresource enforcement on)",
     "[e2e] start: 8 lines",
     "[e2e] keep-front: on",
     "[e2e] > mark ready",
     "[e2e] mark ready",
-    "[e2e] > newtab http://127.0.0.1:62597/enhancer.html",
+    "[e2e] > newtab http://127.0.0.1:51365/enhancer.html",
     "[e2e] > try-wait 30000",
     "[e2e] > wait-js 38000 document.getElementById(\"stats\").textContent.indexOf(\"enhancer-done\")>=0",
     "[e2e] ok   wait-js -> 1",
     "[e2e] > print-js document.getElementById(\"stats\").textContent",
-    "[e2e] result enhancer-done {\"injected\":false,\"fps\":60.1,\"videoFrames\":273,\"dropped\":0,\"playing\":true,\"state\":{\"mode\":0,\"hdr\":0,\"active\":0,\"entries\":[]}}",
+    "[e2e] result enhancer-done {\"injected\":false,\"fps\":60.1,\"pixels\":{\"mean\":127,\"variance\":11216.3},\"hdrClipPlaying\":true,\"hdrClipColor\":{\"transfer\":\"bt709\",\"primaries\":\"bt2020\",\"matrix\":\"bt2020-ncl\"},\"videoFrames\":262,\"dropped\":0,\"playing\":true,\"state\":{\"mode\":2,\"hdr\":0,\"active\":1,\"entries\":[{\"frames\":285,\"lastFrame\":{\"sourceWidth\":640,\"sourceHeight\":360,\"outputWidth\":1600,\"outputHeight\":900,\"scaleX\":2.5,\"scaleY\":2.5,\"time\":9.485246416332275},\"canvasWidth\":1600,\"canvasHeight\":900}]}}",
     "[e2e] > mark enhancer:mem",
     "[e2e] mark enhancer:mem",
     "[e2e] > quit",

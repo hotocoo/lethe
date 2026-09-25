@@ -1,13 +1,14 @@
 {
   "browser": "lethe-cef",
-  "label": "enh-cef-fsr",
+  "label": "v4-cef-fsr-hdr",
   "env": {
+    "LETHE_UPSCALER": "fsr",
     "LETHE_HDR_ENHANCE": "1"
   },
   "browserArgs": [],
   "version": "Lethe Browser v0.1.1 (CEF 151.3.24+g2384915+chromium-151.0.7922.174)",
   "run": 1,
-  "startedAt": "2026-09-25T11:27:18.362Z",
+  "startedAt": "2026-09-25T11:39:39.692Z",
   "host": {
     "os": "macOS 26.5",
     "cpu": "Apple M4 Max",
@@ -26,7 +27,7 @@
     "https://edition.cnn.com/",
     "https://www.nytimes.com/"
   ],
-  "startupMs": 156.85983300000004,
+  "startupMs": 174.19445800000005,
   "exitCode": 0,
   "failure": null,
   "timeouts": 0,
@@ -58,8 +59,18 @@
   "media": null,
   "enhancer": {
     "injected": false,
-    "fps": 60,
-    "videoFrames": 241,
+    "fps": 60.1,
+    "pixels": {
+      "mean": 126.7,
+      "variance": 10740
+    },
+    "hdrClipPlaying": true,
+    "hdrClipColor": {
+      "transfer": "bt709",
+      "primaries": "bt2020",
+      "matrix": "bt2020-ncl"
+    },
+    "videoFrames": 242,
     "dropped": 0,
     "playing": true,
     "state": {
@@ -68,7 +79,7 @@
       "active": 1,
       "entries": [
         {
-          "frames": 284,
+          "frames": 285,
           "lastFrame": {
             "sourceWidth": 640,
             "sourceHeight": 360,
@@ -76,7 +87,7 @@
             "outputHeight": 900,
             "scaleX": 2.5,
             "scaleY": 2.5,
-            "time": 9.449402
+            "time": 9.475253
           },
           "canvasWidth": 1600,
           "canvasHeight": 900
@@ -87,43 +98,43 @@
   "memory": [
     {
       "name": "ready",
-      "tMs": 783.3231659999999,
-      "rssMb": 590.703125,
+      "tMs": 802.6057500000001,
+      "rssMb": 590.75,
       "processes": 6,
-      "cpuSec": 0.66,
+      "cpuSec": 0.7,
       "breakdown": [
         {
-          "pid": 58457,
-          "rssMb": 141.4,
-          "cpuSec": 0.38,
+          "pid": 93581,
+          "rssMb": 141.3,
+          "cpuSec": 0.4,
           "name": "lethe-cef"
         },
         {
-          "pid": 58469,
-          "rssMb": 108.2,
+          "pid": 93585,
+          "rssMb": 108.4,
           "cpuSec": 0.1,
           "name": "Lethe"
         },
         {
-          "pid": 58471,
-          "rssMb": 75.5,
-          "cpuSec": 0.05,
+          "pid": 93586,
+          "rssMb": 75.4,
+          "cpuSec": 0.06,
           "name": "Lethe"
         },
         {
-          "pid": 58475,
-          "rssMb": 67.3,
+          "pid": 93587,
+          "rssMb": 67.4,
           "cpuSec": 0.03,
           "name": "Lethe"
         },
         {
-          "pid": 58496,
-          "rssMb": 82.6,
-          "cpuSec": 0.04,
+          "pid": 93591,
+          "rssMb": 82.7,
+          "cpuSec": 0.05,
           "name": "lethe_cef_helper"
         },
         {
-          "pid": 58497,
+          "pid": 93592,
           "rssMb": 115.6,
           "cpuSec": 0.06,
           "name": "lethe_cef_helper"
@@ -132,51 +143,51 @@
     },
     {
       "name": "enhancer:mem",
-      "tMs": 10590.439041,
-      "rssMb": 753.234375,
+      "tMs": 10612.89,
+      "rssMb": 761.28125,
       "processes": 7,
-      "cpuSec": 2.07,
+      "cpuSec": 2.38,
       "breakdown": [
         {
-          "pid": 58457,
-          "rssMb": 154.4,
-          "cpuSec": 0.58,
+          "pid": 93581,
+          "rssMb": 154.5,
+          "cpuSec": 0.6,
           "name": "lethe-cef"
         },
         {
-          "pid": 58469,
-          "rssMb": 125.4,
-          "cpuSec": 0.83,
+          "pid": 93585,
+          "rssMb": 128.5,
+          "cpuSec": 1.01,
           "name": "Lethe"
         },
         {
-          "pid": 58471,
-          "rssMb": 78.1,
-          "cpuSec": 0.07,
+          "pid": 93586,
+          "rssMb": 78.2,
+          "cpuSec": 0.08,
           "name": "Lethe"
         },
         {
-          "pid": 58475,
+          "pid": 93587,
           "rssMb": 67.8,
           "cpuSec": 0.03,
           "name": "Lethe"
         },
         {
-          "pid": 58496,
-          "rssMb": 128.1,
-          "cpuSec": 0.44,
+          "pid": 93591,
+          "rssMb": 131.9,
+          "cpuSec": 0.5,
           "name": "lethe_cef_helper"
         },
         {
-          "pid": 58497,
+          "pid": 93592,
           "rssMb": 116.7,
           "cpuSec": 0.08,
           "name": "lethe_cef_helper"
         },
         {
-          "pid": 58622,
-          "rssMb": 82.6,
-          "cpuSec": 0.04,
+          "pid": 93620,
+          "rssMb": 83.7,
+          "cpuSec": 0.08,
           "name": "lethe_cef_helper"
         }
       ]
@@ -198,7 +209,7 @@
     "[lethe] Engine v0.1.1 initialized",
     "[lethe-proxy] CONNECT reactor: kqueue shards=4",
     "[lethe-proxy] worker pool: 32 threads",
-    "[lethe] policy proxy listening on 127.0.0.1:62877 (per-launch auth token)",
+    "[lethe] policy proxy listening on 127.0.0.1:51828 (per-launch auth token)",
     "[lethe-cef] CefInitialize...",
     "[lethe-cef] OnContextInitialized (browser process)",
     "[lethe-cef] CefRunMessageLoop...",
@@ -209,18 +220,18 @@
     "[e2e] nav-end data:<internal page> status=200",
     "[e2e] > mark ready",
     "[e2e] mark ready",
-    "[e2e] > newtab http://127.0.0.1:62874/enhancer.html",
+    "[e2e] > newtab http://127.0.0.1:51827/enhancer.html",
     "[lethe-cef] native tab bar visible=0 tabs=1",
     "[lethe-cef] native tab group windows=2 tabbar=1",
     "[lethe-cef] browser created (2) windows=2 runtime=2",
     "[e2e] > try-wait 30000",
-    "[e2e] nav http://127.0.0.1:62874/enhancer.html",
+    "[e2e] nav http://127.0.0.1:51827/enhancer.html",
     "[e2e] > wait-js 38000 document.getElementById(\"stats\").textContent.indexOf(\"enhancer-done\")>=0",
     "[render] lethe:eval reqId=e0 ctx=yes",
-    "[e2e] nav-end http://127.0.0.1:62874/enhancer.html status=200",
+    "[e2e] nav-end http://127.0.0.1:51827/enhancer.html status=200",
     "[render] lethe:eval reqId=e1 ctx=yes",
     "[render] lethe:eval reqId=e2 ctx=yes",
-    "[58457:1372863:0925/192720.681886:ERROR:base/mac/process_requirement.cc:159] Unable to derive validation category for current process. Signature validation of current process failed: Error Domain=NSOSStatusErrorDomain Code=-67030 \"(null)\" (-67030)",
+    "[93581:1464525:0925/193942.058993:ERROR:base/mac/process_requirement.cc:159] Unable to derive validation category for current process. Signature validation of current process failed: Error Domain=NSOSStatusErrorDomain Code=-67030 \"(null)\" (-67030)",
     "[render] lethe:eval reqId=e3 ctx=yes",
     "[render] lethe:eval reqId=e4 ctx=yes",
     "[render] lethe:eval reqId=e5 ctx=yes",
@@ -241,8 +252,7 @@
     "[e2e] ok   wait-js -> true",
     "[e2e] > print-js document.getElementById(\"stats\").textContent",
     "[render] lethe:eval reqId=e20 ctx=yes",
-    "",
-    "[e2e] result enhancer-done {\"injected\":false,\"fps\":60,\"videoFrames\":241,\"dropped\":0,\"playing\":true,\"state\":{\"mode\":2,\"hdr\":1,\"active\":1,\"entries\":[{\"frames\":284,\"lastFrame\":{\"sourceWidth\":640,\"sourceHeight\":360,\"outputWidth\":1600,\"outputHeight\":900,\"scaleX\":2.5,\"scaleY\":2.5,\"time\":9.449402},\"canvasWidth\":1600,\"canvasHeight\":900}]}}",
+    "[e2e] result enhancer-done {\"injected\":false,\"fps\":60.1,\"pixels\":{\"mean\":126.7,\"variance\":10740},\"hdrClipPlaying\":true,\"hdrClipColor\":{\"transfer\":\"bt709\",\"primaries\":\"bt2020\",\"matrix\":\"bt2020-ncl\"},\"videoFrames\":242,\"dropped\":0,\"playing\":true,\"state\":{\"mode\":2,\"hdr\":1,\"active\":1,\"entries\":[{\"frames\":285,\"lastFrame\":{\"sourceWidth\":640,\"sourceHeight\":360,\"outputWidth\":1600,\"outputHeight\":900,\"scaleX\":2.5,\"scaleY\":2.5,\"time\":9.475253},\"canvasWidth\":1600,\"canvasHeight\":900}]}}",
     "[e2e] > mark enhancer:mem",
     "[e2e] mark enhancer:mem",
     "[e2e] > quit",

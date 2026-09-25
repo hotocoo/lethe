@@ -310,14 +310,20 @@ R"LETHEJS(
     }
     if(!isVideo && !geometryChanged && e.srcKey===srcKey) return;
     if(isVideo && el.readyState < 2) return;
-    // WebGL uploads tone-map HDR video to SDR. Leave PQ/HLG streams on the
-    // native compositor so real HDR output survives; checked once per source.
-    if(isVideo && window.VideoFrame){
+    // WebGL uploads tone-map HDR video to SDR and squash BT.2020 into sRGB.
+    // Leave PQ/HLG or BT.2020 streams on the native compositor so real HDR
+    // and wide gamut survive; checked once per source. BT.2020 primaries
+    // count on their own because VP9 bitstreams carry no transfer function
+    // (WebKit then reports bt709 transfer for a PQ stream).
+    // If detection itself fails on an HDR display, fail closed and skip:
+    // on SDR displays the engine tone-maps HDR video to SDR anyway.
+    if(isVideo){
       var hk=hdrVideo.get(el);
       if(!hk || hk.src!==srcKey){
-        var tr='';
-        try { var vf=new VideoFrame(el); tr=(vf.colorSpace&&vf.colorSpace.transfer)||''; vf.close(); } catch(_) {}
-        hk={src:srcKey,hdr:tr==='pq'||tr==='hlg'}; hdrVideo.set(el,hk);
+        var tr='', pr='', failed=!window.VideoFrame;
+        if(!failed){ try { var vf=new VideoFrame(el); var cs=vf.colorSpace||{}; tr=cs.transfer||''; pr=cs.primaries||''; vf.close(); } catch(_) { failed=true; } }
+        hk={src:srcKey,hdr:tr==='pq'||tr==='hlg'||pr==='bt2020'||(failed&&matchMedia('(dynamic-range: high)').matches)};
+        hdrVideo.set(el,hk);
       }
       if(hk.hdr){ if(e) remove(e); return; }
     }

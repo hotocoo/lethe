@@ -568,6 +568,7 @@ function enhancerHtml() {
 video,img{display:block;width:1600px;height:900px;object-fit:contain}</style>
 <div id="stats">starting…</div>
 <video id="v" src="enh.webm" muted loop autoplay playsinline></video>
+<video id="h" src="enh-pq.webm" muted loop autoplay playsinline style="position:absolute;left:0;top:0;width:800px;height:450px;opacity:.99"></video>
 <img id="i" alt="">
 <script>
 var st=document.getElementById('stats'), v=document.getElementById('v');
@@ -579,17 +580,38 @@ document.getElementById('i').src=c.toDataURL('image/png');
 function go(){
   var frames=0, t0=performance.now(), q0=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;
   function tick(){ frames++; if(performance.now()-t0<${ENHANCER_MS}) requestAnimationFrame(tick); else done(); }
+  // "Ran" is not "rendered": read a 32x32 patch of the SDR clip's overlay
+  // and report luma mean/variance (a black or NaN shader shows variance 0).
+  // The drawing buffer clears after compositing, so read inside a video
+  // frame callback registered after the enhancer's own (same frame, later).
+  function readOverlay(){
+    var ov=null; document.querySelectorAll('canvas[aria-hidden]').forEach(function(c){ if(c.width===1600) ov=c; });
+    if(!ov) return null;
+    try { var ogl=ov.getContext('webgl2'); var b=new Uint8Array(32*32*4);
+      ogl.readPixels((ov.width>>1)-16,(ov.height>>1)-16,32,32,ogl.RGBA,ogl.UNSIGNED_BYTE,b);
+      var sum=0,sq=0; for(var k=0;k<b.length;k+=4){var l=.2126*b[k]+.7152*b[k+1]+.0722*b[k+2]; sum+=l; sq+=l*l;}
+      var n=b.length/4, mean=sum/n; return {mean:+mean.toFixed(1),variance:+(sq/n-mean*mean).toFixed(1)};
+    } catch(err){ return {error:String(err)}; }
+  }
   function done(){
-    var ms=performance.now()-t0, qq=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;
+    var ms=performance.now()-t0;
+    if(v.requestVideoFrameCallback) v.requestVideoFrameCallback(function(){ report(ms, readOverlay()); });
+    else report(ms, readOverlay());
+  }
+  function report(ms, px){
+    var qq=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;
     var s=window.__letheMediaUpscaler?window.__letheMediaUpscaler.state():null;
-    st.textContent='enhancer-done '+JSON.stringify({injected:!!inj,fps:+(frames*1000/ms).toFixed(1),
+    var hv=document.getElementById('h');
+    st.textContent='enhancer-done '+JSON.stringify({injected:!!inj,fps:+(frames*1000/ms).toFixed(1),pixels:px,
+      hdrClipPlaying:hv?(!hv.paused&&hv.currentTime>0):null,
+      hdrClipColor:(function(){ try { var f=new VideoFrame(hv); var c=f.colorSpace; f.close(); return c?{transfer:c.transfer,primaries:c.primaries,matrix:c.matrix}:null; } catch(err){ return {error:String(err)}; } })(),
       videoFrames:qq?qq.totalVideoFrames-(q0?q0.totalVideoFrames:0):null,
       dropped:qq?qq.droppedVideoFrames-(q0?q0.droppedVideoFrames:0):null,
       playing:!v.paused&&v.currentTime>0,state:s});
   }
   requestAnimationFrame(tick);
 }
-function begin(){ var p=v.play(); if(p&&p.catch)p.catch(function(){}); setTimeout(go,1500); }
+function begin(){ [v,document.getElementById('h')].forEach(function(x){var p=x.play(); if(p&&p.catch)p.catch(function(){});}); setTimeout(go,1500); }
 if(inj!==null && !window.__letheMediaUpscaler){
   var sc=document.createElement('script'); sc.src='enhancer.js?m='+inj+'&h='+(q.get('hdr')||0);
   sc.onload=begin; sc.onerror=function(){st.textContent='enhancer-done {"error":"inject failed"}';};
@@ -763,6 +785,13 @@ async function ensureExtremeServer() {
     execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i',
       'testsrc2=size=640x360:rate=30:duration=10', '-c:v', 'libvpx-vp9', '-b:v', '1M',
       '-deadline', 'realtime', '-cpu-used', '8', join(extremeDir, 'enh.webm')]);
+    // Same clip tagged as HDR10 (BT.2020 / PQ): the enhancer must leave it
+    // alone, so state().active counts only the SDR clip.
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i',
+      'testsrc2=size=640x360:rate=30:duration=10', '-pix_fmt', 'yuv420p10le', '-c:v', 'libvpx-vp9',
+      '-profile:v', '2', '-b:v', '1M', '-deadline', 'realtime', '-cpu-used', '8',
+      '-color_primaries', 'bt2020', '-color_trc', 'smpte2084', '-colorspace', 'bt2020nc',
+      join(extremeDir, 'enh-pq.webm')]);
   } catch (e) { console.log('[bench] ffmpeg unavailable: enhancer video skipped'); }
   // Three payload size classes: 1 KB, 32 KB, 256 KB.
   for (let i = 0; i < 100; i++)
