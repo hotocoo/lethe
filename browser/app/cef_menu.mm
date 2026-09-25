@@ -368,17 +368,17 @@ void LetheCefInstallMenuBar(LetheCefAppDelegate* delegate) {
 
     NSMenu* bar = [[NSMenu alloc] initWithTitle:@"Main Menu"];
 
-    NSMenu* app = AddSubmenu(bar, @"Lethe");
-    AddItem(app, @"About Lethe", @selector(orderFrontStandardAboutPanel:), @"", 0, nil);
+    NSMenu* app = AddSubmenu(bar, @"Aletheia Browser");
+    AddItem(app, @"About Aletheia Browser", @selector(orderFrontStandardAboutPanel:), @"", 0, nil);
     [app addItem:[NSMenuItem separatorItem]];
     AddItem(app, @"Settings…", @selector(showSettings:), @",", cmd, actions);
     AddItem(app, @"Security Status…", @selector(showSecurityStatus:), @"i", cmdShift, actions);
     [app addItem:[NSMenuItem separatorItem]];
-    AddItem(app, @"Hide Lethe", @selector(hide:), @"h", cmd, nil);
+    AddItem(app, @"Hide Aletheia Browser", @selector(hide:), @"h", cmd, nil);
     AddItem(app, @"Hide Others", @selector(hideOtherApplications:), @"h", cmdOpt, nil);
     AddItem(app, @"Show All", @selector(unhideAllApplications:), @"", 0, nil);
     [app addItem:[NSMenuItem separatorItem]];
-    AddItem(app, @"Quit Lethe", @selector(terminate:), @"q", cmd, nil);
+    AddItem(app, @"Quit Aletheia Browser", @selector(terminate:), @"q", cmd, nil);
 
     NSMenu* file = AddSubmenu(bar, @"File");
     AddItem(file, @"New Tab", @selector(newTab:), @"t", cmd, actions);
@@ -448,7 +448,7 @@ void LetheCefInstallMenuBar(LetheCefAppDelegate* delegate) {
     [NSApp setWindowsMenu:window];
 
     NSMenu* help = AddSubmenu(bar, @"Help");
-    AddItem(help, @"Lethe Help", @selector(openHelp:), @"?", cmd, actions);
+    AddItem(help, @"Aletheia Browser Help", @selector(openHelp:), @"?", cmd, actions);
     [NSApp setHelpMenu:help];
 
     [NSApp setMainMenu:bar];

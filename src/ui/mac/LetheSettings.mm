@@ -606,7 +606,7 @@ static void* kLetheMinYKey = &kLetheMinYKey;
 - (instancetype)initWithFrame:(NSRect)frame {
     if ((self = [super initWithFrame:frame])) {
         CGFloat y = frame.size.height - 40;
-        NSTextField* t = [NSTextField labelWithString:@"Lethe"];
+        NSTextField* t = [NSTextField labelWithString:@"Aletheia Browser"];
         t.font = [NSFont systemFontOfSize:36 weight:NSFontWeightSemibold];
         t.frame = NSMakeRect(20, y - 40, 540, 44); [self addSubview:t]; y -= 60;
         NSTextField* v = [NSTextField labelWithString:[NSString stringWithFormat:@"Version %s  (system WebKit)", LETHE_VERSION]];

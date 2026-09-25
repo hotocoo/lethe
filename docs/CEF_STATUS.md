@@ -178,3 +178,18 @@ embedder's view geometry. Cosmetic only; tracked for the next round.
 isolation switches (6,173 rps) and the DoH/QUIC hardening (6,075 rps) each
 change nothing outside noise, so the gap is in the Alloy embedding rather
 than in Lethe's security layers. See docs/BENCHMARKS.md.
+
+## Round 5 (2026-09-25): media parity, codecs, product name
+
+- **Media enhancer in the Blink shell.** CEF had no upscaler. It now injects
+  the shared FSR 1.0 (EASU + RCAS) + HDR enhancer at V8 context creation.
+  The mode comes from `--lethe-media`, and the enhancer is re-applied on
+  load end. `tests/e2e/media_upscaler.lethe` passes on CEF against live
+  YouTube (426x240 to 760x360, 178 enhanced frames).
+- **Codec gap measured.** The prebuilt CEF lacks H.264, HEVC and AAC
+  (`--suite media`). The fix is `scripts/build_cef_codecs.sh`, a source
+  build with `proprietary_codecs=true`. It has not been run yet.
+- **Product name.** User-visible strings say "Aletheia Browser (Blink)".
+  Binaries, env vars and profile paths keep the Lethe engine name.
+- **Fixed e2e drift.** `tests/e2e/newtab.lethe` still asserted pre-redesign
+  headings and failed on both shells. It now matches the page.

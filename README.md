@@ -1,8 +1,10 @@
-# Lethe — Custom Browser for Aletheia Platform
+# Aletheia Browser: the AI-native browser of Aletheia OS
 
 [![CI](https://github.com/hotocoo/lethe/actions/workflows/ci.yml/badge.svg)](https://github.com/hotocoo/lethe/actions/workflows/ci.yml)
 
-Minimalist, high-performance browser with maximum security and a built-in VPN, built as the native browser for the Aletheia OS. Lethe's secure network stack is also used by the OS's LLM agent for private, encrypted web searching.
+Aletheia Browser is the built-in, AI-native browser of Aletheia OS, built on the **Lethe** engine (this repository). It is a minimalist, high-performance browser with maximum security and a built-in VPN. Its secure network stack is also the OS model's web access: `SearchService` / `AletheiaBridge` give the Aletheia LLM private, encrypted search with **top-k / top-p (nucleus) result selection** (`llm::rankResults`, `llmSearchAndReadNucleus`) so answers are drawn from several ranked sources, not one.
+
+Naming: "Aletheia Browser" is the product name users see (app name, menus, New Tab). "Lethe" stays the engine and codebase name: binaries (`lethe`, `lethe-cef`), `LETHE_*` environment variables, the profile folder `~/Library/Application Support/Lethe` and this repository keep it. That way existing profiles and Aletheia's `third_party/lethe.pin` gate keep working.
 
 ## Status: v0.1.1 (release-ready, measured, security-first)
 

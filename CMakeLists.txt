@@ -251,7 +251,7 @@ if(BUILD_UI AND APPLE)
     set_target_properties(lethe PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/browser/app/Info.plist.in"
-        MACOSX_BUNDLE_BUNDLE_NAME "Lethe"
+        MACOSX_BUNDLE_BUNDLE_NAME "Aletheia Browser"
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.aletheia.lethe"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
@@ -337,7 +337,7 @@ if(BUILD_UI AND APPLE)
         set_target_properties(lethe-cef PROPERTIES
             MACOSX_BUNDLE TRUE
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/browser/app/Info.plist.in"
-            MACOSX_BUNDLE_BUNDLE_NAME "Lethe (CEF)"
+            MACOSX_BUNDLE_BUNDLE_NAME "Aletheia Browser (Blink)"
             MACOSX_BUNDLE_GUI_IDENTIFIER "org.aletheia.lethe.cef"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
             MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"

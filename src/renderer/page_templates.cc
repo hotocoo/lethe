@@ -173,8 +173,9 @@ std::string renderNewTabPage(const std::vector<SpeedDialItem>& recent,
         ".mast{grid-template-columns:1fr}.rail{justify-content:flex-start;max-width:none}}";
 
     std::string body =
-        "<section class=\"mast\"><div><h1>Lethe</h1>"
-        "<p class=\"sub\">Private by default. Type an address or a search "
+        "<section class=\"mast\"><div><h1>Aletheia</h1>"
+        "<p class=\"sub\">The AI-native browser of Aletheia OS, on the Lethe "
+        "engine. Private by default. Type an address or a search "
         "(<kbd>⌘L</kbd>).</p></div>"
         "<div class=\"rail\">"
         "<span class=\"tag\">HTTPS-first</span>"

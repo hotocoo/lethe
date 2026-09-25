@@ -68,7 +68,7 @@
     if (p.persistentCookies != lastPersistent) {
         lastPersistent = p.persistentCookies;
         NSAlert* a = [[NSAlert alloc] init];
-        a.messageText = @"Restart Lethe to apply";
+        a.messageText = @"Restart Aletheia Browser to apply";
         a.informativeText = @"Persistent cookies are decided when a window opens. New windows will use this setting immediately; close existing windows or relaunch for them to pick it up too.";
         [a runModal];
     }
@@ -157,7 +157,7 @@
         if (ctx_->proxyPort > 0) (void)[self dataStore];
         if (ctx_->proxyPort > 0 && !proxyApplied_) {
             NSAlert* alert = [[NSAlert alloc] init];
-            alert.messageText = @"Lethe cannot start securely";
+            alert.messageText = @"Aletheia Browser cannot start securely";
             alert.informativeText = @"WebKit transport enforcement could not be installed. Lethe refuses to run full-web mode without the policy proxy.";
             [alert addButtonWithTitle:@"Quit"];
             [alert runModal];
@@ -368,7 +368,7 @@
     WKWebsiteDataStore* store = [self makeOblivionStore];
     if (!store) {
         NSAlert* alert = [[NSAlert alloc] init];
-        alert.messageText = @"Lethe cannot start Oblivion securely";
+        alert.messageText = @"Aletheia Browser cannot start Oblivion securely";
         alert.informativeText = @"The isolated window requires the policy proxy. The window was not created because transport enforcement could not be installed.";
         [alert addButtonWithTitle:@"OK"];
         [alert runModal];
@@ -459,7 +459,7 @@
 - (NSString*)securityStatusText {
     const lethe::Config& cfg = ctx_->cfg;
     NSMutableString* s = [NSMutableString string];
-    [s appendFormat:@"Lethe v%s\n\n", LETHE_VERSION];
+    [s appendFormat:@"Aletheia Browser v%s (Lethe engine)\n\n", LETHE_VERSION];
     [s appendFormat:@"Tracker protection: %@\n", trackerRuleCount_
         ? [NSString stringWithFormat:@"on (%lu third-party rules)", (unsigned long)trackerRuleCount_]
         : (ctx_->trackerBlocking ? @"unavailable (rule compile failed)" : @"OFF")];
@@ -859,19 +859,19 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     const NSEventModifierFlags cmdCtrl = cmd | NSEventModifierFlagControl;
     const NSEventModifierFlags ctrl = NSEventModifierFlagControl;
 
-    NSMenu* app = addSubmenu(bar, @"Lethe");
-    addItem(app, @"About Lethe", @selector(orderFrontStandardAboutPanel:), @"", 0);
+    NSMenu* app = addSubmenu(bar, @"Aletheia Browser");
+    addItem(app, @"About Aletheia Browser", @selector(orderFrontStandardAboutPanel:), @"", 0);
     [app addItem:[NSMenuItem separatorItem]];
     addItem(app, @"Security Status…", @selector(showSecurityStatus:), @"i", cmdShift);
     addItem(app, @"Preferences…", @selector(showPreferences:), @",", cmd);
     [app addItem:[NSMenuItem separatorItem]];
     [app addItem:[NSMenuItem separatorItem]];
-    addItem(app, @"Hide Lethe", @selector(hide:), @"h", cmd);
+    addItem(app, @"Hide Aletheia Browser", @selector(hide:), @"h", cmd);
     addItem(app, @"Hide Others", @selector(hideOtherApplications:), @"h",
             cmd | NSEventModifierFlagOption);
     addItem(app, @"Show All", @selector(unhideAllApplications:), @"", 0);
     [app addItem:[NSMenuItem separatorItem]];
-    addItem(app, @"Quit Lethe", @selector(terminate:), @"q", cmd);
+    addItem(app, @"Quit Aletheia Browser", @selector(terminate:), @"q", cmd);
 
     NSMenu* file = addSubmenu(bar, @"File");
     addItem(file, @"New Tab", @selector(newWindowForTab:), @"t", cmd);
@@ -955,7 +955,7 @@ static NSMenu* addSubmenu(NSMenu* bar, NSString* title) {
     [NSApp setWindowsMenu:window];
 
     NSMenu* help = addSubmenu(bar, @"Help");
-    addItem(help, @"Lethe Help", @selector(openHelp:), @"?", cmd);
+    addItem(help, @"Aletheia Browser Help", @selector(openHelp:), @"?", cmd);
     [NSApp setHelpMenu:help];
 
     [NSApp setMainMenu:bar];

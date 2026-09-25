@@ -3,6 +3,7 @@
 wait 5000
 assert-title-contains New Tab
 assert-body-contains Private by default
-assert-body-contains Network policy enforced
-assert-body-contains Ephemeral site data
+assert-body-contains Aletheia
+assert-body-contains Network policy
+assert-body-contains Site data
 quit

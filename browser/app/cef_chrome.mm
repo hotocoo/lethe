@@ -676,7 +676,7 @@ void LetheCefChromeAttach(CefRefPtr<CefBrowser> browser) {
     [row setNeedsLayout:YES];
     [row layoutSubtreeIfNeeded];
     [window makeKeyAndOrderFront:nil];
-    [window setTitle:@"Lethe"];
+    [window setTitle:@"Aletheia Browser"];
     EnsureSingleTabBar(window);
     std::cout << "[lethe-cef] native tab bar visible="
               << (window.tabGroup && window.tabGroup.tabBarVisible ? 1 : 0)
@@ -802,7 +802,7 @@ void LetheCefChromeSetTitle(CefRefPtr<CefBrowser> browser, const std::string& ti
     if (!c || !c.chrome.window) return;
 
     NSString* value = [NSString stringWithUTF8String:title.c_str()];
-    if (!value.length) value = @"Lethe";
+    if (!value.length) value = @"Aletheia Browser";
     if ([c.lastTitle isEqualToString:value]) return;
     c.lastTitle = value;
     // The native tab should identify the document, not expose its transport
