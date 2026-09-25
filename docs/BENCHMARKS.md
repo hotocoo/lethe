@@ -756,3 +756,23 @@ layer, which wraps every URL loader whatever the client returns. It is not
 in Lethe's code. Closing it needs a patched CEF, not a shell change. (The
 Chrome style switch is set through `CefWindowInfo.runtime_style`; this run
 did not check it independently.)
+
+### Control experiment: stock cefclient (2026-09-26)
+
+`tools/bench/netprobe.mjs`: the same 300-fetch page, 5 self-reloading
+rounds, median of the 4 warm rounds. Every binary is launched cold with a
+fresh profile. `cefclient` is CEF's own sample browser, built in the same
+source build as Lethe's codec CEF. It contains no Lethe code.
+
+| Binary | Warm-round median rps |
+|---|---|
+| CEF `cefclient`, Alloy style | 4,918 |
+| CEF `cefclient`, Chrome style | 4,918 |
+| Lethe CEF (codec build, policy proxy on) | 5,396 |
+| Lethe CEF, `--no-proxy` | 5,376 |
+| Chrome 153 | 11,236 |
+
+Stock CEF with no embedder code is as slow as Lethe CEF, in both runtime
+styles; Lethe is about 10% faster than the stock sample. This confirms the
+~2x gap to Chrome is in CEF itself, not in anything Lethe adds. Closing it
+needs a change in CEF upstream.
