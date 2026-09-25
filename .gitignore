@@ -16,3 +16,6 @@ dist/
 
 # Prebuilt Chromium Embedded Framework (fetch with scripts/fetch_cef.sh)
 third_party/cef/
+
+# Local CEF backups (never commit: framework binaries exceed GitHub 100 MB cap)
+third_party/cef-*.bak/
