@@ -1,0 +1,146 @@
+{
+  "browser": "lethe",
+  "label": "media-lethe",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 1,
+  "startedAt": "2026-09-25T11:18:04.186Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "media"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 342.185167,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 666.292375,
+      "rssMb": 179.890625,
+      "processes": 4,
+      "cpuSec": 0.5,
+      "breakdown": [
+        {
+          "pid": 9566,
+          "rssMb": 117.3,
+          "cpuSec": 0.32,
+          "name": "lethe"
+        },
+        {
+          "pid": 9587,
+          "rssMb": 14.2,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 9602,
+          "rssMb": 16,
+          "cpuSec": 0.03,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 9619,
+          "rssMb": 32.5,
+          "cpuSec": 0.12,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "media:mem",
+      "tMs": 4031.9469580000004,
+      "rssMb": 0,
+      "processes": 1,
+      "cpuSec": 0,
+      "breakdown": [
+        {
+          "pid": 9566,
+          "rssMb": 0,
+          "cpuSec": 0,
+          "name": "(lethe)"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "Lethe Browser v0.1.1 (system WebKit)",
+    "[lethe] Applying macOS sandbox (Seatbelt)...",
+    "[lethe] Seatbelt profile active (file writes limited to temp, ~/Downloads and Lethe's own Library subtrees)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN enabled (fail-closed loopback; set LETHE_VPN_ENDPOINT=host:port to tunnel)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] CONNECT reactor: kqueue shards=4",
+    "[lethe-proxy] worker pool: 32 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:59792 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:59792 (subresource enforcement on)",
+    "[e2e] start: 8 lines",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab http://127.0.0.1:59791/media.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 240000 document.getElementById(\"stats\").textContent.indexOf(\"media-done\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[e2e] result media-done {\"hdrDisplay\":false,\"hdrVideo\":false,\"p3\":false,\"video\":{\"h264\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":null,\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"hevc\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"vp8\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"n\",\"mcHdr\":null,\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"vp9\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":null,\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"vp9_10bit\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"av1\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"n\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true},\"av1_10bit\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"n\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"hw\",\"rec\":true}},\"audio\":{\"aac\":{\"play\":\"probably\",\"mse\":true},\"opus\":{\"play\":\"probably\",\"mse\":true},\"flac\":{\"play\":\"maybe\",\"mse\":false},\"mp3\":{\"play\":\"maybe\",\"mse\":true},\"vorbis\":{\"play\":\"probably\",\"mse\":true},\"alac\":{\"play\":\"probably\",\"mse\":true}},\"encode\":{\"h264\":{\"fps\":344.8,\"kbps\":5250},\"hevc\":{\"fps\":359.3,\"kbps\":5297},\"vp8\":{\"fps\":382.2,\"kbps\":5962},\"vp9\":{\"fps\":320,\"kbps\":6120},\"av1\":{\"fps\":247.4,\"kbps\":5926}},\"decode\":{\"h264\":{\"fps\":1081.1,\"frames\":120},\"hevc\":{\"fps\":784.3,\"frames\":120},\"vp8\":{\"fps\":508.5,\"frames\":120},\"vp9\":{\"fps\":705.9,\"frames\":120},\"av1\":{\"fps\":1111.1,\"frames\":120}}}",
+    "[e2e] > mark media:mem",
+    "[e2e] mark media:mem",
+    "[e2e] > quit",
+    "[e2e] quit (PASSED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

@@ -13,12 +13,15 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "include/cef_browser.h"
 #include "include/cef_frame.h"
 #include "include/cef_process_message.h"
 #include "include/cef_v8.h"
+#include "include/cef_command_line.h"
 
 namespace {
 
@@ -176,6 +179,36 @@ class LetheEvalHandler : public CefV8Handler {
 
 CefRefPtr<LetheEvalHandler> g_handler;
 
+const char kMediaEnhancerJS[] =
+#include "renderer/media_enhancer.js.inc"
+    ;
+
+// Same document-start enhancer the WebKit shell installs as a user script.
+// The browser process passes "<mode>,<hdr>" (see OnBeforeChildProcessLaunch).
+void InjectMediaEnhancer(CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) {
+    const std::string url = frame->GetURL().ToString();
+    if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) return;
+    CefRefPtr<CefCommandLine> cl = CefCommandLine::GetGlobalCommandLine();
+    std::string v = cl ? cl->GetSwitchValue("lethe-media").ToString() : "";
+    std::string mode = "0", hdr = "0";
+    const size_t comma = v.find(',');
+    if (comma == 1 && v.size() == 3 && v[0] >= '0' && v[0] <= '3' && (v[2] == '0' || v[2] == '1')) {
+        mode = v.substr(0, 1);
+        hdr = v.substr(2, 1);
+    }
+    std::string js = kMediaEnhancerJS;
+    for (const auto& [key, val] : {std::pair<std::string, std::string>{"__LETHE_INITIAL_MODE__", mode},
+                                   {"__LETHE_INITIAL_HDR__", hdr}}) {
+        for (size_t at = js.find(key); at != std::string::npos; at = js.find(key, at + val.size()))
+            js.replace(at, key.size(), val);
+    }
+    context->Enter();
+    CefRefPtr<CefV8Value> r;
+    CefRefPtr<CefV8Exception> ex;
+    context->Eval(js, "<lethe-media>", 0, r, ex);
+    context->Exit();
+}
+
 }  // namespace
 
 void LetheCefRenderHandler::OnContextCreated(CefRefPtr<CefBrowser> browser,
@@ -195,6 +228,7 @@ void LetheCefRenderHandler::OnContextCreated(CefRefPtr<CefBrowser> browser,
     CefRefPtr<CefV8Value> fn = CefV8Value::CreateFunction("__letheEval", g_handler);
     global->SetValue("__letheEval", fn, V8_PROPERTY_ATTRIBUTE_READONLY);
     context->Exit();
+    InjectMediaEnhancer(frame, context);
     // Script plugins: run at context creation (document start), IIFE-wrapped
     // so plugins cannot see each other's vars.
     static const std::vector<ScriptPlugin> plugins = scanScriptPlugins();

@@ -604,3 +604,73 @@ sudo safaridriver --enable          # once per machine
 
 Until that is granted on this machine the Safari column is absent rather
 than estimated.
+
+---
+
+# Media benchmark (v4, 2026-09-25)
+
+*`node tools/bench/bench.mjs --browser <lethe|lethe-cef|chrome> --suite media,enhancer --runs 1`.
+Raw JSON: `tools/bench/results/v4-media/`. Host: Apple M4 Max, macOS 26.5,
+SDR external display (`dynamic-range: high` is false for every browser, so
+HDR *output* could not be measured on this machine).*
+
+## Codec coverage
+
+Each row is the engine's own answer to `canPlayType`/`MediaSource.isTypeSupported`
+(play), WebCodecs `isConfigSupported` (decode/encode, `hw` when
+`prefer-hardware` is accepted).
+
+| Codec | Lethe (WebKit) | Lethe (Blink/CEF, prebuilt) | Chrome 153 |
+|---|---|---|---|
+| H.264 | play, hw dec/enc | **no playback**, enc only | play, hw dec/enc |
+| HEVC | play, hw dec/enc | **no** | play, hw dec/enc |
+| VP8 | play, dec/enc | play, sw dec/enc | play, sw dec/enc |
+| VP9 (8/10-bit) | play, dec/enc | play, hw dec, sw enc | play, hw dec, sw enc |
+| AV1 (8/10-bit) | play, dec/enc | play, hw dec, sw enc | play, hw dec, sw enc |
+| AAC | play | **no** | play |
+| ALAC | play | no | no |
+| Opus / MP3 / FLAC / Vorbis | play | play | play |
+
+**Gap found:** the prebuilt CEF distribution is compiled with
+`proprietary_codecs=false`. The Blink shell therefore cannot play H.264, HEVC
+or AAC. That is most non-YouTube web video. The fix is a source build,
+scripted in `scripts/build_cef_codecs.sh` (about 150 GB, several hours,
+patent licensing to check before you redistribute it). Until then, the
+WebKit shell is the full-codec engine.
+
+## WebCodecs throughput (1080p, 120 frames, frames/s)
+
+| | Lethe (WebKit) enc / dec | Lethe (CEF) enc / dec | Chrome enc / dec |
+|---|---|---|---|
+| H.264 | **375** / 1,132 | 172 / 1,136 | 193 / 1,143 |
+| HEVC | **358** / 769 | n/a | 343 / **2,586** |
+| VP8 | 382 / 520 | 373 / 419 | 377 / 412 |
+| VP9 | 324 / 710 | **365** / 782 | 351 / 782 |
+| AV1 | **250** / 1,111 | 205 / **2,202** | 207 / 2,170 |
+
+The WebKit shell encodes H.264 about 2x faster than Blink (VideoToolbox
+real-time path). Blink decodes AV1 and HEVC about 2x faster in WebCodecs.
+
+## Media enhancer (FSR 1.0 + HDR enhance)
+
+The page-level enhancer (`src/renderer/media_enhancer.js.inc`) is shared by
+both shells. It is AMD FidelityFX Super Resolution 1.0: EASU edge-adaptive
+upscaling, then RCAS sharpening, both in WebGL2. FSR 2 and later versions
+(including FSR 4) are temporal and need engine motion vectors that a page
+cannot access, so FSR1 is the strongest FSR a page-level pass can run.
+"HDR enhance" is an SDR tone and vibrance lift. PQ/HLG video is detected
+through `VideoFrame.colorSpace` and left on the native HDR path, because
+WebGL uploads would tone-map it to SDR.
+
+Test: 640x360 VP9, 30 fps, shown at 1600x900, 8 s window:
+
+| Browser / mode | Enhancer frames | rAF FPS | Dropped video frames |
+|---|---|---|---|
+| Lethe WebKit, off | - | 60.1 | 0 |
+| Lethe WebKit, FSR1 | 275 (640x360 to 1600x900) | 60.0 | 0 |
+| Lethe CEF, off | - | 60.2 | 0 |
+| Lethe CEF, FSR1 + HDR | 284 | 60.0 | 0 |
+| Chrome, same script injected, FSR1 | 274 | 60.0 | 0 |
+
+The CEF shell had no enhancer before this round. At this output size the
+two-pass FSR1 pipeline costs no measurable frame time in any engine.

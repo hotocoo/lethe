@@ -311,6 +311,7 @@ if(BUILD_UI AND APPLE)
             src/ui/mac/LetheHistory.mm
             src/ui/mac/LetheGuard.mm
             src/ui/mac/LetheOmnibox.mm
+            src/ui/mac/LetheMediaEnhancer.mm
             browser/app/shell_bootstrap.cc
         )
         set_source_files_properties(
@@ -329,6 +330,7 @@ if(BUILD_UI AND APPLE)
             src/ui/mac/LetheHistory.mm
             src/ui/mac/LetheGuard.mm
             src/ui/mac/LetheOmnibox.mm
+            src/ui/mac/LetheMediaEnhancer.mm
             browser/app/cef_menu.mm
             PROPERTIES LANGUAGE OBJCXX)
         target_compile_options(lethe-cef PRIVATE -fobjc-arc -Wno-deprecated-declarations)
@@ -420,6 +422,7 @@ if(BUILD_UI AND APPLE)
         target_compile_definitions(lethe-cef-helper PRIVATE CEF_USE_SANDBOX)
         target_include_directories(lethe-cef-helper PRIVATE
             ${CMAKE_SOURCE_DIR}/browser
+            ${CMAKE_SOURCE_DIR}/src
             ${CEF_ROOT} ${CEF_ROOT}/include)
         target_link_libraries(lethe-cef-helper PRIVATE
             "${CEF_WRAPPER_LIB}" ${COCOA_FRAMEWORK})

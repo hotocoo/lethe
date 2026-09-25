@@ -1,0 +1,233 @@
+{
+  "browser": "chrome",
+  "label": "enh-chrome-2",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 153.0.8010.53",
+  "run": 1,
+  "startedAt": "2026-09-25T11:28:20.646Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "enhancer"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 315.495541,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": null,
+  "enhancer": {
+    "injected": true,
+    "fps": 60,
+    "videoFrames": 240,
+    "dropped": 0,
+    "playing": true,
+    "state": {
+      "mode": 2,
+      "hdr": 0,
+      "active": 1,
+      "entries": [
+        {
+          "frames": 274,
+          "lastFrame": {
+            "sourceWidth": 640,
+            "sourceHeight": 360,
+            "outputWidth": 1600,
+            "outputHeight": 900,
+            "scaleX": 2.5,
+            "scaleY": 2.5,
+            "time": 9.406467
+          },
+          "canvasWidth": 1600,
+          "canvasHeight": 900
+        }
+      ]
+    }
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 315.50079100000005,
+      "rssMb": 954.296875,
+      "processes": 8,
+      "cpuSec": 0.78,
+      "breakdown": [
+        {
+          "pid": 64061,
+          "rssMb": 213,
+          "cpuSec": 0.39,
+          "name": "Google"
+        },
+        {
+          "pid": 64065,
+          "rssMb": 113.5,
+          "cpuSec": 0.07,
+          "name": "Google"
+        },
+        {
+          "pid": 64066,
+          "rssMb": 93.5,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 64067,
+          "rssMb": 74.2,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 64069,
+          "rssMb": 157.5,
+          "cpuSec": 0.1,
+          "name": "Google"
+        },
+        {
+          "pid": 64071,
+          "rssMb": 117.7,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 64072,
+          "rssMb": 92.4,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 64073,
+          "rssMb": 92.5,
+          "cpuSec": 0.04,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "enhancer:mem",
+      "tMs": 10297.696291,
+      "rssMb": 1626.109375,
+      "processes": 12,
+      "cpuSec": 2.9,
+      "breakdown": [
+        {
+          "pid": 64061,
+          "rssMb": 244.7,
+          "cpuSec": 1.12,
+          "name": "Google"
+        },
+        {
+          "pid": 64065,
+          "rssMb": 159.3,
+          "cpuSec": 0.84,
+          "name": "Google"
+        },
+        {
+          "pid": 64066,
+          "rssMb": 101.7,
+          "cpuSec": 0.11,
+          "name": "Google"
+        },
+        {
+          "pid": 64067,
+          "rssMb": 75,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 64069,
+          "rssMb": 180.9,
+          "cpuSec": 0.16,
+          "name": "Google"
+        },
+        {
+          "pid": 64071,
+          "rssMb": 118.6,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 64072,
+          "rssMb": 157.5,
+          "cpuSec": 0.35,
+          "name": "Google"
+        },
+        {
+          "pid": 64073,
+          "rssMb": 119.4,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 64088,
+          "rssMb": 115.1,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 64119,
+          "rssMb": 99.3,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 64120,
+          "rssMb": 131.1,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 64121,
+          "rssMb": 123.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "\nDevTools listening on ws://127.0.0.1:63307/devtools/browser/fc9fe57c-a74a-4e03-99e2-0bb90d33663b",
+    "Trying to load the allocator multiple times. This is *not* supported.",
+    "[64061:1384685:0925/192823.232237:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[64061:1384685:0925/192823.250672:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[64061:1384685:0925/192823.258124:ERROR:google_apis/gcm/engine/mcs_client.cc:702]   Error code: 401  Error message: Authentication Failed: wrong_secret\n[64061:1384685:0925/192823.258135:ERROR:google_apis/gcm/engine/mcs_client.cc:704] Failed to log in to GCM, resetting connection.",
+    "[64061:1384685:0925/192823.294619:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR"
+  ]
+}

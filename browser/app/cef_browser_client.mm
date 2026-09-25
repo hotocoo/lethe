@@ -2,6 +2,7 @@
 
 #include "app/cef_browser_client.h"
 
+#import "ui/mac/LetheMediaEnhancer.h"
 #import <Foundation/Foundation.h>
 
 #include <cctype>
@@ -245,7 +246,12 @@ void CefBrowserClient::AppBrowserProcessHandler::OnContextInitialized() {
 
 void CefBrowserClient::AppBrowserProcessHandler::OnBeforeChildProcessLaunch(
     CefRefPtr<CefCommandLine> command_line) {
-    (void)command_line;
+    // Renderers inject the media enhancer at context creation and cannot
+    // read Settings themselves; hand them the mode as "<mode>,<hdr>".
+    command_line->AppendSwitchWithValue(
+        "lethe-media",
+        std::to_string(static_cast<long>(LetheMediaEnhancerMode())) + "," +
+            (LetheMediaEnhancerHDR() ? "1" : "0"));
 }
 
 void CefBrowserClient::App::OnBeforeCommandLineProcessing(
@@ -1091,6 +1097,9 @@ void CefBrowserClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
         main_loading_ = false;
         first_load_done_ = true;
         LetheCefAutomation::shared()->ClearPendingNavigation();
+        // A renderer keeps the mode it was launched with; bring the document
+        // up to the current Settings (no-op when the enhancer is absent).
+        frame->ExecuteJavaScript(LetheMediaEnhancerApplyJS().UTF8String, "<lethe-media>", 0);
         std::cout << "[e2e] nav-end " << ShortUrlForLog(frame->GetURL().ToString())
                   << " status=" << httpStatusCode << std::endl;
         std::cout.flush();

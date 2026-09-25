@@ -1,0 +1,346 @@
+{
+  "browser": "lethe-cef",
+  "label": "media-lethe-cef",
+  "env": {},
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (CEF 151.3.24+g2384915+chromium-151.0.7922.174)",
+  "run": 1,
+  "startedAt": "2026-09-25T11:18:50.548Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "media"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 159.68137500000003,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": {
+    "hdrDisplay": false,
+    "hdrVideo": false,
+    "p3": false,
+    "video": {
+      "h264": {
+        "play": "no",
+        "mse": false,
+        "mc4k": "n",
+        "mcHdr": null,
+        "wcDec": "n",
+        "wcEnc": "hw",
+        "rec": false
+      },
+      "hevc": {
+        "play": "no",
+        "mse": false,
+        "mc4k": "n",
+        "mcHdr": "n",
+        "wcDec": "n",
+        "wcEnc": "n",
+        "rec": false
+      },
+      "vp8": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ys",
+        "mcHdr": null,
+        "wcDec": "sw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "vp9": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "vp9_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "av1": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "av1_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "n",
+        "rec": true
+      }
+    },
+    "audio": {
+      "aac": {
+        "play": "no",
+        "mse": false
+      },
+      "opus": {
+        "play": "probably",
+        "mse": true
+      },
+      "flac": {
+        "play": "probably",
+        "mse": false
+      },
+      "mp3": {
+        "play": "probably",
+        "mse": true
+      },
+      "vorbis": {
+        "play": "probably",
+        "mse": false
+      },
+      "alac": {
+        "play": "no",
+        "mse": false
+      }
+    },
+    "encode": {
+      "h264": {
+        "fps": 171.7,
+        "kbps": 7631
+      },
+      "vp8": {
+        "fps": 372.8,
+        "kbps": 8053
+      },
+      "vp9": {
+        "fps": 364.7,
+        "kbps": 5379
+      },
+      "av1": {
+        "fps": 205.1,
+        "kbps": 5489
+      }
+    },
+    "decode": {
+      "h264": {
+        "fps": 1136.4,
+        "frames": 120
+      },
+      "vp8": {
+        "fps": 418.8,
+        "frames": 120
+      },
+      "vp9": {
+        "fps": 782.3,
+        "frames": 120
+      },
+      "av1": {
+        "fps": 2201.8,
+        "frames": 120
+      }
+    }
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 782.953166,
+      "rssMb": 594.390625,
+      "processes": 6,
+      "cpuSec": 0.62,
+      "breakdown": [
+        {
+          "pid": 18060,
+          "rssMb": 143,
+          "cpuSec": 0.35,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 18062,
+          "rssMb": 110.4,
+          "cpuSec": 0.1,
+          "name": "Lethe"
+        },
+        {
+          "pid": 18063,
+          "rssMb": 75.4,
+          "cpuSec": 0.05,
+          "name": "Lethe"
+        },
+        {
+          "pid": 18065,
+          "rssMb": 67.4,
+          "cpuSec": 0.02,
+          "name": "Lethe"
+        },
+        {
+          "pid": 18068,
+          "rssMb": 82.8,
+          "cpuSec": 0.04,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 18069,
+          "rssMb": 115.5,
+          "cpuSec": 0.06,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    },
+    {
+      "name": "media:mem",
+      "tMs": 4057.0317499999996,
+      "rssMb": 871.0625,
+      "processes": 7,
+      "cpuSec": 7.07,
+      "breakdown": [
+        {
+          "pid": 18060,
+          "rssMb": 158.5,
+          "cpuSec": 0.51,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 18062,
+          "rssMb": 124.6,
+          "cpuSec": 0.45,
+          "name": "Lethe"
+        },
+        {
+          "pid": 18063,
+          "rssMb": 78,
+          "cpuSec": 0.06,
+          "name": "Lethe"
+        },
+        {
+          "pid": 18065,
+          "rssMb": 67.8,
+          "cpuSec": 0.03,
+          "name": "Lethe"
+        },
+        {
+          "pid": 18068,
+          "rssMb": 243,
+          "cpuSec": 5.92,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 18069,
+          "rssMb": 116.5,
+          "cpuSec": 0.07,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 18084,
+          "rssMb": 82.6,
+          "cpuSec": 0.03,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "Lethe Browser v0.1.1 (CEF 151.3.24+g2384915+chromium-151.0.7922.174)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN enabled (fail-closed loopback; set LETHE_VPN_ENDPOINT=host:port to tunnel)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] CONNECT reactor: kqueue shards=4",
+    "[lethe-proxy] worker pool: 32 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:60031 (per-launch auth token)",
+    "[lethe-cef] CefInitialize...",
+    "[lethe-cef] OnContextInitialized (browser process)",
+    "[lethe-cef] CefRunMessageLoop...",
+    "[e2e] start: 7 lines",
+    "[lethe-cef] native tab bar visible=0 tabs=1",
+    "[lethe-cef] browser created (1) windows=1 runtime=2",
+    "[e2e] nav data:<internal page>",
+    "[e2e] nav-end data:<internal page> status=200",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab http://127.0.0.1:60030/media.html",
+    "[lethe-cef] native tab bar visible=0 tabs=1",
+    "[lethe-cef] native tab group windows=2 tabbar=1",
+    "[lethe-cef] browser created (2) windows=2 runtime=2",
+    "[e2e] > try-wait 30000",
+    "[e2e] nav http://127.0.0.1:60030/media.html",
+    "[e2e] nav-end http://127.0.0.1:60030/media.html status=200",
+    "[e2e] > wait-js 240000 document.getElementById(\"stats\").textContent.indexOf(\"media-done\")>=0",
+    "[render] lethe:eval reqId=e0 ctx=yes",
+    "[render] lethe:eval reqId=e1 ctx=yes",
+    "[render] lethe:eval reqId=e2 ctx=yes",
+    "[18060:1284818:0925/191852.863649:ERROR:base/mac/process_requirement.cc:159] Unable to derive validation category for current process. Signature validation of current process failed: Error Domain=NSOSStatusErrorDomain Code=-67030 \"(null)\" (-67030)",
+    "[render] lethe:eval reqId=e3 ctx=yes",
+    "[render] lethe:eval reqId=e4 ctx=yes",
+    "[render] lethe:eval reqId=e5 ctx=yes",
+    "[render] lethe:eval reqId=e6 ctx=yes",
+    "[e2e] ok   wait-js -> true",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[render] lethe:eval reqId=e7",
+    " ctx=yes",
+    "[e2e] result media-done {\"hdrDisplay\":false,\"hdrVideo\":false,\"p3\":false,\"video\":{\"h264\":{\"play\":\"no\",\"mse\":false,\"mc4k\":\"n\",\"mcHdr\":null,\"wcDec\":\"n\",\"wcEnc\":\"hw\",\"rec\":false},\"hevc\":{\"play\":\"no\",\"mse\":false,\"mc4k\":\"n\",\"mcHdr\":\"n\",\"wcDec\":\"n\",\"wcEnc\":\"n\",\"rec\":false},\"vp8\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ys\",\"mcHdr\":null,\"wcDec\":\"sw\",\"wcEnc\":\"sw\",\"rec\":true},\"vp9\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":null,\"wcDec\":\"hw\",\"wcEnc\":\"sw\",\"rec\":false},\"vp9_10bit\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"sw\",\"rec\":false},\"av1\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"sw\",\"rec\":true},\"av1_10bit\":{\"play\":\"probably\",\"mse\":true,\"mc4k\":\"ysp\",\"mcHdr\":\"n\",\"wcDec\":\"hw\",\"wcEnc\":\"n\",\"rec\":true}},\"audio\":{\"aac\":{\"play\":\"no\",\"mse\":false},\"opus\":{\"play\":\"probably\",\"mse\":true},\"flac\":{\"play\":\"probably\",\"mse\":false},\"mp3\":{\"play\":\"probably\",\"mse\":true},\"vorbis\":{\"play\":\"probably\",\"mse\":false},\"alac\":{\"play\":\"no\",\"mse\":false}},\"encode\":{\"h264\":{\"fps\":171.7,\"kbps\":7631},\"vp8\":{\"fps\":372.8,\"kbps\":8053},\"vp9\":{\"fps\":364.7,\"kbps\":5379},\"av1\":{\"fps\":205.1,\"kbps\":5489}},\"decode\":{\"h264\":{\"fps\":1136.4,\"frames\":120},\"vp8\":{\"fps\":418.8,\"frames\":120},\"vp9\":{\"fps\":782.3,\"frames\":120},\"av1\":{\"fps\":2201.8,\"frames\":120}}}",
+    "[e2e] > mark media:mem",
+    "[e2e] mark media:mem",
+    "[e2e] > quit",
+    "[e2e] quit",
+    "[lethe-cef] DoClose browser=1 ready=0",
+    "[lethe-cef] DoClose browser=2 ready=0",
+    "[lethe-cef] CefShutdown...",
+    "[lethe-cef] last browser closed; quitting message loop",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

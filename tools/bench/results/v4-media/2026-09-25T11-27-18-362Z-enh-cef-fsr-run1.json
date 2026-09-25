@@ -1,0 +1,258 @@
+{
+  "browser": "lethe-cef",
+  "label": "enh-cef-fsr",
+  "env": {
+    "LETHE_HDR_ENHANCE": "1"
+  },
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (CEF 151.3.24+g2384915+chromium-151.0.7922.174)",
+  "run": 1,
+  "startedAt": "2026-09-25T11:27:18.362Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "enhancer"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 156.85983300000004,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": null,
+  "enhancer": {
+    "injected": false,
+    "fps": 60,
+    "videoFrames": 241,
+    "dropped": 0,
+    "playing": true,
+    "state": {
+      "mode": 2,
+      "hdr": 1,
+      "active": 1,
+      "entries": [
+        {
+          "frames": 284,
+          "lastFrame": {
+            "sourceWidth": 640,
+            "sourceHeight": 360,
+            "outputWidth": 1600,
+            "outputHeight": 900,
+            "scaleX": 2.5,
+            "scaleY": 2.5,
+            "time": 9.449402
+          },
+          "canvasWidth": 1600,
+          "canvasHeight": 900
+        }
+      ]
+    }
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 783.3231659999999,
+      "rssMb": 590.703125,
+      "processes": 6,
+      "cpuSec": 0.66,
+      "breakdown": [
+        {
+          "pid": 58457,
+          "rssMb": 141.4,
+          "cpuSec": 0.38,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 58469,
+          "rssMb": 108.2,
+          "cpuSec": 0.1,
+          "name": "Lethe"
+        },
+        {
+          "pid": 58471,
+          "rssMb": 75.5,
+          "cpuSec": 0.05,
+          "name": "Lethe"
+        },
+        {
+          "pid": 58475,
+          "rssMb": 67.3,
+          "cpuSec": 0.03,
+          "name": "Lethe"
+        },
+        {
+          "pid": 58496,
+          "rssMb": 82.6,
+          "cpuSec": 0.04,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 58497,
+          "rssMb": 115.6,
+          "cpuSec": 0.06,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    },
+    {
+      "name": "enhancer:mem",
+      "tMs": 10590.439041,
+      "rssMb": 753.234375,
+      "processes": 7,
+      "cpuSec": 2.07,
+      "breakdown": [
+        {
+          "pid": 58457,
+          "rssMb": 154.4,
+          "cpuSec": 0.58,
+          "name": "lethe-cef"
+        },
+        {
+          "pid": 58469,
+          "rssMb": 125.4,
+          "cpuSec": 0.83,
+          "name": "Lethe"
+        },
+        {
+          "pid": 58471,
+          "rssMb": 78.1,
+          "cpuSec": 0.07,
+          "name": "Lethe"
+        },
+        {
+          "pid": 58475,
+          "rssMb": 67.8,
+          "cpuSec": 0.03,
+          "name": "Lethe"
+        },
+        {
+          "pid": 58496,
+          "rssMb": 128.1,
+          "cpuSec": 0.44,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 58497,
+          "rssMb": 116.7,
+          "cpuSec": 0.08,
+          "name": "lethe_cef_helper"
+        },
+        {
+          "pid": 58622,
+          "rssMb": 82.6,
+          "cpuSec": 0.04,
+          "name": "lethe_cef_helper"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "Lethe Browser v0.1.1 (CEF 151.3.24+g2384915+chromium-151.0.7922.174)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN enabled (fail-closed loopback; set LETHE_VPN_ENDPOINT=host:port to tunnel)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] CONNECT reactor: kqueue shards=4",
+    "[lethe-proxy] worker pool: 32 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:62877 (per-launch auth token)",
+    "[lethe-cef] CefInitialize...",
+    "[lethe-cef] OnContextInitialized (browser process)",
+    "[lethe-cef] CefRunMessageLoop...",
+    "[e2e] start: 7 lines",
+    "[lethe-cef] native tab bar visible=0 tabs=1",
+    "[lethe-cef] browser created (1) windows=1 runtime=2",
+    "[e2e] nav data:<internal page>",
+    "[e2e] nav-end data:<internal page> status=200",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab http://127.0.0.1:62874/enhancer.html",
+    "[lethe-cef] native tab bar visible=0 tabs=1",
+    "[lethe-cef] native tab group windows=2 tabbar=1",
+    "[lethe-cef] browser created (2) windows=2 runtime=2",
+    "[e2e] > try-wait 30000",
+    "[e2e] nav http://127.0.0.1:62874/enhancer.html",
+    "[e2e] > wait-js 38000 document.getElementById(\"stats\").textContent.indexOf(\"enhancer-done\")>=0",
+    "[render] lethe:eval reqId=e0 ctx=yes",
+    "[e2e] nav-end http://127.0.0.1:62874/enhancer.html status=200",
+    "[render] lethe:eval reqId=e1 ctx=yes",
+    "[render] lethe:eval reqId=e2 ctx=yes",
+    "[58457:1372863:0925/192720.681886:ERROR:base/mac/process_requirement.cc:159] Unable to derive validation category for current process. Signature validation of current process failed: Error Domain=NSOSStatusErrorDomain Code=-67030 \"(null)\" (-67030)",
+    "[render] lethe:eval reqId=e3 ctx=yes",
+    "[render] lethe:eval reqId=e4 ctx=yes",
+    "[render] lethe:eval reqId=e5 ctx=yes",
+    "[render] lethe:eval reqId=e6 ctx=yes",
+    "[render] lethe:eval reqId=e7 ctx=yes",
+    "[render] lethe:eval reqId=e8 ctx=yes",
+    "[render] lethe:eval reqId=e9 ctx=yes",
+    "[render] lethe:eval reqId=e10 ctx=yes",
+    "[render] lethe:eval reqId=e11 ctx=yes",
+    "[render] lethe:eval reqId=e12 ctx=yes",
+    "[render] lethe:eval reqId=e13 ctx=yes",
+    "[render] lethe:eval reqId=e14 ctx=yes",
+    "[render] lethe:eval reqId=e15 ctx=yes",
+    "[render] lethe:eval reqId=e16 ctx=yes",
+    "[render] lethe:eval reqId=e17 ctx=yes",
+    "[render] lethe:eval reqId=e18 ctx=yes",
+    "[render] lethe:eval reqId=e19 ctx=yes",
+    "[e2e] ok   wait-js -> true",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[render] lethe:eval reqId=e20 ctx=yes",
+    "",
+    "[e2e] result enhancer-done {\"injected\":false,\"fps\":60,\"videoFrames\":241,\"dropped\":0,\"playing\":true,\"state\":{\"mode\":2,\"hdr\":1,\"active\":1,\"entries\":[{\"frames\":284,\"lastFrame\":{\"sourceWidth\":640,\"sourceHeight\":360,\"outputWidth\":1600,\"outputHeight\":900,\"scaleX\":2.5,\"scaleY\":2.5,\"time\":9.449402},\"canvasWidth\":1600,\"canvasHeight\":900}]}}",
+    "[e2e] > mark enhancer:mem",
+    "[e2e] mark enhancer:mem",
+    "[e2e] > quit",
+    "[e2e] quit",
+    "[lethe-cef] DoClose browser=1 ready=0",
+    "[lethe-cef] DoClose browser=2 ready=0",
+    "[lethe-cef] CefShutdown...",
+    "[lethe-cef] last browser closed; quitting message loop",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

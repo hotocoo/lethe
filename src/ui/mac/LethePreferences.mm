@@ -68,6 +68,7 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         _maxFrameRate = 0;             // 0 = unlimited (let the display drive)
         _preferHighRefresh = YES;      // ask the compositor for the panel rate
         _upscaler = LetheUpscalerFSR1; // built-in high-quality spatial upscale
+        _hdrEnhance = NO;
         _antiAliasing = 4;             // MSAA 4x
         _policyProxyWorkerThreads = 0; // 0 = auto (hardware_concurrency)
 
@@ -133,6 +134,8 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
         _preferHighRefresh = [v boolValue];
     if ((v = dict[@"upscaler"]) && [v respondsToSelector:@selector(integerValue)])
         _upscaler = (LetheUpscaler)[v integerValue];
+    if ((v = dict[@"hdrEnhance"]) && [v respondsToSelector:@selector(boolValue)])
+        _hdrEnhance = [v boolValue];
     if ((v = dict[@"antiAliasing"]) && [v respondsToSelector:@selector(integerValue)])
         _antiAliasing = [v integerValue];
     if ((v = dict[@"policyProxyWorkerThreads"]) && [v respondsToSelector:@selector(integerValue)])
@@ -167,6 +170,7 @@ NSString* const LethePreferencesDidChangeNotification = @"LethePreferencesDidCha
     [d setObject:@(_maxFrameRate) forKey:@"maxFrameRate"];
     [d setObject:@(_preferHighRefresh) forKey:@"preferHighRefresh"];
     [d setObject:@(_upscaler) forKey:@"upscaler"];
+    [d setObject:@(_hdrEnhance) forKey:@"hdrEnhance"];
     [d setObject:@(_antiAliasing) forKey:@"antiAliasing"];
     [d setObject:@(_policyProxyWorkerThreads) forKey:@"policyProxyWorkerThreads"];
     [d setObject:_pluginOverrides ?: @{} forKey:@"pluginOverrides"];

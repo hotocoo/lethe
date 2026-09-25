@@ -457,6 +457,147 @@ for(var i=0;i<N;i++){
 </script>`;
 }
 
+// media: what the engine can decode/encode, and how fast. Capability rows
+// ask every API a page can ask (canPlayType, MSE, MediaCapabilities,
+// WebCodecs, MediaRecorder) so a "supported" claim is the engine's own
+// answer, not a guess. Throughput rows really encode MEDIA_FRAMES 1080p
+// frames per codec with WebCodecs and decode the resulting chunks back.
+const MEDIA_FRAMES = Number(process.env.LETHE_MEDIA_FRAMES || 120);
+function mediaHtml() {
+  return `<!doctype html><meta charset="utf-8"><title>Lethe media</title>
+<style>body{margin:0;background:#0b0c0d;color:#e6e9ec;font:12px ui-monospace,monospace}</style>
+<div id="stats">probing…</div>
+<script>
+var st=document.getElementById('stats');
+var V={h264:'avc1.640028',hevc:'hvc1.1.6.L120.90',vp8:'vp8',vp9:'vp09.00.40.08',
+  vp9_10bit:'vp09.02.40.10',av1:'av01.0.08M.08',av1_10bit:'av01.0.08M.10'};
+var CT={h264:'video/mp4; codecs="avc1.640028"',hevc:'video/mp4; codecs="hvc1.1.6.L120.90"',
+  vp8:'video/webm; codecs="vp8"',vp9:'video/webm; codecs="vp09.00.40.08"',
+  vp9_10bit:'video/webm; codecs="vp09.02.40.10"',av1:'video/mp4; codecs="av01.0.08M.08"',
+  av1_10bit:'video/mp4; codecs="av01.0.08M.10"'};
+var A={aac:'audio/mp4; codecs="mp4a.40.2"',opus:'audio/webm; codecs="opus"',
+  flac:'audio/flac',mp3:'audio/mpeg',vorbis:'audio/ogg; codecs="vorbis"',alac:'audio/mp4; codecs="alac"'};
+var out={hdrDisplay:matchMedia('(dynamic-range: high)').matches,
+  hdrVideo:matchMedia('(video-dynamic-range: high)').matches,
+  p3:matchMedia('(color-gamut: p3)').matches,video:{},audio:{},encode:{},decode:{}};
+var vEl=document.createElement('video'), aEl=document.createElement('audio');
+function mse(t){try{return !!(window.MediaSource&&MediaSource.isTypeSupported(t));}catch(e){return false;}}
+function rec(t){try{return !!(window.MediaRecorder&&MediaRecorder.isTypeSupported(t));}catch(e){return false;}}
+async function mc(t,hdr){
+  if(!navigator.mediaCapabilities) return null;
+  var c={contentType:t,width:3840,height:2160,bitrate:20000000,framerate:60};
+  if(hdr){c.transferFunction='pq';c.colorGamut='rec2020';c.hdrMetadataType='smpteSt2086';}
+  try{var r=await navigator.mediaCapabilities.decodingInfo({type:'media-source',video:c});
+    return (r.supported?'y':'n')+(r.smooth?'s':'')+(r.powerEfficient?'p':'');}catch(e){return 'err';}
+}
+async function wc(codec,enc){
+  var K=enc?window.VideoEncoder:window.VideoDecoder; if(!K) return 'none';
+  var cfg=enc?{codec:codec,width:1920,height:1080,bitrate:8000000,framerate:60}:{codec:codec,codedWidth:1920,codedHeight:1080};
+  if(codec.indexOf('avc1')===0&&enc) cfg.avc={format:'annexb'};
+  try{var r=await K.isConfigSupported(cfg); if(!r.supported) return 'n';
+    cfg.hardwareAcceleration='prefer-hardware';
+    var h=await K.isConfigSupported(cfg); return h.supported?'hw':'sw';}catch(e){return 'err';}
+}
+var cv=document.createElement('canvas'); cv.width=1920; cv.height=1080;
+var g=cv.getContext('2d');
+function paint(i){
+  var gr=g.createLinearGradient(0,0,1920,1080);
+  gr.addColorStop(0,'hsl('+(i*3%360)+',70%,45%)'); gr.addColorStop(1,'hsl('+((i*3+180)%360)+',70%,30%)');
+  g.fillStyle=gr; g.fillRect(0,0,1920,1080);
+  g.fillStyle='#fff'; g.font='bold 120px sans-serif'; g.fillText('frame '+i,120+(i*13)%900,540);
+  for(var k=0;k<40;k++){g.fillStyle='hsl('+((k*37+i*5)%360)+',80%,60%)';g.fillRect((k*97+i*11)%1800,(k*53+i*7)%1000,80,60);}
+}
+async function throughput(name,codec){
+  if(!window.VideoEncoder||!window.VideoDecoder) return;
+  var cfg={codec:codec,width:1920,height:1080,bitrate:8000000,framerate:60};
+  if(codec.indexOf('avc1')===0) cfg.avc={format:'annexb'};
+  try{ if(!(await VideoEncoder.isConfigSupported(cfg)).supported) return; }catch(e){return;}
+  var chunks=[], meta=null, err=null;
+  var enc=new VideoEncoder({output:function(c,m){var b=new Uint8Array(c.byteLength);c.copyTo(b);
+      chunks.push({type:c.type,timestamp:c.timestamp,data:b}); if(m&&m.decoderConfig) meta=m.decoderConfig;},
+    error:function(e){err=String(e);}});
+  enc.configure(cfg);
+  var t0=performance.now();
+  for(var i=0;i<${MEDIA_FRAMES};i++){
+    paint(i);
+    var f=new VideoFrame(cv,{timestamp:i*16667});
+    enc.encode(f,{keyFrame:i%60===0}); f.close();
+    while(enc.encodeQueueSize>8) await new Promise(function(r){setTimeout(r,0);});
+  }
+  await enc.flush(); var encMs=performance.now()-t0; enc.close();
+  if(err||!chunks.length){out.encode[name]={error:err||'no output'};return;}
+  var bytes=chunks.reduce(function(s,c){return s+c.data.length;},0);
+  out.encode[name]={fps:+(${MEDIA_FRAMES}*1000/encMs).toFixed(1),kbps:Math.round(bytes*8/(${MEDIA_FRAMES}/60)/1000)};
+  var n=0, derr=null;
+  var dec=new VideoDecoder({output:function(fr){n++;fr.close();},error:function(e){derr=String(e);}});
+  try{dec.configure(meta||{codec:codec,codedWidth:1920,codedHeight:1080});}catch(e){out.decode[name]={error:String(e)};return;}
+  var t1=performance.now();
+  for(var j=0;j<chunks.length;j++) dec.decode(new EncodedVideoChunk(chunks[j]));
+  await dec.flush(); var decMs=performance.now()-t1; dec.close();
+  out.decode[name]=derr?{error:derr}:{fps:+(n*1000/decMs).toFixed(1),frames:n};
+}
+(async function(){
+  for(var k in V){
+    out.video[k]={play:vEl.canPlayType(CT[k])||'no',mse:mse(CT[k]),mc4k:await mc(CT[k],false),
+      mcHdr:k.indexOf('10bit')>0||k==='hevc'||k==='av1'?await mc(CT[k],true):null,
+      wcDec:await wc(V[k],false),wcEnc:await wc(V[k],true),rec:rec(CT[k])};
+  }
+  for(var a in A) out.audio[a]={play:aEl.canPlayType(A[a])||'no',mse:mse(A[a])};
+  st.textContent='probed; encoding…';
+  for(var n of ['h264','hevc','vp8','vp9','av1']) await throughput(n,V[n]);
+  st.textContent='media-done '+JSON.stringify(out);
+})().catch(function(e){st.textContent='media-done '+JSON.stringify({error:String(e)});});
+</script>`;
+}
+
+// enhancer: proves Lethe's FSR1/HDR media enhancer actually runs and what
+// it costs. A 640x360 VP9 clip (VP9 so every engine, including the
+// codec-limited CEF build, can decode it) and a 320x180 image are shown at
+// 1600x900 CSS. The page reports the enhancer's own state plus rAF FPS and
+// dropped video frames. Browsers without a built-in enhancer (Chrome,
+// Safari) load the identical script from the bench server with ?inject=M.
+const ENHANCER_MS = Number(process.env.LETHE_ENHANCER_MS || 8000);
+function enhancerJs(mode, hdr) {
+  const inc = readFileSync(join(REPO, 'src', 'renderer', 'media_enhancer.js.inc'), 'utf8');
+  return inc.replace(/^R"LETHEJS\(/, '').replace(/\)LETHEJS"\s*$/, '')
+    .replace(/__LETHE_INITIAL_MODE__/g, String(mode)).replace(/__LETHE_INITIAL_HDR__/g, String(hdr));
+}
+function enhancerHtml() {
+  return `<!doctype html><meta charset="utf-8"><title>Lethe enhancer</title>
+<style>body{margin:0;background:#000;color:#e6e9ec;font:12px ui-monospace,monospace}
+video,img{display:block;width:1600px;height:900px;object-fit:contain}</style>
+<div id="stats">starting…</div>
+<video id="v" src="enh.webm" muted loop autoplay playsinline></video>
+<img id="i" alt="">
+<script>
+var st=document.getElementById('stats'), v=document.getElementById('v');
+var q=new URLSearchParams(location.search), inj=q.get('inject');
+var c=document.createElement('canvas'); c.width=320; c.height=180; var g=c.getContext('2d');
+for(var y=0;y<180;y+=6) for(var x=0;x<320;x+=6){g.fillStyle='hsl('+((x+y)%360)+',70%,'+(30+(x*y)%40)+'%)';g.fillRect(x,y,6,6);}
+g.fillStyle='#fff'; g.font='bold 28px sans-serif'; g.fillText('Lethe FSR1',70,100);
+document.getElementById('i').src=c.toDataURL('image/png');
+function go(){
+  var frames=0, t0=performance.now(), q0=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;
+  function tick(){ frames++; if(performance.now()-t0<${ENHANCER_MS}) requestAnimationFrame(tick); else done(); }
+  function done(){
+    var ms=performance.now()-t0, qq=v.getVideoPlaybackQuality?v.getVideoPlaybackQuality():null;
+    var s=window.__letheMediaUpscaler?window.__letheMediaUpscaler.state():null;
+    st.textContent='enhancer-done '+JSON.stringify({injected:!!inj,fps:+(frames*1000/ms).toFixed(1),
+      videoFrames:qq?qq.totalVideoFrames-(q0?q0.totalVideoFrames:0):null,
+      dropped:qq?qq.droppedVideoFrames-(q0?q0.droppedVideoFrames:0):null,
+      playing:!v.paused&&v.currentTime>0,state:s});
+  }
+  requestAnimationFrame(tick);
+}
+function begin(){ var p=v.play(); if(p&&p.catch)p.catch(function(){}); setTimeout(go,1500); }
+if(inj!==null && !window.__letheMediaUpscaler){
+  var sc=document.createElement('script'); sc.src='enhancer.js?m='+inj+'&h='+(q.get('hdr')||0);
+  sc.onload=begin; sc.onerror=function(){st.textContent='enhancer-done {"error":"inject failed"}';};
+  document.head.appendChild(sc);
+} else begin();
+</script>`;
+}
+
 // 3) brutal-storage: IndexedDB is the storage path real applications use,
 //    and it crosses process boundaries in both engines.
 const BRUTAL_STORAGE_RECORDS = Number(process.env.LETHE_BRUTAL_STORAGE || 20000);
@@ -616,6 +757,13 @@ async function ensureExtremeServer() {
   writeFileSync(join(extremeDir, 'bstorage.html'), brutalStorageHtml());
   writeFileSync(join(extremeDir, 'bpaint.html'), brutalPaintHtml());
   writeFileSync(join(extremeDir, 'bnet.html'), brutalNetHtml());
+  writeFileSync(join(extremeDir, 'media.html'), mediaHtml());
+  writeFileSync(join(extremeDir, 'enhancer.html'), enhancerHtml());
+  try {
+    execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i',
+      'testsrc2=size=640x360:rate=30:duration=10', '-c:v', 'libvpx-vp9', '-b:v', '1M',
+      '-deadline', 'realtime', '-cpu-used', '8', join(extremeDir, 'enh.webm')]);
+  } catch (e) { console.log('[bench] ffmpeg unavailable: enhancer video skipped'); }
   // Three payload size classes: 1 KB, 32 KB, 256 KB.
   for (let i = 0; i < 100; i++)
     writeFileSync(join(extremeDir, `bs${i}.bin`), Buffer.alloc(1024, 3));
@@ -625,6 +773,12 @@ async function ensureExtremeServer() {
     writeFileSync(join(extremeDir, `bl${i}.bin`), Buffer.alloc(256 * 1024, 9));
   const server = http.createServer((req, res) => {
     const url = req.url.split('?')[0];
+    if (url === '/enhancer.js') {
+      const qs = new URLSearchParams(req.url.split('?')[1] || '');
+      const body = enhancerJs(Number(qs.get('m') || 2) | 0, qs.get('h') === '1' ? 1 : 0);
+      res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' });
+      res.end(body); return;
+    }
     const file = join(extremeDir, url === '/' ? 'xdom.html' : url);
     if (!existsSync(file) || !file.startsWith(extremeDir)) {
       res.writeHead(404); res.end('nf'); return;
@@ -632,7 +786,7 @@ async function ensureExtremeServer() {
     const data = readFileSync(file);
     const isBin = file.endsWith('.bin');
     res.writeHead(200, {
-      'Content-Type': isBin ? 'application/octet-stream' : 'text/html; charset=utf-8',
+      'Content-Type': file.endsWith('.webm') ? 'video/webm' : isBin ? 'application/octet-stream' : 'text/html; charset=utf-8',
       'Content-Length': data.length,
       'Cache-Control': 'no-store',
     });
@@ -711,6 +865,17 @@ const YOUTUBE_STATS_JS = `(function(){ var v = document.querySelector('video'); 
   var s = window.__letheMediaStats || {};
   return JSON.stringify({ currentTime: v.currentTime, paused: v.paused, width: s.width || v.videoWidth,
     height: s.height || v.videoHeight, totalFrames: s.totalFrames || 0, droppedFrames: s.droppedFrames || 0 }); })()`;
+
+// A page's one-line JSON self-report ("<prefix>{...}"), as returned by any
+// browser driver (some wrap it as a JSON string, some do not).
+function selfReport(ev, key, prefix) {
+  const v = ev.results.find(r => r.key === key)?.value;
+  if (!v) return null;
+  let text = String(v);
+  try { const once = JSON.parse(text); if (typeof once === 'string') text = once; } catch {}
+  text = text.startsWith(prefix) ? text.slice(prefix.length) : text;
+  try { return JSON.parse(text); } catch { return { raw: text.slice(0, 4000) }; }
+}
 
 // ---------------------------------------------------------------- steps
 function buildSteps(extremeBase) {
@@ -848,6 +1013,20 @@ function buildSteps(extremeBase) {
     steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("p99=")>=0', timeout: 180000 });
     steps.push(readStats('brutal:net'));
     steps.push({ op: 'mark', name: 'brutal:mem-net' });
+  }
+  if (SUITES.includes('media') && extremeBase) {
+    steps.push({ op: 'newtab', url: extremeBase + '/media.html', timeout: 30000 });
+    steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("media-done")>=0', timeout: 240000 });
+    steps.push({ op: 'eval', js: 'document.getElementById("stats").textContent', key: 'media:report' });
+    steps.push({ op: 'mark', name: 'media:mem' });
+  }
+  if (SUITES.includes('enhancer') && extremeBase) {
+    const inject = process.env.LETHE_ENHANCER_INJECT;
+    const qs = inject !== undefined ? `?inject=${inject}&hdr=${process.env.LETHE_ENHANCER_HDR || 0}` : '';
+    steps.push({ op: 'newtab', url: extremeBase + '/enhancer.html' + qs, timeout: 30000 });
+    steps.push({ op: 'waitJs', js: 'document.getElementById("stats").textContent.indexOf("enhancer-done")>=0', timeout: ENHANCER_MS + 30000 });
+    steps.push({ op: 'eval', js: 'document.getElementById("stats").textContent', key: 'enhancer:report' });
+    steps.push({ op: 'mark', name: 'enhancer:mem' });
   }
   if (SUITES.includes('speedometer')) {
     steps.push({ op: 'newtab', url: SPEEDOMETER_URL, timeout: NAV_TIMEOUT });
@@ -1262,7 +1441,7 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   let extremeBase = null;
   if (SUITES.includes('extreme') || SUITES.includes('extreme-net') ||
-      SUITES.includes('brutal')) {
+      SUITES.includes('brutal') || SUITES.includes('media') || SUITES.includes('enhancer')) {
     extremeBase = await ensureExtremeServer();
     console.log(`[bench] extreme server on ${extremeBase} (${EXTREME_NET_COUNT} net payloads)`);
   }
@@ -1302,6 +1481,8 @@ async function main() {
         paint:   ev.results.find(r => r.key === 'brutal:paint')?.value ?? null,
         net:     ev.results.find(r => r.key === 'brutal:net')?.value ?? null,
       },
+      media: selfReport(ev, 'media:report', 'media-done '),
+      enhancer: selfReport(ev, 'enhancer:report', 'enhancer-done '),
       memory: ev.marks,
     };
     // Keep a bounded execution trace in every artifact. A benchmark that

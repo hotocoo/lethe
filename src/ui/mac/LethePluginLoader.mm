@@ -13,7 +13,7 @@
 // Shared browser media scaler script. The plugin loader owns the shared
 // WKUserContentController's remove/rebuild cycle, so it must restore this
 // non-plugin script after clearing the old plugin scripts.
-extern NSString* LetheMediaUpscalerScript(void);
+#import "ui/mac/LetheMediaEnhancer.h"
 
 NSString* const LethePluginsFolderChangedNotification =
     @"LethePluginsFolderChangedNotification";

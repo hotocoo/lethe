@@ -96,6 +96,9 @@ typedef NS_ENUM(NSInteger, LetheUpscaler) {
     LetheUpscalerDLSSLike = 3,
 };
 @property (nonatomic) LetheUpscaler upscaler;
+// hdrEnhance: SDR "HDR look" pass (luma S-curve + vibrance) on eligible
+// images and SDR video. Real PQ/HLG video is never touched. Default off.
+@property (nonatomic) BOOL hdrEnhance;
 // antiAliasing: 0 = off (sharpest, shows jaggies), 1 = MSAA 2x, 2 = MSAA
 // 4x (default), 4 = MSAA 8x. High AA costs GPU but cleans up text edges.
 @property (nonatomic) NSInteger antiAliasing;

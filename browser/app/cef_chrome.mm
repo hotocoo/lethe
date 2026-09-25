@@ -68,12 +68,6 @@ static void LayoutChromeControls(LetheCefChromeController* controller,
                                  NSButton* reload, NSButton* settings);
 namespace { void ShowCefSettings(); }
 
-// LethePluginLoader is shared by the unified native Settings UI, but its
-// media-upscaler user script is a WebKit-only feature. CEF does not install
-// WKUserScripts into its renderer, so the CEF target supplies the neutral
-// implementation required by the shared settings/plugin code rather than
-// pulling the WebKit shell's application delegate into this binary.
-NSString* LetheMediaUpscalerScript(void) { return @""; }
 
 @interface LetheCefChromeView : NSView
 @end

@@ -1,0 +1,345 @@
+{
+  "browser": "chrome",
+  "label": "media-chrome",
+  "env": {},
+  "browserArgs": [],
+  "version": "Google Chrome 153.0.8010.53",
+  "run": 1,
+  "startedAt": "2026-09-25T11:19:00.200Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "media"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 288.40037500000005,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": {
+    "hdrDisplay": false,
+    "hdrVideo": false,
+    "p3": false,
+    "video": {
+      "h264": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "hevc": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "ysp",
+        "wcDec": "hw",
+        "wcEnc": "hw",
+        "rec": true
+      },
+      "vp8": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ys",
+        "mcHdr": null,
+        "wcDec": "sw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "vp9": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": null,
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "vp9_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": false
+      },
+      "av1": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "sw",
+        "rec": true
+      },
+      "av1_10bit": {
+        "play": "probably",
+        "mse": true,
+        "mc4k": "ysp",
+        "mcHdr": "n",
+        "wcDec": "hw",
+        "wcEnc": "n",
+        "rec": true
+      }
+    },
+    "audio": {
+      "aac": {
+        "play": "probably",
+        "mse": true
+      },
+      "opus": {
+        "play": "probably",
+        "mse": true
+      },
+      "flac": {
+        "play": "probably",
+        "mse": false
+      },
+      "mp3": {
+        "play": "probably",
+        "mse": true
+      },
+      "vorbis": {
+        "play": "probably",
+        "mse": false
+      },
+      "alac": {
+        "play": "no",
+        "mse": false
+      }
+    },
+    "encode": {
+      "h264": {
+        "fps": 192.6,
+        "kbps": 7631
+      },
+      "hevc": {
+        "fps": 342.9,
+        "kbps": 7370
+      },
+      "vp8": {
+        "fps": 376.9,
+        "kbps": 8053
+      },
+      "vp9": {
+        "fps": 350.8,
+        "kbps": 5379
+      },
+      "av1": {
+        "fps": 206.8,
+        "kbps": 5489
+      }
+    },
+    "decode": {
+      "h264": {
+        "fps": 1142.9,
+        "frames": 120
+      },
+      "hevc": {
+        "fps": 2586.2,
+        "frames": 120
+      },
+      "vp8": {
+        "fps": 411.5,
+        "frames": 120
+      },
+      "vp9": {
+        "fps": 782.3,
+        "frames": 120
+      },
+      "av1": {
+        "fps": 2170,
+        "frames": 120
+      }
+    }
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 288.40387499999997,
+      "rssMb": 986.71875,
+      "processes": 8,
+      "cpuSec": 0.7,
+      "breakdown": [
+        {
+          "pid": 18174,
+          "rssMb": 212.6,
+          "cpuSec": 0.34,
+          "name": "Google"
+        },
+        {
+          "pid": 18178,
+          "rssMb": 126.9,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 18179,
+          "rssMb": 92,
+          "cpuSec": 0.05,
+          "name": "Google"
+        },
+        {
+          "pid": 18180,
+          "rssMb": 74.2,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 18186,
+          "rssMb": 156.4,
+          "cpuSec": 0.08,
+          "name": "Google"
+        },
+        {
+          "pid": 18188,
+          "rssMb": 117.6,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 18190,
+          "rssMb": 97.9,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 18191,
+          "rssMb": 109.1,
+          "cpuSec": 0.04,
+          "name": "Google"
+        }
+      ]
+    },
+    {
+      "name": "media:mem",
+      "tMs": 3536.8681659999997,
+      "rssMb": 1740.3125,
+      "processes": 12,
+      "cpuSec": 8.08,
+      "breakdown": [
+        {
+          "pid": 18174,
+          "rssMb": 243.8,
+          "cpuSec": 0.96,
+          "name": "Google"
+        },
+        {
+          "pid": 18178,
+          "rssMb": 153.5,
+          "cpuSec": 0.61,
+          "name": "Google"
+        },
+        {
+          "pid": 18179,
+          "rssMb": 101.9,
+          "cpuSec": 0.09,
+          "name": "Google"
+        },
+        {
+          "pid": 18180,
+          "rssMb": 75,
+          "cpuSec": 0.03,
+          "name": "Google"
+        },
+        {
+          "pid": 18186,
+          "rssMb": 181.3,
+          "cpuSec": 0.14,
+          "name": "Google"
+        },
+        {
+          "pid": 18188,
+          "rssMb": 118.6,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 18190,
+          "rssMb": 277.4,
+          "cpuSec": 5.98,
+          "name": "Google"
+        },
+        {
+          "pid": 18191,
+          "rssMb": 119.5,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 18206,
+          "rssMb": 115.3,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 18294,
+          "rssMb": 99.4,
+          "cpuSec": 0.04,
+          "name": "Google"
+        },
+        {
+          "pid": 18295,
+          "rssMb": 131.1,
+          "cpuSec": 0.06,
+          "name": "Google"
+        },
+        {
+          "pid": 18308,
+          "rssMb": 123.5,
+          "cpuSec": 0.05,
+          "name": "Google"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "\nDevTools listening on ws://127.0.0.1:60107/devtools/browser/f546d581-3995-4310-8ab5-6a35fc7d8a19",
+    "Trying to load the allocator multiple times. This is *not* supported.",
+    "[OpenH264] this = 0x0x13c00e23480, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.",
+    "[OpenH264] this = 0x0x13c00e25ac0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.",
+    "[18174:1285424:0925/191902.772032:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[18174:1285424:0925/191902.772093:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR\n[18174:1285424:0925/191902.772144:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: PHONE_REGISTRATION_ERROR",
+    "[18174:1285424:0925/191902.819968:ERROR:google_apis/gcm/engine/mcs_client.cc:702]   Error code: 401  Error message: Authentication Failed: wrong_secret\n[18174:1285424:0925/191902.819978:ERROR:google_apis/gcm/engine/mcs_client.cc:704] Failed to log in to GCM, resetting connection."
+  ]
+}
