@@ -89,7 +89,7 @@ R"LETHEJS(
     'void main(){ if(outside()) discard; ivec2 p=ivec2(gl_FragCoord.xy);\n' +
     ' vec4 E=P(p); vec3 b=P(p+ivec2(0,-1)).rgb,d=P(p+ivec2(-1,0)).rgb,e=E.rgb,f=P(p+ivec2(1,0)).rgb,h=P(p+ivec2(0,1)).rgb;\n' +
     ' vec3 mn=min(min(b,d),min(f,h)),mx=max(max(b,d),max(f,h));\n' +
-    ' vec3 hitMin=min(mn,e)/(4.*mx+1e-5); vec3 hitMax=(1.-max(mx,e))/(4.*min(mn,e)-4.-1e-5);\n' +
+    ' vec3 hitMin=min(mn,e)/(4.*mx+1e-5); vec3 hitMax=(1.-max(mx,e))/(4.*mn-4.-1e-5);\n' +
     ' vec3 lb=max(-hitMin,hitMax); float lobe=max(-.1875,min(max(lb.r,max(lb.g,lb.b)),0.))*sharp;\n' +
     ' vec3 c=(lobe*(b+d+f+h)+e)/(4.*lobe+1.); o=vec4(enh(clamp(c,0.,1.)),E.a); }';
 

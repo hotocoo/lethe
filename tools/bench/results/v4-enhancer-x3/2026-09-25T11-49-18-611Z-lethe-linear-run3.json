@@ -1,0 +1,188 @@
+{
+  "browser": "lethe",
+  "label": "lethe-linear",
+  "env": {
+    "LETHE_UPSCALER": "linear",
+    "LETHE_HDR_ENHANCE": "0"
+  },
+  "browserArgs": [],
+  "version": "Lethe Browser v0.1.1 (system WebKit)",
+  "run": 3,
+  "startedAt": "2026-09-25T11:49:18.611Z",
+  "host": {
+    "os": "macOS 26.5",
+    "cpu": "Apple M4 Max",
+    "memoryGb": 64
+  },
+  "suites": [
+    "enhancer"
+  ],
+  "sites": [
+    "https://example.com/",
+    "https://www.iana.org/domains/reserved",
+    "https://en.wikipedia.org/wiki/Web_browser",
+    "https://github.com/",
+    "https://www.bbc.com/news",
+    "https://www.theguardian.com/international",
+    "https://edition.cnn.com/",
+    "https://www.nytimes.com/"
+  ],
+  "startupMs": 214.60525000000052,
+  "exitCode": 0,
+  "failure": null,
+  "timeouts": 0,
+  "pageload": [],
+  "speedometer": null,
+  "jetstream": null,
+  "motionmark": null,
+  "youtube": null,
+  "youtube4k": null,
+  "stress": null,
+  "extreme": {
+    "dom": null,
+    "js": null,
+    "webgl": null,
+    "net": null,
+    "netRounds": [
+      null,
+      null,
+      null
+    ]
+  },
+  "brutal": {
+    "dom": null,
+    "worker": null,
+    "storage": null,
+    "paint": null,
+    "net": null
+  },
+  "media": null,
+  "enhancer": {
+    "injected": false,
+    "fps": 60.1,
+    "pixels": {
+      "mean": 126.7,
+      "variance": 10967.6
+    },
+    "hdrClipPlaying": true,
+    "hdrClipColor": {
+      "transfer": "bt709",
+      "primaries": "bt2020",
+      "matrix": "bt2020-ncl"
+    },
+    "videoFrames": 281,
+    "dropped": 0,
+    "playing": true,
+    "state": {
+      "mode": 1,
+      "hdr": 0,
+      "active": 1,
+      "entries": [
+        {
+          "frames": 286,
+          "lastFrame": {
+            "sourceWidth": 640,
+            "sourceHeight": 360,
+            "outputWidth": 1600,
+            "outputHeight": 900,
+            "scaleX": 2.5,
+            "scaleY": 2.5,
+            "time": 9.502447707999005
+          },
+          "canvasWidth": 1600,
+          "canvasHeight": 900
+        }
+      ]
+    }
+  },
+  "memory": [
+    {
+      "name": "ready",
+      "tMs": 555.0793330000015,
+      "rssMb": 194.203125,
+      "processes": 4,
+      "cpuSec": 0.41,
+      "breakdown": [
+        {
+          "pid": 2919,
+          "rssMb": 115.6,
+          "cpuSec": 0.28,
+          "name": "lethe"
+        },
+        {
+          "pid": 2920,
+          "rssMb": 14.2,
+          "cpuSec": 0.02,
+          "name": "com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 2921,
+          "rssMb": 31.4,
+          "cpuSec": 0.06,
+          "name": "com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 2922,
+          "rssMb": 33,
+          "cpuSec": 0.05,
+          "name": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "name": "enhancer:mem",
+      "tMs": 10724.791083000004,
+      "rssMb": 0,
+      "processes": 1,
+      "cpuSec": 0,
+      "breakdown": [
+        {
+          "pid": 2919,
+          "rssMb": 0,
+          "cpuSec": 0,
+          "name": "(lethe)"
+        }
+      ]
+    }
+  ],
+  "log": [
+    "Lethe Browser v0.1.1 (system WebKit)",
+    "[lethe] Applying macOS sandbox (Seatbelt)...",
+    "[lethe] Seatbelt profile active (file writes limited to temp, ~/Downloads and Lethe's own Library subtrees)",
+    "[lethe] Initializing security policies...",
+    "[lethe] Security policies initialized (CSP, sandboxing)",
+    "[lethe] Initializing network stack...",
+    "[lethe] Network stack initialized (TLS 772+, DoH: on, UA: standard, cookies: partitioned, HSTS: enforced, private-net: isolated, pins: 0)",
+    "[lethe] Initializing built-in VPN...",
+    "[lethe] Built-in VPN enabled (fail-closed loopback; set LETHE_VPN_ENDPOINT=host:port to tunnel)",
+    "[lethe] Initializing renderer...",
+    "[lethe] Initializing hardware renderer (Skia GPU pipeline)",
+    "[lethe] Renderer initialized",
+    "[lethe] Initializing browser state...",
+    "[lethe] Browser state initialized",
+    "[lethe] Engine v0.1.1 initialized",
+    "[lethe-proxy] CONNECT reactor: kqueue shards=4",
+    "[lethe-proxy] worker pool: 32 threads",
+    "[lethe] policy proxy listening on 127.0.0.1:55504 (per-launch auth token)",
+    "[lethe] tracker protection: 227 third-party rules (cached)",
+    "[lethe] site data store: ephemeral (incognito)",
+    "[lethe] WebKit traffic routed through policy proxy 127.0.0.1:55504 (subresource enforcement on)",
+    "[e2e] start: 8 lines",
+    "[e2e] keep-front: on",
+    "[e2e] > mark ready",
+    "[e2e] mark ready",
+    "[e2e] > newtab http://127.0.0.1:55395/enhancer.html",
+    "[e2e] > try-wait 30000",
+    "[e2e] > wait-js 38000 document.getElementById(\"stats\").textContent.indexOf(\"enhancer-done\")>=0",
+    "[e2e] ok   wait-js -> 1",
+    "[e2e] > print-js document.getElementById(\"stats\").textContent",
+    "[e2e] result enhancer-done {\"injected\":false,\"fps\":60.1,\"pixels\":{\"mean\":126.7,\"variance\":10967.6},\"hdrClipPlaying\":true,\"hdrClipColor\":{\"transfer\":\"bt709\",\"primaries\":\"bt2020\",\"matrix\":\"bt2020-ncl\"},\"videoFrames\":281,\"dropped\":0,\"playing\":true,\"state\":{\"mode\":1,\"hdr\":0,\"active\":1,\"entries\":[{\"frames\":286,\"lastFrame\":{\"sourceWidth\":640,\"sourceHeight\":360,\"outputWidth\":1600,\"outputHeight\":900,\"scaleX\":2.5,\"scaleY\":2.5,\"time\":9.502447707999005},\"canvasWidth\":1600,\"canvasHeight\":900}]}}",
+    "[e2e] > mark enhancer:mem",
+    "[e2e] mark enhancer:mem",
+    "[e2e] > quit",
+    "[e2e] quit (PASSED)",
+    "[lethe] Shutting down components...",
+    "[lethe] Shut down renderer",
+    "[lethe] Engine shut down"
+  ]
+}

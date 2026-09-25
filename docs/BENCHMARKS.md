@@ -666,27 +666,35 @@ Test: 640x360 VP9 at 30 fps, shown at 1600x900, 8 s window. A second clip
 is tagged HDR10 (BT.2020 primaries, PQ transfer) and must be left alone.
 "Overlay luma" is a 32x32 `readPixels` patch of the enhancer's own output
 canvas, read in the same video frame. Non-zero variance proves the shader
-rendered real content, not black or NaN.
+rendered real content, not black or NaN. The shaders are a port of AMD's
+`ffx_fsr1.h` EASU and RCAS; the optional RCAS denoise step is omitted.
+
+Median of 3 runs each (`tools/bench/results/v4-enhancer-x3/`). The codec
+and WebCodecs tables above are single runs.
 
 | Browser / mode | Upscaled | Overlay luma mean / variance | HDR10 clip bypassed | rAF FPS | Dropped |
 |---|---|---|---|---|---|
 | Lethe WebKit, off | - | - | - | 60.2 | 0 |
-| Lethe WebKit, linear | 640x360 to 1600x900 | 126.7 / 10,968 | yes | 60.0 | 0 |
-| Lethe WebKit, FSR1 | 640x360 to 1600x900 | 127.0 / 11,216 | yes | 60.1 | 0 |
-| Lethe WebKit, FSR1 max sharp | 640x360 to 1600x900 | 127.1 / 11,210 | yes | 60.0 | 0 |
-| Lethe WebKit, FSR1 + HDR enhance | 640x360 to 1600x900 | 125.2 / 11,952 | yes | 60.0 | 0 |
-| Lethe CEF, off | - | - | - | 30.1 | 0 |
-| Lethe CEF, FSR1 | 640x360 to 1600x900 | 127.4 / 9,506 | yes | 60.0 | 0 |
-| Lethe CEF, FSR1 + HDR enhance | 640x360 to 1600x900 | 126.7 / 10,740 | yes | 60.1 | 0 |
+| Lethe WebKit, linear | 640x360 to 1600x900 | 126.7 / 10,968 | 3/3 | 60.0 | 0 |
+| Lethe WebKit, FSR1 | 640x360 to 1600x900 | 127.0 / 11,204 | 3/3 | 60.1 | 0 |
+| Lethe WebKit, FSR1 max sharp | 640x360 to 1600x900 | 127.1 / 11,210 | 3/3 | 60.1 | 0 |
+| Lethe WebKit, FSR1 + HDR enhance | 640x360 to 1600x900 | 125.2 / 11,952 | 3/3 | 60.0 | 0 |
+| Lethe CEF, off | - | - | - | 30.2 | 0 |
+| Lethe CEF, FSR1 | 640x360 to 1600x900 | 127.4 / 9,506 | 3/3 | 60.0 | 0 |
+| Lethe CEF, FSR1 + HDR enhance | 640x360 to 1600x900 | 126.7 / 10,740 | 3/3 | 60.0 | 0 |
 | Chrome, off | - | - | - | 30.2 | 0 |
-| Chrome, same script injected, FSR1 | 640x360 to 1600x900 | 127.4 / 9,506 | yes | 60.1 | 0 |
+| Chrome, same script injected, FSR1 | 640x360 to 1600x900 | 127.4 / 9,500 | 3/3 | 60.1 | 0 |
 
-Detail (variance) rises in the expected order: linear, then FSR1, then
-FSR1 with the HDR enhancer. CEF and Chrome produce byte-identical overlay
-statistics, so the Blink shell runs the enhancer exactly as Chrome would.
-Blink drops rAF to the 30 fps video cadence on an otherwise idle page. That
-is why Blink shows 30 FPS with the enhancer off; it is not an enhancer cost.
-No configuration dropped a video frame.
+FSR1 adds detail over linear (variance 10,968 to 11,204), and the HDR
+enhancer adds contrast on top (11,952). The max-sharp RCAS setting sits
+within noise of the default on this synthetic clip. CEF and Chrome give the
+same overlay statistics, so the Blink shell runs the enhancer as Chrome
+would. WebKit's variance is higher than Blink's for the same shader and
+clip. That is a difference in each engine's video-to-texture upload, not in
+the shader; it was not investigated further. With the enhancer off, Blink
+showed 30 rAF FPS on this page and WebKit showed 60. With the enhancer on,
+every engine showed 60. So the 30 is Blink pacing an idle page, not an
+enhancer cost. No configuration dropped a video frame.
 
 **HDR detection finding.** VP9 carries no transfer function in its
 bitstream, so WebKit and Blink both report `transfer: bt709` for the PQ clip.
