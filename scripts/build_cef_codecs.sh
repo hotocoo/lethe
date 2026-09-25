@@ -43,6 +43,18 @@ if [ ! -f "$WORK/automate-git.py" ]; then
         "https://raw.githubusercontent.com/chromiumembedded/cef/master/tools/automate/automate-git.py"
 fi
 
+# CEF's runhooks.patch only edits the Windows toolchain scripts and does not
+# apply cleanly to every Chromium tag; it has no effect on macOS/Linux.
+if ! grep -q "LETHE: skip runhooks" "$WORK/automate-git.py"; then
+    python3 - "$WORK/automate-git.py" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+a = "  apply_patch('runhooks')"
+s = s.replace(a, "  if platform != 'windows':  # LETHE: skip runhooks (Windows-only)\n    return\n" + a, 1)
+open(p, 'w').write(s)
+PY
+fi
+
 export GN_DEFINES="is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome"
 export CEF_ARCHIVE_FORMAT=tar.bz2
 
@@ -54,6 +66,7 @@ python3 "$WORK/automate-git.py" \
     --client-distrib \
     --no-debug-build \
     --no-chromium-history \
+    --force-update \
     --force-build \
     "$ARCH_FLAG"
 
